@@ -1,0 +1,29 @@
+# Runtime components, local records and generated packages
+/tools/
+/dist/
+/work/
+/data/
+*.exe
+*.exe~
+*.dll
+*.zip
+*.7z
+*.partial
+
+# Local development
+node_modules/
+coverage/
+coverage.out
+*.test
+*.log
+.cache/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+desktop.ini

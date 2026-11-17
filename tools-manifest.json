@@ -1,0 +1,48 @@
+{
+  "FormatVersion": 1,
+  "Platform": "windows-x64",
+  "Assets": [
+    {
+      "Name": "ffmpeg", "Version": "9.0.2", "File": "ffmpeg-9.0.2.7z", "Kind": "ffmpeg",
+      "URL": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.7z",
+      "SHA256": "4705843ccaaf54257c16ad90f3e952ece33c17df964ecf7bfdbb0f49c7171077",
+      "Source": "https://github.com/FFmpeg/FFmpeg/commit/946fcce07b",
+      "Homepage": "https://www.gyan.dev/ffmpeg/builds/"
+    },
+    {
+      "Name": "imagemagick", "Version": "7.1.2-36", "File": "imagemagick-7.1.2-36.7z", "Kind": "imagemagick",
+      "URL": "https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-x64.7z",
+      "SHA256": "1d8f948f7ed789a74f69bf3dedc60c3935bbef69f283406cee01d35868c6d971",
+      "Source": "https://github.com/ImageMagick/ImageMagick/tree/7.1.2-36",
+      "Homepage": "https://imagemagick.org/download/"
+    },
+    {
+      "Name": "vcruntime", "Version": "14.44.35211", "File": "VC_redist.x64.exe", "Kind": "vcruntime",
+      "URL": "https://download.visualstudio.microsoft.com/download/pr/e9604e21-4b79-4096-a4b3-1b63d4b55b4d/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+      "SHA256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+      "Source": "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files",
+      "Homepage": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist"
+    },
+    {
+      "Name": "exiftool", "Version": "13.64", "File": "exiftool-13.64.zip", "Kind": "exiftool",
+      "URL": "https://downloads.sourceforge.net/project/exiftool/exiftool-13.64_64.zip",
+      "SHA256": "72c29c44d1e860eebcaefa71692d979af9858fe9a6d7d791a5e7f1dac77804af",
+      "Source": "https://exiftool.org/Image-ExifTool-13.64.tar.gz",
+      "Homepage": "https://exiftool.org/"
+    },
+    {
+      "Name": "noto-font", "Version": "2.004", "File": "NotoSansCJKsc-Regular.otf", "Kind": "font",
+      "URL": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+      "SHA256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "Source": "https://github.com/notofonts/noto-cjk/tree/Sans2.004",
+      "Homepage": "https://github.com/notofonts/noto-cjk"
+    },
+    {
+      "Name": "noto-license", "Version": "2.004", "File": "NotoSans-LICENSE.txt", "Kind": "font-license",
+      "URL": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/LICENSE",
+      "SHA256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "Source": "https://github.com/notofonts/noto-cjk/tree/Sans2.004",
+      "Homepage": "https://github.com/notofonts/noto-cjk"
+    }
+  ]
+}

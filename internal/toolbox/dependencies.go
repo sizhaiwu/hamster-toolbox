@@ -1,0 +1,258 @@
+package toolbox
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// Dependency is also the UI's single source of truth for download/help content.
+type Dependency struct {
+	Key, Name, Purpose, Path, DownloadURL, GuideURL, Instructions string
+	Available, Verified                                           bool
+	Message                                                       string
+}
+
+func ToolExists(tool string) bool {
+	switch tool {
+	case "format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail":
+		return true
+	}
+	return false
+}
+
+func RequiredDependencies(c Config) []Dependency {
+	ffmpeg := Dependency{Key: "FFmpeg", Name: "FFmpeg", Purpose: "压缩视频", Path: c.FFmpeg,
+		DownloadURL: "https://www.gyan.dev/ffmpeg/builds/", GuideURL: "https://ffmpeg.org/download.html#build-windows",
+		Instructions: "打开下载页，选择 release essentials 的 ZIP 包。解压整个文件夹，在这里选择 bin 文件夹中的 ffmpeg.exe。FFprobe 在同一个 bin 文件夹里，不需要单独下载。"}
+	ffprobe := Dependency{Key: "FFprobe", Name: "FFprobe", Purpose: "读取音视频信息", Path: c.FFprobe,
+		DownloadURL: ffmpeg.DownloadURL, GuideURL: ffmpeg.GuideURL,
+		Instructions: "与 FFmpeg 在同一个安装包中。解压后，在这里选择 bin 文件夹中的 ffprobe.exe。"}
+	magick := Dependency{Key: "Magick", Name: "ImageMagick", Purpose: "处理图片", Path: c.Magick,
+		DownloadURL: "https://imagemagick.org/download/#windows", GuideURL: "https://imagemagick.org/download/#windows",
+		Instructions: "普通 Windows 电脑选择 x64 安装包，安装完成后点击“自动查找”。也可以解压 portable 便携版，再选择其中的 magick.exe；请保留整个程序文件夹。"}
+	exif := Dependency{Key: "Exiftool", Name: "ExifTool", Purpose: "清除图片元数据", Path: c.Exiftool,
+		DownloadURL: "https://exiftool.org/", GuideURL: "https://exiftool.org/install.html#Windows",
+		Instructions: "下载 Windows 版本并解压整个压缩包，将 exiftool(-k).exe 改名为 exiftool.exe，然后在这里选择它。若压缩包中含 exiftool_files 文件夹，请与 EXE 放在一起。"}
+	font := Dependency{Key: "Font", Name: "中文字体", Purpose: "显示 PDF 目录的中文标题", Path: c.Font,
+		DownloadURL: "https://github.com/notofonts/noto-cjk/releases", GuideURL: "https://github.com/notofonts/noto-cjk",
+		Instructions: "通常会自动找到系统自带的中文字体，无需下载。未找到时，可下载 Noto CJK 的 TTF 字体，解压后选择 .ttf 或 .ttc 文件。"}
+	switch c.Tool {
+	case "describe":
+		return []Dependency{ffprobe}
+	case "video":
+		return []Dependency{ffmpeg, ffprobe}
+	case "image":
+		return []Dependency{magick}
+	case "exif":
+		return []Dependency{exif}
+	case "pdf":
+		return []Dependency{magick, font}
+	case "thumbnail":
+		ffmpeg.Purpose = "从视频中截取预览画面"
+		magick.Purpose = "添加文字并保存缩略图拼图"
+		font.Purpose = "显示缩略图中的中文文件名与时间"
+		return []Dependency{ffmpeg, ffprobe, magick, font}
+	default:
+		return []Dependency{}
+	}
+}
+
+func dependencyLocation(d Dependency) (string, error) {
+	if strings.TrimSpace(d.Path) == "" {
+		return "", fmt.Errorf("尚未配置")
+	}
+	if d.Key == "Font" {
+		ext := strings.ToLower(filepath.Ext(d.Path))
+		if ext != ".ttf" && ext != ".ttc" && ext != ".otf" {
+			return "", fmt.Errorf("请选择 TTF、TTC 或 OTF 字体文件")
+		}
+		s, e := os.Stat(d.Path)
+		if e != nil || !s.Mode().IsRegular() {
+			return "", fmt.Errorf("字体文件不存在")
+		}
+		return d.Path, nil
+	}
+	p, e := exec.LookPath(d.Path)
+	if e != nil {
+		return "", fmt.Errorf("未找到程序，请重新选择")
+	}
+	s, e := os.Stat(p)
+	if e != nil || !s.Mode().IsRegular() {
+		return "", fmt.Errorf("请选择可执行程序文件")
+	}
+	return p, nil
+}
+
+func CheckDependencies(ctx context.Context, c Config, verify bool) []Dependency {
+	c = ResolveDependencyPaths(c)
+	deps := RequiredDependencies(c)
+	for i := range deps {
+		d := &deps[i]
+		p, e := dependencyLocation(*d)
+		if e != nil {
+			d.Message = e.Error()
+			continue
+		}
+		d.Available = true
+		d.Message = "已找到"
+		if !verify {
+			continue
+		}
+		if d.Key == "Font" {
+			d.Message = "字体文件已找到"
+			continue
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		arg := "-version"
+		if d.Key == "Exiftool" {
+			arg = "-ver"
+		}
+		out, e := run(checkCtx, p, arg)
+		timedOut := checkCtx.Err() != nil
+		cancel()
+		if e != nil {
+			d.Available = false
+			if timedOut {
+				d.Message = "检测超时，请确认程序安装完整"
+			} else {
+				d.Message = "程序无法运行，请确认安装完整或重新选择"
+			}
+			continue
+		}
+		version := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+		correct := false
+		switch d.Key {
+		case "FFmpeg":
+			correct = strings.HasPrefix(strings.ToLower(version), "ffmpeg version")
+		case "FFprobe":
+			correct = strings.HasPrefix(strings.ToLower(version), "ffprobe version")
+		case "Magick":
+			correct = strings.Contains(version, "ImageMagick")
+		case "Exiftool":
+			correct = regexp.MustCompile(`^\d+\.\d+`).MatchString(version)
+		}
+		if !correct {
+			d.Available = false
+			d.Message = "选中的文件不是 " + d.Name + "，请重新选择"
+			continue
+		}
+		if len(version) > 180 {
+			version = version[:180]
+		}
+		d.Verified = true
+		d.Message = "可用 · " + version
+	}
+	return deps
+}
+
+// Ignore fields unrelated to the selected tool, even from older saved settings.
+func ScopeConfig(c Config) Config {
+	r := Config{Tool: c.Tool, Root: c.Root, Recursive: c.Recursive}
+	switch c.Tool {
+	case "thumbnail":
+		r.Output, r.FFmpeg, r.FFprobe, r.Magick = c.Output, c.FFmpeg, c.FFprobe, c.Magick
+		r.ThumbnailColumns, r.ThumbnailRows = c.ThumbnailColumns, c.ThumbnailRows
+		r.ThumbnailWidth, r.ThumbnailGap = c.ThumbnailWidth, c.ThumbnailGap
+		r.ThumbnailQuality, r.ThumbnailFormat = c.ThumbnailQuality, c.ThumbnailFormat
+		r.ThumbnailBackground = c.ThumbnailBackground
+		r.ThumbnailInfo, r.ThumbnailTime = c.ThumbnailInfo, c.ThumbnailTime
+		r.Font = c.Font
+	case "number":
+		r.NumberName = c.NumberName
+		r.NumberStyle = c.NumberStyle
+		r.NumberTemplate = c.NumberTemplate
+		r.NumberOrder = c.NumberOrder
+		r.NumberFilter = c.NumberFilter
+		r.StartNumber = c.StartNumber
+		r.NumberDigits = c.NumberDigits
+		r.NumberKeepOriginal = c.NumberKeepOriginal
+		r.Recursive = false
+	case "rename":
+		r.RenameMode = c.RenameMode
+		r.ExampleNumber = c.ExampleNumber
+		r.ExampleAtStart = c.ExampleAtStart
+		r.Files = c.Files
+		r.Dirs = c.Dirs
+		r.Find = c.Find
+		r.Replace = c.Replace
+		r.Regex = c.Regex
+		r.Prefix = c.Prefix
+		r.Suffix = c.Suffix
+	case "describe":
+		r.FFprobe = c.FFprobe
+	case "image":
+		r.PngMode = c.PngMode
+		r.PngQuality = c.PngQuality
+		if c.ImageFormats != nil {
+			r.ImageFormats = append([]string{}, c.ImageFormats...)
+		}
+		r.Output = c.Output
+		r.Magick = c.Magick
+		r.Quality = c.Quality
+	case "exif":
+		r.Output = c.Output
+		r.Exiftool = c.Exiftool
+	case "video":
+		r.Output = c.Output
+		r.FFmpeg = c.FFmpeg
+		r.FFprobe = c.FFprobe
+		r.CRF = c.CRF
+		r.MinMB = c.MinMB
+		r.MinKbps = c.MinKbps
+	case "pdf":
+		r.Output = c.Output
+		r.Magick = c.Magick
+		r.Font = c.Font
+		r.Recursive = false
+	}
+	return r
+}
+
+func detectProgram(name, portableFolder string) string {
+	base, _ := os.Executable()
+	base = filepath.Dir(base)
+	for _, p := range []string{filepath.Join(base, "tools", portableFolder, name+".exe"), filepath.Join(base, "tools", portableFolder, "bin", name+".exe"), filepath.Join(base, "tools", name+".exe")} {
+		if s, e := os.Stat(p); e == nil && s.Mode().IsRegular() {
+			return p
+		}
+	}
+	if p, e := exec.LookPath(name); e == nil {
+		return p
+	}
+	if name == "magick" {
+		for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"} {
+			root := os.Getenv(env)
+			if root == "" {
+				continue
+			}
+			matches, _ := filepath.Glob(filepath.Join(root, "ImageMagick*", "magick.exe"))
+			if len(matches) > 0 {
+				return matches[len(matches)-1]
+			}
+		}
+	}
+	return ""
+}
+
+func detectFont() string {
+	if path := bundledDependency(executableDirectory(), "Font"); path != "" {
+		return path
+	}
+	root := os.Getenv("WINDIR")
+	if root == "" {
+		root = "C:/Windows"
+	}
+	base, _ := os.Executable()
+	for _, p := range []string{filepath.Join(filepath.Dir(base), "tools", "fonts", "NotoSansCJKsc-Regular.ttf"), filepath.Join(root, "Fonts", "msyh.ttc"), filepath.Join(root, "Fonts", "simsun.ttc"), filepath.Join(root, "Fonts", "simhei.ttf")} {
+		if s, e := os.Stat(p); e == nil && s.Mode().IsRegular() {
+			return p
+		}
+	}
+	return ""
+}

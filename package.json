@@ -1,0 +1,9 @@
+{
+  "name": "hamster-toolbox",
+  "private": true,
+  "description": "Development-only UI regression tests for Hamster Toolbox",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": { "test:ui": "node tests/ui-check.cjs" },
+  "devDependencies": { "jsdom": "26.1.0" }
+}
