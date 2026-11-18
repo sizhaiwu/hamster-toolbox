@@ -5,33 +5,49 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 const html = fs.readFileSync('web/index.html', 'utf8'), script = fs.readFileSync('web/app.js', 'utf8');
 const defaults = { Tool: '', Root: '', Output: '', Recursive: true, Files: true, Dirs: true, Find: '', Replace: '', Regex: false, Prefix: '', Suffix: '', Quality: 60, CRF: 23, MinMB: 100, MinKbps: 1000, FFmpeg: 'C:/ffmpeg/ffmpeg.exe', FFprobe: 'C:/ffmpeg/ffprobe.exe', Magick: 'C:/magick/magick.exe', Exiftool: '', Font: 'C:/Windows/Fonts/msyh.ttc', NumberName:'',StartNumber:1,NumberDigits:3,NumberStyle:'dash',NumberOrder:'name',NumberFilter:'',NumberKeepOriginal:true };
+Object.assign(defaults,{SevenZip:'C:/tools/sevenzip/7za.exe',ArchiveMode:'pure',ArchiveSplit:'script',ArchiveVolume:'3g',ArchiveFirstVolume:'10k',ArchiveDirPrefix:'D_',ArchiveFilePrefix:'F_',ArchiveStart:1,ArchiveDigits:3,ArchiveLevel:0,ArchivePassword:'',ArchiveExtras:'',ArchiveMarker:false});
 Object.assign(defaults,{ThumbnailColumns:5,ThumbnailRows:5,ThumbnailWidth:1024,ThumbnailGap:5,ThumbnailQuality:90,ThumbnailFormat:'jpg',ThumbnailBackground:'#ffffff',ThumbnailInfo:true,ThumbnailTime:true});
-const requirements = { format: [], rename: [], number:[], describe: ['FFprobe'], image: ['Magick'], exif: ['Exiftool'], pdf: ['Magick', 'Font'], video: ['FFmpeg', 'FFprobe'], thumbnail:['FFmpeg','FFprobe','Magick','Font'] };
+Object.assign(defaults,{ExtractConflict:'rename',ExtractLayout:'separate',ExtractPassword:'',ExtractDeleteSource:false,ExtractDeleteMode:'recycle'});
+Object.assign(defaults,{FormatCleanOther:false,FormatDeleteMode:'recycle'});
+Object.assign(defaults,{VideoMode:'efficient',VideoAcceleration:'auto',MetadataTypes:'images'});
+const requirements = { dedupe:[], extract:['SevenZip'], archive:['SevenZip'], format: [], rename: [], number:[], describe: ['FFprobe'], image: ['Magick'], exif: ['Exiftool'], pdf: ['Magick', 'Font'], video: ['FFmpeg', 'FFprobe'], thumbnail:['FFmpeg','FFprobe','Magick','Font'] };
 const storage = { Version: 1, LastTool: 'format', Workspaces: {
   // Old/stale values from an unrelated workspace must not block native clicks.
   format: { ...defaults, Tool:'format', CRF:99, MinMB:-1 },
   rename: { ...defaults, Tool:'rename', Root:'E:/测试输入', CRF:99, MinKbps:-1 }
 } };
 let planMode = 'conflicts';
+let dependencyFailure = false;
 let state = { Status: 'idle', Tool: '', Items: [], Logs: [], Result: {}, Total: 0 };
-const saved = [], requests = [], failures = [];
+const saved = [], requests = [], failures = [], passwordVault = [];
+let copiedCommand = "";
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test, label) { for (let i=0;i<120;i++) { if (test()) return; await delay(25); } throw Error('Timed out: '+label); }
-function createUI(port) {
+function createUI(port, supportsMask = true) {
   const dom = new JSDOM(html, { url:'http://localhost:'+port+'/?session=test', runScripts:'outside-only' });
   const w=dom.window;
+  w.CSS = { supports: (property, value) => supportsMask && property === '-webkit-text-security' && value === 'disc' };
   w.addEventListener('error', e => failures.push(e.error || e.message));
   w.HTMLDialogElement.prototype.showModal = function(){this.open=true};
   w.HTMLDialogElement.prototype.close = function(){this.open=false};
+  Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async value=>{copiedCommand=value;}}});
   w.fetch = async (url, options) => {
     const body=JSON.parse(options.body), path=url.replace('/api/','');requests.push({path,body});
     let value;
     if(path==='defaults') value=defaults;
+    else if(path==='dedupe-info') {const selected=body.Path||'';const available=selected.endsWith('VDF.GUI.exe')&&!selected.includes('missing');value={Path:selected,Available:available,Message:available?'已找到本地软件，可以打开。':'尚未找到本地软件，请按下方步骤下载。'};}
+    else if(path==='dedupe-open') value={Message:'已发送启动请求'};
+    else if(path==='passwords') value=passwordVault.map(({ID,Name})=>({ID,Name}));
+    else if(path==='password-get') value={Password:passwordVault.find(x=>x.ID===body.ID).Password};
+    else if(path==='password-save') {const at=passwordVault.findIndex(x=>x.ID===body.ID);const record={...body,ID:body.ID||'test-password-'+passwordVault.length};if(at>=0)passwordVault[at]=record;else passwordVault.push(record);value={ok:true};}
+    else if(path==='password-delete') {passwordVault.splice(passwordVault.findIndex(x=>x.ID===body.ID),1);value={ok:true};}
+    else if(path==='video-commands') value=[{Label:'hevc_nvenc',PowerShell:"& 'ffmpeg.exe' '-i' 'source.mp4' 'target.mp4'"},{Label:'libx265（备用）',PowerShell:"& 'ffmpeg.exe' '-c:v' 'libx265' 'target.mp4'"}];
     else if(path==='info') value={Name:'仓鼠工具箱',Version:'0.1.0'};
     else if(path==='settings') value=storage;
     else if(path==='number-info') value={Name:'Sample作者',Style:body.NumberStyle==='custom'?'custom':'dash',MaxNumber:98,NextNumber:99,Digits:3,Existing:98,Pending:100};
     else if(path==='save-settings') { const c={...body};saved.push(c);storage.Workspaces[c.Tool]=c;storage.LastTool=c.Tool;value=storage; }
-    else if(path==='dependencies') value=requirements[body.Config.Tool].map(key=>({
+    else if(path==='dependencies'&&dependencyFailure) return {ok:false,text:async()=>'测试：依赖检查请求失败'};
+    else if(path==='dependencies') value=(body.Config.Tool==='exif'&&['videos','all'].includes(body.Config.MetadataTypes)?['Exiftool','FFmpeg','FFprobe']:requirements[body.Config.Tool]).map(key=>({
       Key:key,Name:key,Purpose:'测试用途',Path:body.Config[key]||'',Available:Boolean(body.Config[key])&&!body.Config[key].includes('missing'),
       Message:Boolean(body.Config[key])&&!body.Config[key].includes('missing')?'已找到':'尚未配置',
       Instructions:'解压后选择程序文件。',DownloadURL:'https://example.com/download',GuideURL:'https://example.com/help'
@@ -57,10 +73,20 @@ function createUI(port) {
   let dom=createUI(10001),w=dom.window,$=id=>w.document.getElementById(id);
   const switchTool=async id=>{
     w.document.querySelector('[data-tool="'+id+'"]').click();
-    await until(()=>$('title').textContent===({video:'压缩视频',image:'压缩图片',pdf:'PDF 图册索引',exif:'清除图片信息',format:'目录统计命名',describe:'媒体信息命名',rename:'批量重命名',number:'目录批量编号',thumbnail:'视频缩略图'})[id]&&!$('nav').firstChild.disabled,'switch '+id);
+    await until(()=>$('title').textContent===({video:'压缩视频',image:'压缩图片',pdf:'PDF 图册索引',exif:'清理元数据',format:'目录统计命名',describe:'媒体信息命名',rename:'批量重命名',number:'目录批量编号',thumbnail:'视频缩略图',archive:'打包资源',extract:'解压资源',dedupe:'文件去重'})[id]&&!$('nav').firstChild.disabled,'switch '+id);
   };
   const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('input',{bubbles:true}));};
   await until(()=>$('builtInReady').hidden===false&&!$('preview').disabled,'built-in ready');
+  assert.equal($('formatOptions').hidden,false);assert.equal($('FormatCleanOther').checked,false);assert.equal($('FormatDeleteMode').value,'recycle');assert.equal($('FormatDeleteMode').disabled,true);assert.equal($('formatDeleteOptions').hidden,true);
+  $('FormatCleanOther').click();assert.equal($('formatDeleteOptions').hidden,false);assert.equal($('FormatDeleteMode').disabled,false);assert.equal(w.config().FormatCleanOther,true);
+  $('FormatDeleteMode').value='permanent';$('FormatDeleteMode').dispatchEvent(new w.Event('change'));assert.equal(w.config().FormatDeleteMode,'permanent');
+  for(const [action,label] of [['recycle','移入回收站'],['delete','永久删除']]) {const comparison=w.previewComparison({Action:action,Source:'E:/resources/note.txt',Target:'E:/resources/note.txt'});assert.match(comparison.textContent,new RegExp(label));assert.match(comparison.querySelector('details').textContent,/处理方式/);}
+  $('FormatCleanOther').click();assert.equal($('FormatDeleteMode').disabled,true);assert.equal($('formatDeleteOptions').hidden,true);
+  w.renderLogs('12:00:00 完成：sample\n12:00:01 跳过：sample\n12:00:02 失败：<img src=x>\n12:00:03 视频进度：50%');
+  assert.equal($('logs').querySelectorAll('.terminal-log-line').length,4);
+  assert.equal($('logs').querySelectorAll('.log-success').length,1);assert.equal($('logs').querySelectorAll('.log-warning').length,1);assert.equal($('logs').querySelectorAll('.log-error').length,1);assert.equal($('logs').querySelectorAll('.log-progress').length,1);
+  assert.equal($('logs').querySelector('img'),null);assert.equal($('logs').querySelector('.log-time').textContent,'12:00:00 ');
+  $('followLogs').click();assert.equal($('followLogs').getAttribute('aria-pressed'),'false');$('followLogs').click();assert.equal($('followLogs').getAttribute('aria-pressed'),'true');
   assert.equal($('dependencies').hidden,true);assert.equal($('FFmpeg'),null);
   assert.equal($('CRF').disabled,true);assert.equal($('MinMB').disabled,true);
   input('Root','E:/测试输入');
@@ -68,6 +94,7 @@ function createUI(port) {
   $('preview').click();
   await until(()=>requests.filter(r=>r.path==='plan').length===planCount+1&&$('message').textContent.includes('没有需要修改'),'native format click and empty feedback');
   await switchTool('rename');assert.equal($('CRF').disabled,true);assert.equal($('MinKbps').disabled,true);
+  assert.equal($('formatOptions').hidden,true);assert.equal('FormatCleanOther' in w.config(),false);assert.equal('FormatDeleteMode' in w.config(),false);
   planCount=requests.filter(r=>r.path==='plan').length;$('preview').click();
   await until(()=>requests.filter(r=>r.path==='plan').length===planCount+1&&$('message').textContent.includes('没有需要修改'),'native rename click and empty feedback');
   planMode='error';$('preview').click();await until(()=>$('message').textContent.includes('输入目录不存在'),'request failure shown beside button');
@@ -77,11 +104,53 @@ function createUI(port) {
   assert.ok($('FFmpeg'));assert.ok($('FFprobe'));assert.equal($('Magick'),null);assert.equal($('Font'),null);
   assert.equal($('Root').value,'E:/测试输入');assert.equal($('Output').value,'');
   assert.equal(w.document.querySelectorAll('.dependency-links a').length,4);
+  dependencyFailure=true;await w.inspectDependencies(true);assert.equal($('dependencySummary').className,'bad');assert.match($('dependencySummary').textContent,/检查失败/);assert.equal($('preview').disabled,true);
+  dependencyFailure=false;await w.inspectDependencies(false);assert.equal($('dependencySummary').className,'ok');assert.equal($('preview').disabled,false);
   for(const a of w.document.querySelectorAll('.dependency-links a'))assert.equal(a.rel,'noopener noreferrer');
   input('Output','E:/视频输出');$('videoQuality').value='28';$('videoQuality').dispatchEvent(new w.Event('change'));assert.equal($('CRF').value,'28');
+  assert.equal($('VideoMode').value,'efficient');assert.match($('videoModeHint').textContent,/H.265/);
+  $('VideoMode').value='archive';$('VideoMode').dispatchEvent(new w.Event('change'));assert.equal($('VideoAcceleration').disabled,true);assert.match($('videoAccelerationHint').textContent,/固定使用 CPU/);
+  $('VideoMode').value='compatible';$('VideoMode').dispatchEvent(new w.Event('change'));assert.equal($('VideoAcceleration').disabled,false);assert.match($('videoModeHint').textContent,/H.264/);
+  $('VideoAcceleration').value='intel';$('VideoAcceleration').dispatchEvent(new w.Event('change'));
+  assert.match($('videoAccelerationHint').textContent,/Intel/);
+  assert.equal($('videoHelp').open,false);assert.equal($('videoAdvanced').open,false);
+  for (const [value, label] of [['auto','自动选择'],['nvidia','NVIDIA'],['intel','Intel'],['amd','AMD'],['cpu','CPU']]) {
+    $('VideoAcceleration').value=value;$('VideoAcceleration').dispatchEvent(new w.Event('change'));
+    assert.ok($('videoAccelerationHint').textContent.includes(label));
+    assert.ok($('videoAccelerationHint').textContent.length<55);
+  }
+  $('VideoAcceleration').value='intel';$('VideoAcceleration').dispatchEvent(new w.Event('change'));
+  input('CRF','0');assert.match($('videoAccelerationHint').textContent,/固定使用 CPU/);
+  input('CRF','28');assert.match($('videoAccelerationHint').textContent,/Intel/);
+  $('VideoMode').value='efficient';$('VideoMode').dispatchEvent(new w.Event('change'));input('CRF','23');
+  assert.equal(w.document.querySelector('[data-video-benchmark="intel"]').getAttribute('aria-current'),'true');assert.equal($('videoBenchmarkQuick').hidden,false);assert.match($('videoBenchmarkQuick').textContent,/54.7%/);
+  $('VideoAcceleration').value='nvidia';$('VideoAcceleration').dispatchEvent(new w.Event('change'));
+  assert.equal(w.document.querySelector('[data-video-benchmark="nvidia"]').getAttribute('aria-current'),'true');
+  input('CRF','18');assert.equal($('videoBenchmarkQuick').hidden,true);assert.equal(w.document.querySelectorAll('[data-video-benchmark][aria-current]').length,0);assert.match($('videoBenchmarkScope').textContent,/与上表不同/);
+  input('CRF','23');$('VideoAcceleration').value='auto';$('VideoAcceleration').dispatchEvent(new w.Event('change'));assert.match($('videoBenchmarkScope').textContent,/没有固定/);
+  $('VideoAcceleration').value='amd';$('VideoAcceleration').dispatchEvent(new w.Event('change'));assert.match($('videoBenchmarkScope').textContent,/暂无/);
+  $('VideoMode').value='compatible';$('VideoMode').dispatchEvent(new w.Event('change'));$('VideoAcceleration').value='intel';$('VideoAcceleration').dispatchEvent(new w.Event('change'));input('CRF','28');
   input('FFprobe','C:/missing/ffprobe.exe');await until(()=>$('dependency-status-FFprobe').textContent==='尚未配置','missing dependency');
   assert.equal($('preview').disabled,true);assert.equal($('dependency-help-FFprobe').open,true);
   input('FFprobe','C:/special/ffprobe.exe');await until(()=>!$('preview').disabled,'dependency restored');
+  state={Status:'ready',Tool:'video',PlanID:'command-preview',Total:2,Done:0,Actionable:1,Conflicts:1,Logs:[],Result:{},Items:[{Source:'source.mp4',Target:'target.mp4',Conflict:''},{Source:'bad.mp4',Target:'bad-out.mp4',Conflict:'skip'}]};
+  await w.eval('poll()');
+  assert.equal(w.document.querySelectorAll('.video-command').length,1);
+  const comparedNames=[...w.document.querySelectorAll('.preview-comparison')][0].querySelectorAll('.preview-name');
+  assert.deepEqual([...comparedNames].map(el=>el.textContent),['source.mp4','target.mp4']);
+  assert.equal(w.document.querySelector('.preview-full-path').open,false);
+  const formatComparison=w.previewComparison({Source:'E:/资源/相册',Target:'E:/资源/相册 [12P-2V-100MB]'});
+  assert.equal(formatComparison.querySelector('.preview-added').textContent,' [12P-2V-100MB]');
+  const relocatedComparison=w.previewComparison({Source:'E:/input/照片.jpg',Target:'E:/output/照片.jpg'});
+  assert.equal(relocatedComparison.querySelectorAll('.preview-location').length,2);
+  const safeComparison=w.previewComparison({Source:'E:/资料/😀<img>.jpg',Target:'E:/资料/😀<img>-新.jpg'});
+  assert.equal(safeComparison.querySelector('img'),null);assert.equal(safeComparison.querySelector('.preview-name').textContent,'😀<img>.jpg');
+  assert.equal(requests.filter(r=>r.path==='video-commands').length,0);
+  const commandDetails=w.document.querySelector('.video-command');commandDetails.open=true;
+  await until(()=>!commandDetails.querySelector('textarea').hidden,'lazy command generation');
+  commandDetails.querySelector('button').click();await until(()=>copiedCommand.includes('source.mp4'),'copy standalone command');
+  commandDetails.querySelector('select').selectedIndex=1;commandDetails.querySelector('select').dispatchEvent(new w.Event('change'));
+  commandDetails.querySelector('button').click();await until(()=>copiedCommand.includes('libx265'),'copy fallback command');
   await switchTool('image');assert.equal($('Output').value,'');assert.ok($('Magick'));assert.equal($('FFmpeg'),null);
   assert.equal($('ImageFormatMode').value,'jpeg');assert.match($('imageFormatSummary').textContent,/JPG/);
   $('ImageFormatMode').value='all';$('ImageFormatMode').dispatchEvent(new w.Event('change'));
@@ -117,8 +186,13 @@ function createUI(port) {
   await switchTool('pdf');assert.equal($('thumbnailOptions').hidden,true);assert.equal($('ThumbnailWidth').disabled,true);
   assert.equal($('Output').value,'');assert.equal($('recursiveOption').hidden,true);assert.ok($('Font'));assert.equal($('outputLabel').textContent,'保存为 PDF 文件');
   await switchTool('video');assert.equal($('Output').value,'E:/视频输出');assert.equal($('CRF').value,'28');assert.equal($('FFprobe').value,'C:/special/ffprobe.exe');
+  assert.equal($('VideoMode').value,'compatible');assert.equal($('VideoAcceleration').value,'intel');
+  assert.equal(saved.filter(c=>c.Tool==='image').some(c=>'VideoMode' in c),false);
   await switchTool('describe');assert.equal($('FFprobe').value,defaults.FFprobe);assert.equal($('FFmpeg'),null);
   await switchTool('exif');assert.equal($('preview').disabled,true);assert.ok($('Exiftool'));assert.equal($('Magick'),null);
+  assert.equal($('metadataOptions').hidden,false);assert.equal($('MetadataTypes').value,'images');$('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFmpeg')&&!$('nav').firstChild.disabled,'video cleanup dependencies');assert.ok($('FFprobe'));assert.equal(saved.filter(c=>c.Tool==='exif').at(-1).MetadataTypes,'videos');
+  $('MetadataTypes').value='images';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!$('FFmpeg')&&!$('nav').firstChild.disabled,'image cleanup dependency isolation');assert.equal($('FFprobe'),null);
+  $('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFprobe')&&!$('nav').firstChild.disabled,'restore video cleanup');
   await switchTool('rename');assert.equal($('dependencies').hidden,true);assert.equal($('preview').disabled,false);
   input('Find','^test\\s*第\\d+期\\s*');input('Replace','');
   assert.equal($('Regex').checked,false);$('RenameMode').value='regex';$('RenameMode').dispatchEvent(new w.Event('change'));
@@ -170,6 +244,68 @@ function createUI(port) {
   assert.equal($('PngMode').value,'webp-png');assert.equal($('PngQuality').value,'92');
   assert.equal(storage.Workspaces.number.NumberTemplate,'{name} {number}');
   await switchTool('thumbnail');assert.equal($('Output').value,'E:/缩略图输出');assert.equal($('ThumbnailColumns').value,'4');assert.equal($('ThumbnailRows').value,'3');assert.equal($('ThumbnailFormat').value,'png');assert.equal($('ThumbnailBackground').value,'#224466');assert.equal($('ThumbnailInfo').checked,false);
+  assert.equal(failures.length,0,failures.map(String).join('\n'));
+  await switchTool('archive');
+  assert.equal($('archiveOptions').hidden,false);assert.equal($('entryOptions').hidden,false);assert.equal($('recursiveOption').hidden,true);
+  assert.equal($('SevenZip').value,'C:/tools/sevenzip/7za.exe');assert.equal($('ArchiveExtras').disabled,true);assert.match($('archiveSummary').textContent,/D_001\.7z\.001/);assert.match($('outputHint').textContent,/0utput_7z/);assert.match($('outputHint').textContent,/目录\.txt/);assert.match($('Output').placeholder,/0utput_7z/);
+  input('ArchivePassword','Private-Session!');
+  $('ArchiveMode').value='extras';$('ArchiveMode').dispatchEvent(new w.Event('change'));
+  input('ArchiveExtras','C:/sample/info.txt');assert.equal($('ArchiveExtras').disabled,false);
+  $('ArchiveSplit').value='none';$('ArchiveSplit').dispatchEvent(new w.Event('change'));assert.equal($('ArchiveVolume').disabled,true);
+  await switchTool('format');await switchTool('archive');assert.equal($('ArchivePassword').value,'Private-Session!');
+  assert.equal(saved.filter(x=>x.Tool==='archive').some(x=>'ArchivePassword' in x),false);
+  assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('CRF').disabled,true);
+  const archivePlanCount=requests.filter(r=>r.path==='plan').length;$('preview').click();
+  await until(()=>requests.filter(r=>r.path==='plan').length===archivePlanCount+1&&!$('preview').disabled,'archive preview');
+  const archiveRequest=requests.filter(r=>r.path==='plan').at(-1).body;
+  assert.equal(archiveRequest.Tool,'archive');assert.equal(archiveRequest.ArchivePassword,'Private-Session!');assert.equal(archiveRequest.ArchiveMode,'extras');assert.equal(archiveRequest.SevenZip,'C:/tools/sevenzip/7za.exe');assert.equal('FFmpeg' in archiveRequest,false);assert.equal('Recursive' in archiveRequest,false);
+  await delay(550);dom.window.close();dom=createUI(30003);w=dom.window;$=id=>w.document.getElementById(id);
+  await until(()=>$('title').textContent==='打包资源'&&!$('preview').disabled,'restart archive workspace');
+  assert.equal($('ArchivePassword').value,'');assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('ArchiveMode').value,'extras');
+  assert.match($('description').textContent,/7-Zip/);
+  $('manageArchivePasswords').click();await until(()=>$('passwordDialog').open&&!$('savePassword').disabled,'password manager');
+  input('PasswordName','共享密码');input('PasswordValue','Vault-Only-Secret!');$('savePassword').click();
+  await until(()=>!$('passwordDialog').open&&$('ArchivePassword').value==='Vault-Only-Secret!','save and use password');
+  assert.equal($('ArchiveSavedPassword').options.length,2);
+  await switchTool('extract');assert.equal($('ExtractDeleteSource').checked,false);assert.equal($('ExtractDeleteMode').value,'recycle');assert.equal($('ExtractDeleteMode').disabled,true);$('ExtractDeleteSource').checked=true;$('ExtractDeleteSource').dispatchEvent(new w.Event('input'));assert.equal($('ExtractDeleteMode').disabled,false);assert.equal($('extractDeleteModeOptions').hidden,false);assert.match($('extractDeleteHint').textContent,/移入回收站/);$('ExtractDeleteMode').value='permanent';$('ExtractDeleteMode').dispatchEvent(new w.Event('change'));assert.match($('extractDeleteHint').textContent,/永久删除/);assert.equal($('ExtractConflict').value,'rename');assert.equal($('ExtractLayout').value,'separate');assert.match($('extractRuleHint').textContent,/已有文件保留/);assert.equal($('archiveOptions').hidden,true);assert.equal($('extractOptions').hidden,false);
+  $('ExtractSavedPassword').value=passwordVault[0].ID;$('ExtractSavedPassword').dispatchEvent(new w.Event('change'));
+  await until(()=>$('ExtractPassword').value==='Vault-Only-Secret!'&&!$('ExtractPassword').disabled,'shared password used by extract');
+  for (const id of ['ArchivePassword','ExtractPassword','PasswordValue']) {assert.equal($(id).type,'text');assert.equal($(id).autocomplete,'off');assert.equal($(id).dataset.secretHidden,'true');}
+  assert.equal($('preview').type,'button');assert.equal($('savePassword').type,'button');
+  assert.equal(w.document.querySelectorAll('input[type="password"]').length,0);
+  let nativeSubmits=0;$('form').addEventListener('submit',()=>nativeSubmits++);
+  $('toggleExtractPassword').click();assert.equal($('ExtractPassword').dataset.secretHidden,'false');assert.equal($('ExtractPassword').type,'text');$('toggleExtractPassword').click();assert.equal($('ExtractPassword').dataset.secretHidden,'true');assert.equal($('ExtractPassword').type,'text');
+  const extractPlanCount=requests.filter(r=>r.path==='plan').length;$('preview').click();
+  await until(()=>requests.filter(r=>r.path==='plan').length===extractPlanCount+1&&!$('preview').disabled,'extract preview');
+  const extractRequest=requests.filter(r=>r.path==='plan').at(-1).body;assert.equal(extractRequest.Tool,'extract');assert.equal(extractRequest.ExtractConflict,'rename');assert.equal(extractRequest.ExtractDeleteSource,true);assert.equal(extractRequest.ExtractDeleteMode,'permanent');assert.equal(extractRequest.ExtractPassword,'Vault-Only-Secret!');assert.equal('ArchivePassword' in extractRequest,false);
+  assert.equal(nativeSubmits,0);assert.equal(w.document.querySelectorAll('input[type="password"]').length,0);
+  $('manageExtractPasswords').click();await until(()=>$('passwordDialog').open&&!$('savePassword').disabled,'edit manager');
+  [...$('passwordList').querySelectorAll('button')].find(x=>x.textContent==='编辑').click();await until(()=>$('passwordEditorTitle').textContent==='编辑常用密码'&&!$('savePassword').disabled,'edit shared password');
+  input('PasswordValue','Edited-Vault-Secret!');$('savePassword').click();await until(()=>!$('passwordDialog').open&&$('ExtractPassword').value==='Edited-Vault-Secret!','edited password used');
+  await switchTool('archive');$('ArchiveSavedPassword').value=passwordVault[0].ID;$('ArchiveSavedPassword').dispatchEvent(new w.Event('change'));await until(()=>$('ArchivePassword').value==='Edited-Vault-Secret!'&&!$('ArchivePassword').disabled,'edited password shared by archive');
+  $('manageArchivePasswords').click();await until(()=>$('passwordDialog').open&&!$('savePassword').disabled,'delete manager');[...$('passwordList').querySelectorAll('button')].find(x=>x.textContent==='删除').click();await until(()=>passwordVault.length===0&&$('ArchiveSavedPassword').options.length===1&&!$('savePassword').disabled,'delete shared password');$('closePasswordDialog').click();
+  await switchTool('extract');assert.equal(saved.filter(x=>x.Tool==='extract').some(x=>'ExtractPassword' in x),false);assert.equal($('ExtractDeleteSource').checked,true);assert.equal($('ExtractDeleteSource').disabled,false);assert.equal($('ExtractDeleteMode').value,'permanent');
+  await switchTool('number');$('NumberStyle').value='number';$('NumberStyle').dispatchEvent(new w.Event('change'));input('StartNumber','29');
+  assert.equal($('NumberName').disabled,true);assert.equal($('numberSample').textContent,'示例：029 - 原资源名称 [统计信息]');
+  $('NumberKeepOriginal').checked=false;$('NumberKeepOriginal').dispatchEvent(new w.Event('input'));assert.equal($('numberSample').textContent,'示例：029');
+  $('NumberKeepOriginal').checked=true;$('NumberKeepOriginal').dispatchEvent(new w.Event('input'));
+  $('NumberStyle').value='custom';$('NumberStyle').dispatchEvent(new w.Event('change'));input('NumberTemplate','{number} - ');input('NumberName','');
+  assert.equal($('NumberName').disabled,true);assert.equal($('numberSample').textContent,'示例：029 - 原资源名称 [统计信息]');
+  const unnamedPlanCount=requests.filter(r=>r.path==='plan').length;$('preview').click();await until(()=>requests.filter(r=>r.path==='plan').length===unnamedPlanCount+1&&!$('preview').disabled,'unnamed numbering preview');
+  const unnamedRequest=requests.filter(r=>r.path==='plan').at(-1).body;assert.equal(unnamedRequest.NumberName,'');assert.equal(unnamedRequest.NumberTemplate,'{number} - ');assert.equal(unnamedRequest.StartNumber,29);
+  await switchTool('dedupe');assert.equal($('dedupePanel').hidden,false);assert.equal($('batchWorkspace').hidden,true);assert.equal($('previewSection').hidden,true);assert.equal($('logsSection').hidden,true);
+  assert.equal($('dedupeDownloadHelp').hidden,false);assert.equal($('launchDedupe').disabled,true);assert.match($('description').textContent,/视频和图片/);assert.match($('dedupeDownloadHelp').textContent,/GUI-win-x64\.zip/);
+  input('DedupeProgram','C:/apps/VDF/VDF.GUI.exe');await until(()=>!$('launchDedupe').disabled,'dedupe GUI selected');assert.equal($('dedupeDownloadHelp').hidden,true);
+  $('detectDedupe').click();await until(()=>!$('detectDedupe').disabled&&!$('launchDedupe').disabled,'auto-find retains valid custom program');assert.equal($('DedupeProgram').value,'C:/apps/VDF/VDF.GUI.exe');
+  const dedupePlans=requests.filter(r=>r.path==='plan').length;$('launchDedupe').click();await until(()=>$('dedupeMessage').textContent.includes('已发送启动请求'),'dedupe launch');
+  assert.equal(requests.filter(r=>r.path==='dedupe-open').at(-1).body.Path,'C:/apps/VDF/VDF.GUI.exe');assert.equal(requests.filter(r=>r.path==='plan').length,dedupePlans);
+  const dedupeSaved=saved.filter(c=>c.Tool==='dedupe').at(-1);assert.equal(dedupeSaved.DedupeProgram,'C:/apps/VDF/VDF.GUI.exe');assert.equal('Root' in dedupeSaved,false);
+  await switchTool('format');assert.equal($('batchWorkspace').hidden,false);assert.equal($('previewSection').hidden,false);assert.equal($('dedupePanel').hidden,true);
+  await switchTool('dedupe');assert.equal($('DedupeProgram').value,'C:/apps/VDF/VDF.GUI.exe');assert.equal($('launchDedupe').disabled,false);
   assert.equal(failures.length,0,failures.map(String).join('\n'));dom.window.close();
-  console.log('PASS: tool-scoped dependencies, download links, missing-program guidance, presets, output isolation, independent settings, conflict blocking, directory numbering from 099, restart persistence');
+  const fallback=createUI(15135,false),fd=fallback.window.document;
+  for(const id of ['ArchivePassword','ExtractPassword','PasswordValue'])assert.equal(fd.getElementById(id).type,'password');
+  fd.getElementById('toggleExtractPassword').click();assert.equal(fd.getElementById('ExtractPassword').type,'text');fd.getElementById('toggleExtractPassword').click();assert.equal(fd.getElementById('ExtractPassword').type,'password');
+  await delay(100);fallback.window.close();
+  console.log('PASS: tool-scoped dependencies, download links, missing-program guidance, presets, output isolation, independent settings, conflict blocking, directory numbering from 099, 7-Zip extraction, shared password management, optional duplicate-finder launcher, independent settings, restart persistence');
 })().catch(e=>{console.error(e);process.exitCode=1;setTimeout(()=>process.exit(1),100)});

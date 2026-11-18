@@ -27,3 +27,7 @@ coverage.out
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Current-user encrypted password vault
+passwords.dat
+.passwords-*

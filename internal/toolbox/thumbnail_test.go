@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"image"
+	_ "image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,6 +12,57 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestThumbnailTimeLabelCentering(t *testing.T) {
+	if os.Getenv("TOOLBOX_INTEGRATION") != "1" {
+		t.Skip("requires ImageMagick and font")
+	}
+	c := integrationConfig(t)
+	fonts := []string{c.Font}
+	if font := filepath.Join(os.Getenv("SystemRoot"), "Fonts", "segoeui.ttf"); regularFile(font) {
+		fonts = append(fonts, font)
+	}
+	for _, font := range fonts {
+		for _, point := range []int{10, 16, 18} {
+			for _, text := range []string{"00:00:00", "01:23:45", "123:59:59"} {
+				target := filepath.Join(t.TempDir(), "label.png")
+				args := []string{"-font", font, "-encoding", "UTF-8"}
+				args = append(args, thumbnailTimeLabelArgs(text, point)...)
+				args = append(args, target)
+				if _, e := runWithFont(context.Background(), c.Magick, args...); e != nil {
+					t.Fatal(e)
+				}
+				f, e := os.Open(target)
+				if e != nil {
+					t.Fatal(e)
+				}
+				img, _, e := image.Decode(f)
+				f.Close()
+				if e != nil {
+					t.Fatal(e)
+				}
+				bounds := img.Bounds()
+				ink := image.Rectangle{Min: bounds.Max, Max: bounds.Min}
+				for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+					for x := bounds.Min.X; x < bounds.Max.X; x++ {
+						r, g, b, _ := img.At(x, y).RGBA()
+						if r+g+b > 0 {
+							ink.Min.X = min(ink.Min.X, x)
+							ink.Min.Y = min(ink.Min.Y, y)
+							ink.Max.X = max(ink.Max.X, x+1)
+							ink.Max.Y = max(ink.Max.Y, y+1)
+						}
+					}
+				}
+				left, right := ink.Min.X-bounds.Min.X, bounds.Max.X-ink.Max.X
+				top, bottom := ink.Min.Y-bounds.Min.Y, bounds.Max.Y-ink.Max.Y
+				if ink.Empty() || math.Abs(float64(left-right)) > 1 || math.Abs(float64(top-bottom)) > 1 || left < 3 || top < 2 {
+					t.Fatalf("uncentered %s at %d: margins %d,%d,%d,%d", text, point, left, right, top, bottom)
+				}
+			}
+		}
+	}
+}
 
 func TestThumbnailValidationAndWorkspaceIsolation(t *testing.T) {
 	c := DefaultConfig()

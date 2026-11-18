@@ -126,7 +126,12 @@ foreach ($asset in $manifest.Assets) {
     }
     $extract = Join-Path $stage ('extract-' + $asset.Name)
     New-Item -ItemType Directory -Path $extract,$dest -Force | Out-Null
-    & $tar -xf $archive -C $extract
+    if ($asset.Kind -eq 'sevenzip-full') {
+        $dest = Join-Path $newTools 'sevenzip'
+        $bootstrap = Join-Path $dest '7za.exe'
+        if (-not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) { throw 'Prepare 7-Zip Extra before its full runtime.' }
+        & $bootstrap x $archive ('-o'+$extract) -y -bso0
+    } else { & $tar -xf $archive -C $extract }
     if ($LASTEXITCODE -ne 0) { throw ('Extraction failed: ' + $asset.Name) }
     switch ($asset.Kind) {
         'ffmpeg' {
@@ -148,6 +153,24 @@ foreach ($asset in $manifest.Assets) {
                 # frontends are not used by this application.
                 if ($unusedFrontends -contains $child.Name) { continue }
                 Copy-Item -LiteralPath $child.FullName -Destination $dest -Recurse
+            }
+        }
+        'sevenzip' {
+            $console = Join-Path $extract 'x64\7za.exe'
+            if (-not (Test-Path -LiteralPath $console -PathType Leaf)) { throw '7-Zip x64 console is missing.' }
+            Copy-Item -LiteralPath $console -Destination (Join-Path $dest '7za.exe')
+            $licenses = @(Get-ChildItem -LiteralPath $extract -File | Where-Object { $_.Name -match '(?i)(license|copying|readme|history)' })
+            if ($licenses.Count -lt 1) { throw '7-Zip license files are missing.' }
+            foreach ($file in $licenses) {
+                $noticeName = '7za-'+$file.Name
+                Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $dest $noticeName)
+            }
+        }
+        'sevenzip-full' {
+            foreach ($name in @('7z.exe','7z.dll','License.txt','readme.txt','History.txt')) {
+                $file = Join-Path $extract $name
+                if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw ('Missing full 7-Zip file: '+$name) }
+                Copy-Item -LiteralPath $file -Destination (Join-Path $dest $name) -Force
             }
         }
         'exiftool' {

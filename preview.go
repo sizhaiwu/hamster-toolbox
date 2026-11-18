@@ -11,6 +11,35 @@ type previewRequest struct {
 	PlanID, Filter string
 	Offset, Limit  int
 }
+
+func (s *server) videoCommands(w http.ResponseWriter, r *http.Request) {
+	var req struct{ PlanID, Source string }
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	if e := json.NewDecoder(r.Body).Decode(&req); e != nil {
+		fail(w, e)
+		return
+	}
+	s.mu.Lock()
+	p, id := s.plan, s.state.PlanID
+	s.mu.Unlock()
+	if p == nil || id == "" || req.PlanID != id {
+		fail(w, fmt.Errorf("预览已更新，请重新扫描"))
+		return
+	}
+	for _, item := range p.Items {
+		if item.Source == req.Source {
+			commands, e := toolbox.VideoCommands(r.Context(), p.Config, item)
+			if e != nil {
+				fail(w, e)
+				return
+			}
+			send(w, commands)
+			return
+		}
+	}
+	fail(w, fmt.Errorf("该文件不在当前预览中"))
+}
+
 type previewPage struct {
 	PlanID               string
 	Items                []toolbox.Item

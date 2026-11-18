@@ -235,10 +235,78 @@ func TestInvalidCustomNumberingTemplates(t *testing.T) {
 	c.Tool = "number"
 	c.NumberName = "作者"
 	c.NumberStyle = "custom"
-	for _, template := range []string{"{name}", "{number}", "{name}{number}", "{name}_{number}_{other}", "../{name}_{number}", "{name}_{number}_{number}"} {
+	for _, template := range []string{"{name}", "{name}{number}", "{name}_{number}_{other}", "../{name}_{number}", "{name}_{number}_{number}"} {
 		c.NumberTemplate = template
 		if _, e := BuildPlan(context.Background(), c, quiet); e == nil {
 			t.Fatal("invalid template accepted", template)
+		}
+	}
+}
+
+func TestNumberWithoutResourceName(t *testing.T) {
+	for _, tc := range []struct{ style, template, prefix string }{
+		{"number", "", "029 -"}, {"custom", "{number} - ", "029 -"}, {"custom", "{number}", "029"},
+		{"custom", "{name} 第{number}期", "第029期"}, {"custom", "{number} - {name}", "029 -"}, {"dash", "", "NO.029"},
+	} {
+		t.Run(tc.style+tc.template, func(t *testing.T) {
+			c := DefaultConfig()
+			c.Tool = "number"
+			c.Root = t.TempDir()
+			c.NumberName = ""
+			c.NumberStyle = tc.style
+			c.NumberTemplate = tc.template
+			c.StartNumber = 29
+			file(t, filepath.Join(c.Root, "资源2 [1P-1B]", "image.jpg"), []byte("source"))
+			p, e := BuildPlan(context.Background(), c, quiet)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if len(p.Items) != 1 || filepath.Base(p.Items[0].Target) != tc.prefix+" 资源2 [1P-1B]" || p.Items[0].Conflict != "" {
+				t.Fatal(p.Items)
+			}
+			r := Execute(context.Background(), p, quiet, progress)
+			if r.Success != 1 {
+				t.Fatal(r)
+			}
+			p, e = BuildPlan(context.Background(), c, quiet)
+			if e != nil || len(p.Items) != 0 {
+				t.Fatal("rerun added a second prefix", p, e)
+			}
+			info, e := InspectNumbering(context.Background(), c)
+			if e != nil || info.Name != "" || info.NextNumber != 30 || info.Existing != 1 {
+				t.Fatal("unnamed numbering not detected", info, e)
+			}
+			file(t, filepath.Join(c.Root, "新增资源", "image.jpg"), []byte("source"))
+			p, e = BuildPlan(context.Background(), c, quiet)
+			if e != nil || len(p.Items) != 1 || !strings.Contains(p.Items[0].Conflict, "编号 29") {
+				t.Fatal("occupied unnamed number allowed", p, e)
+			}
+		})
+	}
+}
+
+func TestPureNumberingIgnoresUnusedName(t *testing.T) {
+	for _, style := range []string{"number", "custom"} {
+		c := DefaultConfig()
+		c.Tool = "number"
+		c.Root = t.TempDir()
+		c.NumberStyle = style
+		c.NumberTemplate = "{number}"
+		c.NumberName = "unused/name"
+		c.NumberKeepOriginal = false
+		c.StartNumber = 29
+		file(t, filepath.Join(c.Root, "资源", "image.jpg"), []byte("source"))
+		p, e := BuildPlan(context.Background(), c, quiet)
+		if e != nil || len(p.Items) != 1 || filepath.Base(p.Items[0].Target) != "029" {
+			t.Fatal(p, e)
+		}
+		r := Execute(context.Background(), p, quiet, progress)
+		if r.Success != 1 {
+			t.Fatal(r)
+		}
+		info, e := InspectNumbering(context.Background(), c)
+		if e != nil || info.Name != "" || info.NextNumber != 30 {
+			t.Fatal(info, e)
 		}
 	}
 }

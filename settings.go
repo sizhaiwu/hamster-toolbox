@@ -38,6 +38,21 @@ func (s *server) loadPreferences() (preferences, error) {
 		p.Workspaces["image"] = c
 	}
 	for key, c := range p.Workspaces {
+		if key == "format" && c.FormatDeleteMode == "" {
+			c.FormatDeleteMode = "recycle"
+		}
+		// Existing users retain the H.264 output compatibility of their saved jobs.
+		if key == "video" && c.VideoMode == "" {
+			c.VideoMode = "compatible"
+		}
+		if key == "video" && c.VideoAcceleration == "" {
+			c.VideoAcceleration = "auto"
+		}
+		if key == "extract" && c.ExtractDeleteMode == "" {
+			c.ExtractDeleteMode = "recycle"
+		}
+		c.ArchivePassword = ""
+		c.ExtractPassword = ""
 		p.Workspaces[key] = toolbox.RestoreDependencyPaths(c)
 	}
 	return p, nil
@@ -53,9 +68,13 @@ func (s *server) saveWorkspace(c toolbox.Config) (preferences, error) {
 	if e != nil {
 		return p, e
 	}
+	c.ArchivePassword = ""
+	c.ExtractPassword = ""
 	p.LastTool = c.Tool
 	p.Workspaces[c.Tool] = toolbox.PortableConfig(toolbox.ScopeConfig(c))
 	for key, saved := range p.Workspaces {
+		saved.ArchivePassword = ""
+		saved.ExtractPassword = ""
 		p.Workspaces[key] = toolbox.PortableConfig(saved)
 	}
 	if e = os.MkdirAll(s.dataDir, 0700); e != nil {

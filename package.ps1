@@ -50,7 +50,7 @@ try {
     foreach ($name in @('QUICKSTART.txt','THIRD-PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $repo ('release\'+$name)) -Destination $payload }
     $Version | Set-Content -LiteralPath (Join-Path $payload 'VERSION.txt') -Encoding ASCII
 
-    Write-Host '[4/6] Verifying the staged binary and all nine tools...'
+    Write-Host '[4/6] Verifying the staged binary and all eleven tools...'
     # Test a relocated Unicode path, empty profile, and system-only PATH before
     # publishing. Character codes keep this script compatible with PowerShell 5.
     $testFolder = Join-Path $stage (([string][char]0x4ED3)+([string][char]0x9F20)+' portable test')
@@ -102,7 +102,7 @@ try {
     }
     $update = Join-Path $stage 'update'
     New-Item -ItemType Directory -Path $update | Out-Null
-    foreach ($name in @('hamster-toolbox.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE')) { Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $update }
+    foreach ($name in @('hamster-toolbox.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $update }
     Copy-Item -LiteralPath (Join-Path $repo 'release\UPDATE.txt') -Destination $update
     $updateZip = Join-Path $stage ($packageName+'-update.zip')
     [IO.Compression.ZipFile]::CreateFromDirectory($update,$updateZip,[IO.Compression.CompressionLevel]::Optimal,$false)

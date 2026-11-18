@@ -32,6 +32,8 @@ func bundledDependency(base, key string) string {
 		candidates = []string{filepath.Join("imagemagick", "magick.exe"), filepath.Join("imagemagick", "bin", "magick.exe"), "magick.exe"}
 	case "Exiftool":
 		candidates = []string{filepath.Join("exiftool", "exiftool.exe"), "exiftool.exe"}
+	case "SevenZip":
+		candidates = []string{filepath.Join("sevenzip", "7z.exe"), filepath.Join("sevenzip", "7za.exe")}
 	case "Font":
 		for _, ext := range []string{".otf", ".ttf", ".ttc"} {
 			candidates = append(candidates, filepath.Join("fonts", "NotoSansCJKsc-Regular"+ext))
@@ -56,6 +58,8 @@ func dependencyField(c *Config, key string) *string {
 		return &c.Magick
 	case "Exiftool":
 		return &c.Exiftool
+	case "SevenZip":
+		return &c.SevenZip
 	case "Font":
 		return &c.Font
 	}
@@ -75,6 +79,10 @@ func portableSuffix(path string) string {
 }
 
 func dependencyPathsAt(c Config, base string, restore bool) Config {
+	if c.Tool == "dedupe" {
+		c.DedupeProgram = dedupePathAt(c.DedupeProgram, base, restore)
+		return c
+	}
 	for _, d := range RequiredDependencies(c) {
 		field := dependencyField(&c, d.Key)
 		if field == nil {
@@ -120,6 +128,11 @@ func RestoreDependencyPaths(c Config) Config {
 }
 
 func portableConfigAt(c Config, base string) Config {
+	if c.Tool == "dedupe" && filepath.IsAbs(c.DedupeProgram) && within(filepath.Join(base, "tools"), c.DedupeProgram) {
+		if rel, e := filepath.Rel(base, c.DedupeProgram); e == nil {
+			c.DedupeProgram = filepath.ToSlash(rel)
+		}
+	}
 	for _, d := range RequiredDependencies(c) {
 		field := dependencyField(&c, d.Key)
 		if field == nil || !filepath.IsAbs(*field) || !within(filepath.Join(base, "tools"), *field) {
@@ -142,6 +155,7 @@ func CheckPortableBundle(ctx context.Context) []Dependency {
 	c := Config{Tool: "thumbnail", FFmpeg: bundledDependency(base, "FFmpeg"), FFprobe: bundledDependency(base, "FFprobe"), Magick: bundledDependency(base, "Magick"), Font: bundledDependency(base, "Font")}
 	deps := CheckDependencies(ctx, c, true)
 	deps = append(deps, CheckDependencies(ctx, Config{Tool: "exif", Exiftool: bundledDependency(base, "Exiftool")}, true)...)
+	deps = append(deps, CheckDependencies(ctx, Config{Tool: "archive", SevenZip: bundledDependency(base, "SevenZip")}, true)...)
 	runtimePath := filepath.Join(base, "tools", "imagemagick", "vcomp140.dll")
 	runtime := Dependency{Key: "OpenMP", Name: "ImageMagick OpenMP runtime", Purpose: "随包图片组件运行库", Path: runtimePath, Message: "缺少 x64 运行库，请使用完整版"}
 	if f, e := pe.Open(runtimePath); e == nil {

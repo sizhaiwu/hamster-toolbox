@@ -31,6 +31,9 @@ func makePDF(ctx context.Context, p *Plan, log func(string), progress func(int, 
 	defer os.RemoveAll(tmp)
 	pages := []string{}
 	for i, it := range p.Items {
+		if e := checkItemSafety(p, it); e != nil {
+			return e
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -59,7 +62,10 @@ func makePDF(ctx context.Context, p *Plan, log func(string), progress func(int, 
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if d.Type()&os.ModeSymlink != 0 {
+			if unsafeEntry(f, d) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			if d.IsDir() {

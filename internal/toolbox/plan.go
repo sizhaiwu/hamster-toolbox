@@ -18,31 +18,48 @@ import (
 )
 
 type Config struct {
-	ThumbnailColumns, ThumbnailRows, ThumbnailWidth, ThumbnailGap, ThumbnailQuality            int
-	ThumbnailFormat, ThumbnailBackground                                                       string
-	ThumbnailInfo, ThumbnailTime                                                               bool
-	PngMode                                                                                    string
-	PngQuality                                                                                 int
-	ImageFormats                                                                               []string
-	Tool, Root, Output, Find, Replace, Prefix, Suffix, FFmpeg, FFprobe, Magick, Exiftool, Font string
-	Recursive, Files, Dirs, Regex                                                              bool
-	Quality, CRF, MinMB, MinKbps                                                               int
-	NumberName, NumberStyle, NumberOrder, NumberFilter                                         string
-	NumberTemplate                                                                             string
-	StartNumber, NumberDigits                                                                  int
-	NumberKeepOriginal                                                                         bool
-	RenameMode                                                                                 string
-	ExampleNumber, ExampleAtStart                                                              bool
+	FormatCleanOther                                                                                       bool
+	FormatDeleteMode                                                                                       string
+	ExtractDeleteMode                                                                                      string
+	ExtractDeleteSource                                                                                    bool
+	DedupeProgram                                                                                          string
+	ExtractConflict, ExtractLayout, ExtractPassword                                                        string
+	SevenZip, ArchiveMode, ArchivePassword, ArchiveExtras, ArchiveSplit, ArchiveVolume, ArchiveFirstVolume string
+	ArchiveDirPrefix, ArchiveFilePrefix                                                                    string
+	ArchiveStart, ArchiveDigits, ArchiveLevel                                                              int
+	ArchiveMarker                                                                                          bool
+	ThumbnailColumns, ThumbnailRows, ThumbnailWidth, ThumbnailGap, ThumbnailQuality                        int
+	ThumbnailFormat, ThumbnailBackground                                                                   string
+	ThumbnailInfo, ThumbnailTime                                                                           bool
+	PngMode                                                                                                string
+	PngQuality                                                                                             int
+	ImageFormats                                                                                           []string
+	Tool, Root, Output, Find, Replace, Prefix, Suffix, FFmpeg, FFprobe, Magick, Exiftool, Font             string
+	Recursive, Files, Dirs, Regex                                                                          bool
+	Quality, CRF, MinMB, MinKbps                                                                           int
+	VideoMode, VideoAcceleration                                                                           string
+	MetadataTypes                                                                                          string
+	NumberName, NumberStyle, NumberOrder, NumberFilter                                                     string
+	NumberTemplate                                                                                         string
+	StartNumber, NumberDigits                                                                              int
+	NumberKeepOriginal                                                                                     bool
+	RenameMode                                                                                             string
+	ExampleNumber, ExampleAtStart                                                                          bool
 }
 type Item struct {
+	Action                         string `json:",omitempty"`
 	Source, Target, Note, Conflict string
 	Size                           int64
 	Modified                       time.Time
 }
 type Plan struct {
-	Config  Config
-	Items   []Item
-	Created time.Time
+	formatStats map[string]directoryStats
+	safety      *planSafety
+	archives    []archiveJob
+	extracts    []extractJob
+	Config      Config
+	Items       []Item
+	Created     time.Time
 }
 
 const Images = ".jpg .jpeg .jpe .jfif .png .gif .bmp .tif .tiff .webp .heic .heif .avif .psd .ico .svg .wmf .jpg2 .dif"
@@ -82,12 +99,18 @@ func validName(n string) bool {
 	return !regexp.MustCompile("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$").MatchString(strings.ToUpper(strings.Split(n, ".")[0]))
 }
 func DefaultConfig() Config {
-	return Config{ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, CRF: 23, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
+	return Config{FormatDeleteMode: "recycle", ExtractDeleteMode: "recycle", DedupeProgram: DetectDedupeProgram(), ExtractConflict: "rename", ExtractLayout: "separate", SevenZip: detectSevenZip(), ArchiveMode: "pure", ArchiveSplit: "script", ArchiveVolume: "3g", ArchiveFirstVolume: "10k", ArchiveDirPrefix: "D_", ArchiveFilePrefix: "F_", ArchiveStart: 1, ArchiveDigits: 3, ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, MetadataTypes: "images", VideoMode: "efficient", VideoAcceleration: "auto", CRF: 18, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
 }
 func Normalize(c Config) (Config, error) {
+	if c.Tool == "dedupe" {
+		return c, errors.New("文件去重使用外部软件，请点击打开去重软件，无需扫描预览")
+	}
 	c = ResolveDependencyPaths(ScopeConfig(c))
 	if strings.TrimSpace(c.Root) == "" {
 		return c, errors.New("请选择输入目录")
+	}
+	if _, e := safePath(c.Root); e != nil {
+		return c, e
 	}
 	var e error
 	c.Root, e = filepath.Abs(c.Root)
@@ -99,9 +122,30 @@ func Normalize(c Config) (Config, error) {
 		return c, errors.New("输入目录不存在")
 	}
 	switch c.Tool {
-	case "format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail":
+	case "format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail", "archive", "extract":
 	default:
 		return c, errors.New("未知工具")
+	}
+	if c.Tool == "extract" {
+		if e := normalizeExtractOptions(&c); e != nil {
+			return c, e
+		}
+	}
+	if c.Tool == "format" {
+		if c.FormatDeleteMode == "" {
+			c.FormatDeleteMode = "recycle"
+		}
+		if c.FormatDeleteMode != "recycle" && c.FormatDeleteMode != "permanent" {
+			if c.FormatCleanOther {
+				return c, errors.New("请选择移入回收站或永久删除")
+			}
+			c.FormatDeleteMode = "recycle"
+		}
+	}
+	if c.Tool == "archive" {
+		if e := normalizeArchiveOptions(&c); e != nil {
+			return c, e
+		}
 	}
 	if c.Tool == "number" {
 		if e := validateNumberConfig(c); e != nil {
@@ -153,14 +197,33 @@ func Normalize(c Config) (Config, error) {
 	if c.Tool == "video" && (c.CRF < 0 || c.CRF > 51 || c.MinMB < 0 || c.MinKbps < 0) {
 		return c, errors.New("CRF 必须为 0–51，阈值不能为负数")
 	}
+	if c.Tool == "video" {
+		if e = normalizeVideoOptions(&c); e != nil {
+			return c, e
+		}
+	}
+	if c.Tool == "exif" {
+		if c.MetadataTypes == "" {
+			c.MetadataTypes = "images"
+		}
+		if c.MetadataTypes != "images" && c.MetadataTypes != "videos" && c.MetadataTypes != "all" {
+			return c, errors.New("请选择要清理的文件类型")
+		}
+	}
 	for _, d := range RequiredDependencies(c) {
 		if _, e = dependencyLocation(d); e != nil {
 			return c, fmt.Errorf("%s：%s。请展开“本工具需要的程序”，选择文件或查看下载步骤", d.Name, e)
 		}
 	}
-	if c.Tool == "image" || c.Tool == "video" || c.Tool == "exif" || c.Tool == "pdf" || c.Tool == "thumbnail" {
+	if c.Tool == "image" || c.Tool == "video" || c.Tool == "exif" || c.Tool == "pdf" || c.Tool == "thumbnail" || c.Tool == "archive" || c.Tool == "extract" {
 		if strings.TrimSpace(c.Output) == "" {
 			c.Output = filepath.Join(c.Root, "toolbox-output", c.Tool)
+			if c.Tool == "extract" {
+				c.Output = filepath.Join(c.Root, "解压资源")
+			}
+			if c.Tool == "archive" {
+				c.Output = filepath.Join(c.Root, "0utput_7z")
+			}
 			if c.Tool == "pdf" {
 				c.Output = filepath.Join(c.Root, "toolbox-output", "目录索引.pdf")
 			}
@@ -179,10 +242,23 @@ func Normalize(c Config) (Config, error) {
 			return c, errors.New("PDF 路径必须以 .pdf 结尾")
 		}
 	}
+	if c.Output != "" {
+		output, e := safePath(c.Output)
+		if e != nil {
+			return c, e
+		}
+		root, e := safePath(c.Root)
+		if e != nil {
+			return c, e
+		}
+		if c.Tool != "pdf" && pathContains(output, root) {
+			return c, errors.New("输出不能为输入目录或其上级（包括路径别名）")
+		}
+	}
 	return c, nil
 }
 func excluded(n string) bool {
-	return n == "toolbox-output" || n == "compress_output" || n == "exif_clear_output" || n == ".build_index_tmp" || n == ".git"
+	return n == "toolbox-output" || n == "0utput_7z" || n == "compress_output" || n == "exif_clear_output" || n == ".build_index_tmp" || n == ".git" || strings.HasPrefix(n, ".extract-") || strings.HasPrefix(n, ".packing-") || strings.HasPrefix(n, ".toolbox-")
 }
 func scan(ctx context.Context, c Config) ([]string, error) {
 	a := []string{}
@@ -196,7 +272,10 @@ func scan(ctx context.Context, c Config) ([]string, error) {
 		if p == c.Root {
 			return nil
 		}
-		if d.Type()&os.ModeSymlink != 0 {
+		if unsafeEntry(p, d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -214,10 +293,16 @@ func scan(ctx context.Context, c Config) ([]string, error) {
 	})
 	return a, e
 }
-func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
+func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 	c, e := Normalize(c)
 	if e != nil {
 		return nil, e
+	}
+	if c.Tool == "extract" {
+		return buildExtractPlan(ctx, c, log)
+	}
+	if c.Tool == "archive" {
+		return buildArchivePlan(ctx, c, log)
 	}
 	if c.Tool == "number" {
 		return buildNumberPlan(ctx, c, log)
@@ -256,9 +341,15 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 	}
 	var stats map[string]directoryStats
 	if c.Tool == "format" {
-		stats, e = measureDirectoryTree(ctx, c.Root)
+		var cleanup []Item
+		stats, cleanup, e = measureDirectoryTreeForFormat(ctx, c.Root, c.FormatCleanOther, c.FormatDeleteMode)
 		if e != nil {
 			return nil, e
+		}
+		p.Items = append(p.Items, cleanup...)
+		if c.FormatCleanOther {
+			p.formatStats = stats
+			log(fmt.Sprintf("清理预览：%d 个非媒体文件；执行前请核对文件清单", len(cleanup)))
 		}
 	}
 	for _, src := range paths {
@@ -304,8 +395,11 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				}
 			}
 			parts = append(parts, Human(size))
-			base := regexp.MustCompile("\\s*\\[(?:\\d+(?:P|V|A)-)*(?:\\d+(?:\\.\\d+)?(?:B|KB|MB|GB|TB|PB))\\]$").ReplaceAllString(name, "")
-			dst = filepath.Join(filepath.Dir(src), strings.TrimSpace(base)+" ["+strings.Join(parts, "-")+"]")
+			base := stripDirectoryStatsSuffix(name)
+			if base != "" {
+				base += " "
+			}
+			dst = filepath.Join(filepath.Dir(src), base+"["+strings.Join(parts, "-")+"]")
 			note = "媒体数量 / 总大小"
 		case "describe":
 			if s.IsDir() || !has(src, Videos+" "+Audios) {
@@ -341,7 +435,7 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				if !has(src, Videos) || s.Size() < int64(c.MinMB)*1024*1024 {
 					continue
 				}
-				m, e := probe(ctx, c.FFprobe, src)
+				v, e := probeCompressionVideo(ctx, c.FFprobe, src)
 				if e != nil {
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
@@ -350,7 +444,20 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 					log("无法读取媒体，预览中已标记：" + src)
 					continue
 				}
-				if m.Bitrate < int64(c.MinKbps)*1000 {
+				if v.Bitrate < int64(c.MinKbps)*1000 {
+					continue
+				}
+				ve := v.supported()
+				if ve != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					p.Items = append(p.Items, Item{Source: src, Conflict: ve.Error(), Note: "保留原视频", Size: s.Size(), Modified: s.ModTime()})
+					continue
+				}
+			} else if c.Tool == "exif" {
+				isVideo, isImage := has(src, metadataVideos), has(src, Images)
+				if (!isVideo && !isImage) || (isVideo && c.MetadataTypes == "images") || (isImage && c.MetadataTypes == "videos") {
 					continue
 				}
 			} else if c.Tool == "image" && !imageFormats[strings.ToLower(filepath.Ext(src))] {
@@ -377,6 +484,20 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + ".mp4"
 			}
 			note = "保留原件，输出到新目录"
+			if c.Tool == "exif" {
+				if has(src, metadataVideos) {
+					if has(src, metadataExifVideos) {
+						note = "ExifTool 清理视频标签，不重新编码；原件保留"
+					} else {
+						note = "FFmpeg 流复制清理，不重新编码；原件保留"
+					}
+				} else {
+					note = "图片元数据清理；原图保留"
+				}
+			}
+			if c.Tool == "video" {
+				note = videoPlanNote(c)
+			}
 			if c.Tool == "image" && strings.EqualFold(filepath.Ext(src), ".png") {
 				if c.PngMode == "webp-png" {
 					note = fmt.Sprintf("WebP 编码，保留原 .png 文件名，质量 %d", c.PngQuality)
@@ -405,7 +526,12 @@ func BuildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 		}
 	}
 	if c.Tool == "rename" || c.Tool == "format" {
-		sort.SliceStable(p.Items, func(i, j int) bool { return len(p.Items[i].Source) > len(p.Items[j].Source) })
+		sort.SliceStable(p.Items, func(i, j int) bool {
+			if isFormatCleanup(p.Items[i]) != isFormatCleanup(p.Items[j]) {
+				return isFormatCleanup(p.Items[i])
+			}
+			return len(p.Items[i].Source) > len(p.Items[j].Source)
+		})
 	}
 	checkPlanConflicts(p)
 	log(fmt.Sprintf("扫描完成：%d 项", len(p.Items)))
@@ -417,6 +543,9 @@ func checkPlanConflicts(p *Plan) {
 	for i := range p.Items {
 		it := &p.Items[i]
 		if it.Conflict != "" {
+			continue
+		}
+		if isFormatCleanup(*it) {
 			continue
 		}
 		key := strings.ToLower(filepath.Clean(it.Target))

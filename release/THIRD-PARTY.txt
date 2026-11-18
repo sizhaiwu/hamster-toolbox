@@ -5,7 +5,7 @@ The third-party components below retain their separate upstream licenses.
 
 Upstream component versions, download URLs, source locations and archive SHA256
 are recorded in tools-manifest.json. Original licenses and notices are preserved
-inside tools/ffmpeg, tools/imagemagick, tools/exiftool and tools/fonts.
+inside tools/ffmpeg, tools/imagemagick, tools/exiftool, tools/sevenzip and tools/fonts.
 
 FFmpeg Windows builds: https://www.gyan.dev/ffmpeg/builds/
 FFmpeg source: https://github.com/FFmpeg/FFmpeg
@@ -13,6 +13,11 @@ ImageMagick: https://imagemagick.org/
 ImageMagick source: https://github.com/ImageMagick/ImageMagick
 ExifTool: https://exiftool.org/
 ExifTool source: https://github.com/exiftool/exiftool
+7-Zip: https://www.7-zip.org/
+7-Zip source: https://github.com/ip7z/7zip
+7-Zip uses GNU LGPL/BSD licenses and the unRAR restriction for RAR code.
+See tools/sevenzip/License.txt for the full runtime and
+tools/sevenzip/7za-License.txt for the standalone 7za console.
 Noto CJK fonts: https://github.com/notofonts/noto-cjk
 Microsoft Visual C++ OpenMP runtime:
 https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files

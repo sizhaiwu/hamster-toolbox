@@ -24,6 +24,7 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 	base := executableDirectory()
 	c.FFmpeg, c.FFprobe, c.Magick = bundledDependency(base, "FFmpeg"), bundledDependency(base, "FFprobe"), bundledDependency(base, "Magick")
 	c.Exiftool, c.Font = bundledDependency(base, "Exiftool"), bundledDependency(base, "Font")
+	c.SevenZip = bundledDependency(base, "SevenZip")
 	c.Recursive = false
 	c.MinMB = 0
 	c.MinKbps = 0
@@ -57,7 +58,7 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 	if _, e = run(ctx, c.FFmpeg, "-v", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=12", "-t", "2", "-c:v", "libx264", "-crf", "1", "-pix_fmt", "yuv420p", video); e != nil {
 		return fmt.Errorf("test video: %w", e)
 	}
-	for _, tool := range []string{"format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail"} {
+	for _, tool := range []string{"format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail", "archive", "extract"} {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -69,6 +70,16 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 			return e
 		}
 		switch tool {
+		case "extract":
+			active.ExtractPassword = "SelfTestOnly!"
+			input := filepath.Join(root, "extract-input.txt")
+			e = os.WriteFile(input, []byte("extraction test"), 0600)
+			if e == nil {
+				_, e = run(ctx, active.SevenZip, "a", "-t7z", "-p"+active.ExtractPassword, "-mhe=on", filepath.Join(active.Root, "演示.7z"), input)
+			}
+		case "archive":
+			active.ArchivePassword = "SelfTestOnly!"
+			e = os.WriteFile(filepath.Join(active.Root, "中文资源!.txt"), []byte(strings.Repeat("archive test\n", 2000)), 0600)
 		case "format", "pdf":
 			e = writeImage(filepath.Join(active.Root, "中文演示", "cover.jpg"))
 		case "rename":
@@ -109,6 +120,11 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 			return fmt.Errorf("%s execution: %+v %s", tool, r, strings.Join(messages, "; "))
 		}
 		switch tool {
+		case "extract":
+			b, ie := os.ReadFile(filepath.Join(p.Items[0].Target, "extract-input.txt"))
+			if ie != nil || string(b) != "extraction test" {
+				return fmt.Errorf("extraction content check failed: %v", ie)
+			}
 		case "image":
 			info, ie := inspectImage(ctx, active.Magick, p.Items[0].Target)
 			if ie != nil || info.format != "WEBP" || info.width != 320 || info.height != 180 {

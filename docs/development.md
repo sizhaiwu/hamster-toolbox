@@ -65,6 +65,16 @@ Remove-Item Env:TOOLBOX_INTEGRATION
 
 集成测试优先使用仓库内准备的组件，也可使用 PATH 中的程序。所有样本由测试生成，读写范围是临时目录。
 
+视频专项测试使用生成的样本，覆盖三种模式、故障回退、音频重试、10-bit、VFR 时间戳、旋转、奇数尺寸、AAC 数据不变以及 HDR 跳过。具有 NVIDIA 和 Intel 核显的开发机可额外启用实际硬件编码验证（普通 CI 不要求显卡）：
+
+```powershell
+$env:TOOLBOX_INTEGRATION = '1'
+$env:TOOLBOX_HARDWARE_INTEGRATION = '1'
+go test ./internal/toolbox -run TestVideo -v
+Remove-Item Env:TOOLBOX_INTEGRATION
+Remove-Item Env:TOOLBOX_HARDWARE_INTEGRATION
+```
+
 发布构建还提供随包验证命令：
 
 ```powershell
@@ -92,3 +102,7 @@ Remove-Item Env:TOOLBOX_INTEGRATION
 提交修改前运行相关测试。增加处理能力时同步说明支持格式、输出位置和已有文件的处理方式；新增组件时同步维护下载清单与第三方说明。
 
 问题反馈请提供版本、复现步骤及经过脱敏的日志。不要把个人媒体、完整路径、私人配置或第三方二进制文件提交到源码仓库。
+
+资源打包的实际分卷、加密、解压、附加文件、取消清理和输出冲突测试：`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestArchive -count=1`。Windows PowerShell 先设置 `$env:TOOLBOX_INTEGRATION="1"`。测试仅使用临时合成资源，不读取私人脚本或媒体。
+
+解压集成测试：`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestExtract -count=1`。覆盖重名规则、加密分卷、损坏包、路径安全与原生 RAR 解码；使用合成资源，不依赖个人压缩包。Windows 账户加密密码列表由 `go test . -run TestPasswordVault` 验证。

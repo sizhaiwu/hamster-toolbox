@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -17,7 +16,29 @@ var errNotSmaller = errors.New("压缩结果未变小")
 var errImageSkipped = errors.New("图片已跳过")
 
 func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, int)) Result {
+	if e := checkPlanSafety(p); e != nil {
+		log("安全检查未通过：" + e.Error())
+		return Result{Failed: max(1, len(p.Items))}
+	}
+	for _, it := range p.Items {
+		if it.Conflict == "" {
+			if e := checkItemSafety(p, it); e != nil {
+				log("安全检查未通过：" + e.Error())
+				return Result{Failed: max(1, len(p.Items))}
+			}
+		}
+	}
+	if p.Config.Tool == "extract" {
+		return executeExtract(ctx, p, log, progress)
+	}
+	if p.Config.Tool == "archive" {
+		return executeArchive(ctx, p, log, progress)
+	}
+	if p.Config.Tool == "format" && p.Config.FormatCleanOther {
+		return executeFormat(ctx, p, log, progress)
+	}
 	r := Result{}
+	video := newVideoSession(p.Config, log)
 	total := len(p.Items)
 	if p.Config.Tool == "pdf" {
 		if e := makePDF(ctx, p, log, progress); e != nil {
@@ -45,6 +66,9 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 			continue
 		}
 		s, e := os.Stat(it.Source)
+		if e == nil {
+			e = checkItemSafety(p, it)
+		}
 		if e == nil && !s.IsDir() && (s.Size() != it.Size || !s.ModTime().Equal(it.Modified)) {
 			e = errors.New("文件已变化，请重新预览")
 		}
@@ -62,7 +86,7 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 				if p.Config.Tool == "thumbnail" {
 					log("正在生成缩略图：" + it.Source)
 				}
-				e = convert(ctx, p.Config, it)
+				e = convertWithVideo(ctx, p.Config, it, video)
 			}
 		}
 		if e != nil {
@@ -122,6 +146,9 @@ func publishContext(ctx context.Context, tmp, target string) error {
 }
 
 func publishReader(ctx context.Context, in io.Reader, target string) error {
+	if _, e := safePath(target); e != nil {
+		return e
+	}
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -143,6 +170,10 @@ func publishReader(ctx context.Context, in io.Reader, target string) error {
 	return e
 }
 func convert(ctx context.Context, c Config, it Item) error {
+	return convertWithVideo(ctx, c, it, newVideoSession(c, func(string) {}))
+}
+
+func convertWithVideo(ctx context.Context, c Config, it Item, video *videoSession) error {
 	if e := os.MkdirAll(filepath.Dir(it.Target), 0755); e != nil {
 		return e
 	}
@@ -158,13 +189,9 @@ func convert(ctx context.Context, c Config, it Item) error {
 	case "image":
 		e = compressImage(ctx, c, it.Source, tmp)
 	case "exif":
-		// Copy first, then remove metadata; ExifTool preserves image pixel data.
-		e = publishContext(ctx, it.Source, tmp)
-		if e == nil {
-			_, e = run(ctx, c.Exiftool, "-all=", "-overwrite_original", tmp)
-		}
+		e = cleanMetadata(ctx, c, it.Source, tmp)
 	case "video":
-		_, e = run(ctx, c.FFmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-n", "-i", it.Source, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-crf", strconv.Itoa(c.CRF), "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp)
+		e = video.compress(ctx, it.Source, tmp)
 	}
 	if e != nil {
 		return e

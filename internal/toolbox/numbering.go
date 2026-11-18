@@ -57,46 +57,119 @@ type numberParser func(string) (string, int, int, string, bool)
 
 // Custom templates use literal separators, not user-provided regular expressions.
 // The same template both formats new names and identifies existing numbered names.
+func numberingUsesName(c Config) bool {
+	return c.NumberStyle != "number" && (c.NumberStyle != "custom" || strings.Contains(c.NumberTemplate, "{name}"))
+}
+func numberingName(c Config) string {
+	if !numberingUsesName(c) {
+		return ""
+	}
+	return strings.TrimSpace(c.NumberName)
+}
+
+var unnamedNO = regexp.MustCompile(`(?i)^NO[. _-]*([0-9]+)(?:[^0-9]|$)`)
+var plainNumber = regexp.MustCompile(`^([0-9]+)(?:\s+-\s+.*)?$`)
+
 func numberingParser(c Config) (numberParser, error) {
+	fallback := func(s string) (string, int, int, string, bool) {
+		if p, n, d, style, ok := parseNumbered(s); ok {
+			return p, n, d, style, true
+		}
+		m := unnamedNO.FindStringSubmatch(s)
+		if c.NumberStyle == "number" && m == nil {
+			m = plainNumber.FindStringSubmatch(s)
+		}
+		if m != nil {
+			n, e := strconv.Atoi(m[1])
+			if e == nil {
+				style := c.NumberStyle
+				if style == "" || style == "custom" {
+					style = "dash"
+				}
+				return "", n, len(m[1]), style, true
+			}
+		}
+		return "", 0, 0, "", false
+	}
 	if c.NumberStyle != "custom" {
-		return parseNumbered, nil
+		return fallback, nil
 	}
 	template := c.NumberTemplate
-	if strings.Count(template, "{name}") != 1 || strings.Count(template, "{number}") != 1 {
-		return nil, fmt.Errorf("自定义模板必须各包含一次 {name} 和 {number}")
+	nameCount := strings.Count(template, "{name}")
+	if nameCount > 1 || strings.Count(template, "{number}") != 1 {
+		return nil, fmt.Errorf("自定义模板必须包含一次 {number}，{name} 可不填或使用一次")
 	}
-	literal := strings.ReplaceAll(strings.ReplaceAll(template, "{name}", ""), "{number}", "")
-	if strings.ContainsAny(literal, "{}") || literal == "" || strings.Contains(template, "{name}{number}") || strings.Contains(template, "{number}{name}") {
-		return nil, fmt.Errorf("请用空格、文字或符号分隔 {name} 与 {number}，不要使用其他占位符")
+	literal := strings.NewReplacer("{name}", "", "{number}", "").Replace(template)
+	if strings.ContainsAny(literal, "{}") || strings.Contains(template, "{name}{number}") || strings.Contains(template, "{number}{name}") {
+		return nil, fmt.Errorf("不要使用其他占位符；同时使用名称与编号时，请用文字、空格或符号分隔")
 	}
-	if !validName(strings.NewReplacer("{name}", "资源名称", "{number}", "099").Replace(template)) {
+	sample := strings.TrimSpace(strings.NewReplacer("{name}", "资源名称", "{number}", "099").Replace(template))
+	if c.NumberKeepOriginal {
+		sample += " 原目录名"
+	}
+	if !validName(sample) {
 		return nil, fmt.Errorf("自定义模板不能包含路径符号或其他非法文件名字符")
 	}
-	pattern := regexp.QuoteMeta(template)
-	pattern = strings.ReplaceAll(pattern, regexp.QuoteMeta("{name}"), "(?P<name>.+?)")
-	pattern = strings.ReplaceAll(pattern, regexp.QuoteMeta("{number}"), "(?P<number>[0-9]+)")
-	re, e := regexp.Compile("(?i)^" + pattern + "(?:\\s.*)?$")
-	if e != nil {
-		return nil, e
+	templates := []string{strings.TrimSpace(template)}
+	if nameCount == 1 {
+		unnamed := strings.TrimSpace(strings.ReplaceAll(template, "{name}", ""))
+		if strings.TrimSpace(c.NumberName) == "" {
+			// An omitted name must not capture the original directory description
+			// as the resource name in a template such as "{number} - {name}".
+			templates = append([]string{unnamed}, templates...)
+		} else {
+			templates = append(templates, unnamed)
+		}
+	}
+	var parsers []*regexp.Regexp
+	for _, t := range templates {
+		pattern := regexp.QuoteMeta(t)
+		capture := `(?P<name>.+?)`
+		if name := strings.TrimSpace(c.NumberName); name != "" {
+			capture = "(?P<name>" + regexp.QuoteMeta(name) + ")"
+		}
+		pattern = strings.ReplaceAll(pattern, regexp.QuoteMeta("{name}"), capture)
+		pattern = strings.ReplaceAll(pattern, regexp.QuoteMeta("{number}"), `(?P<number>[0-9]+)`)
+		re, e := regexp.Compile("(?i)^" + pattern + `(?:\s.*)?$`)
+		if e != nil {
+			return nil, e
+		}
+		parsers = append(parsers, re)
 	}
 	return func(s string) (string, int, int, string, bool) {
-		m := re.FindStringSubmatch(s)
-		if m != nil {
-			prefix := m[re.SubexpIndex("name")]
+		for _, re := range parsers {
+			m := re.FindStringSubmatch(s)
+			if m == nil {
+				continue
+			}
+			prefix := ""
+			if at := re.SubexpIndex("name"); at >= 0 {
+				prefix = m[at]
+			}
 			digits := m[re.SubexpIndex("number")]
 			n, e := strconv.Atoi(digits)
 			if e == nil {
 				return prefix, n, len(digits), "custom", true
 			}
 		}
-		return parseNumbered(s)
+		return fallback(s)
 	}, nil
 }
 
 func formatNumberedName(c Config, n int) string {
 	number := fmt.Sprintf("%0*d", c.NumberDigits, n)
+	if c.NumberStyle == "number" {
+		if c.NumberKeepOriginal {
+			return number + " -"
+		}
+		return number
+	}
 	if c.NumberStyle == "custom" {
-		return strings.NewReplacer("{name}", strings.TrimSpace(c.NumberName), "{number}", number).Replace(c.NumberTemplate)
+		return strings.TrimSpace(strings.NewReplacer("{name}", strings.TrimSpace(c.NumberName), "{number}", number).Replace(c.NumberTemplate))
+	}
+	name := strings.TrimSpace(c.NumberName)
+	if name == "" {
+		return "NO." + number
 	}
 	separator := " - "
 	switch c.NumberStyle {
@@ -105,9 +178,13 @@ func formatNumberedName(c Config, n int) string {
 	case "space":
 		separator = " "
 	}
-	return strings.TrimSpace(c.NumberName) + separator + "NO." + number
+	return name + separator + "NO." + number
 }
+
 func numberEntries(ctx context.Context, root string) ([]numberEntry, error) {
+	if _, e := safePath(root); e != nil {
+		return nil, e
+	}
 	if strings.TrimSpace(root) == "" {
 		return nil, fmt.Errorf("请先选择输入目录")
 	}
@@ -124,7 +201,7 @@ func numberEntries(ctx context.Context, root string) ([]numberEntry, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !d.IsDir() || d.Type()&os.ModeSymlink != 0 || excluded(d.Name()) {
+		if !d.IsDir() || unsafeEntry(filepath.Join(root, d.Name()), d) || excluded(d.Name()) {
 			continue
 		}
 		s, e := d.Info()
@@ -159,26 +236,31 @@ func InspectNumbering(ctx context.Context, c Config) (NumberInfo, error) {
 			prefixes[prefix] = v
 		}
 	}
-	name := strings.TrimSpace(c.NumberName)
-	if name == "" {
+	name := numberingName(c)
+	if name == "" && numberingUsesName(c) {
 		keys := make([]string, 0, len(prefixes))
 		for k := range prefixes {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		best := 0
+		chosen := false
 		for _, k := range keys {
 			if prefixes[k].count > best {
 				name = k
+				chosen = true
 				best = prefixes[k].count
 			}
 		}
-		if name == "" {
+		if !chosen {
 			root := filepath.Clean(c.Root)
 			name = rootIndex.ReplaceAllString(rootStatistics.ReplaceAllString(filepath.Base(root), ""), "")
 		}
 	}
 	result := NumberInfo{Name: name, Style: "dash", Digits: 3, NextNumber: 1}
+	if c.NumberStyle == "number" {
+		result.Style = "number"
+	}
 	for _, d := range entries {
 		prefix, n, width, style, ok := parse(d.name)
 		if ok {
@@ -212,10 +294,7 @@ func InspectNumbering(ctx context.Context, c Config) (NumberInfo, error) {
 }
 
 func validateNumberConfig(c Config) error {
-	if strings.TrimSpace(c.NumberName) == "" {
-		return fmt.Errorf("请填写资源名称，或点击“识别名称并续号”")
-	}
-	if !validName(c.NumberName) {
+	if name := numberingName(c); name != "" && !validName(name) {
 		return fmt.Errorf("资源名称包含不支持的字符，或名称过长")
 	}
 	if c.StartNumber < 0 || c.StartNumber > 999999999 {
@@ -224,7 +303,7 @@ func validateNumberConfig(c Config) error {
 	if c.NumberDigits < 1 || c.NumberDigits > 9 {
 		return fmt.Errorf("编号位数须为 1–9")
 	}
-	if c.NumberStyle != "dash" && c.NumberStyle != "underscore" && c.NumberStyle != "space" && c.NumberStyle != "custom" {
+	if c.NumberStyle != "dash" && c.NumberStyle != "underscore" && c.NumberStyle != "space" && c.NumberStyle != "custom" && c.NumberStyle != "number" {
 		return fmt.Errorf("请选择有效的命名样式")
 	}
 	if _, e := numberingParser(c); e != nil {
@@ -252,7 +331,7 @@ func buildNumberPlan(ctx context.Context, c Config, log func(string)) (*Plan, er
 		prefix, n, _, _, ok := parse(d.name)
 		if ok {
 			skipped++
-			if strings.EqualFold(prefix, strings.TrimSpace(c.NumberName)) {
+			if strings.EqualFold(prefix, numberingName(c)) {
 				occupied[n] = d.name
 			}
 			continue

@@ -295,11 +295,6 @@ func makeThumbnail(ctx context.Context, c Config, it Item, target string) error 
 		x := c.ThumbnailGap + (i%c.ThumbnailColumns)*(l.CellWidth+c.ThumbnailGap)
 		y := l.HeaderHeight + c.ThumbnailGap + (i/c.ThumbnailColumns)*(l.CellHeight+c.ThumbnailGap)
 		draw.Draw(canvas, image.Rect(x, y, x+l.CellWidth, y+l.CellHeight), img, img.Bounds().Min, draw.Src)
-		if c.ThumbnailTime {
-			point := min(18, max(10, l.CellWidth/12))
-			labelWidth := int(math.Ceil(float64(len(thumbnailTimestamp(seek))*point)*0.7)) + 8
-			draw.Draw(canvas, image.Rect(x+2, y+l.CellHeight-point-8, x+2+labelWidth, y+l.CellHeight-1), &image.Uniform{color.Black}, image.Point{}, draw.Src)
-		}
 		// A failed later seek must never reuse an earlier frame.
 		if e = os.Remove(frame); e != nil {
 			return e
@@ -337,11 +332,15 @@ func makeThumbnail(ctx context.Context, c Config, it Item, target string) error 
 	}
 	if c.ThumbnailTime {
 		point := min(18, max(10, l.CellWidth/12))
-		args = append(args, "-gravity", "northwest", "-interline-spacing", "0", "-pointsize", strconv.Itoa(point), "-fill", "white", "-stroke", "none")
 		for i := 0; i < count; i++ {
-			x := c.ThumbnailGap + (i%c.ThumbnailColumns)*(l.CellWidth+c.ThumbnailGap) + 4
-			y := l.HeaderHeight + c.ThumbnailGap + (i/c.ThumbnailColumns)*(l.CellHeight+c.ThumbnailGap) + l.CellHeight - point - 7
-			args = append(args, "-annotate", fmt.Sprintf("+%d+%d", x, y), thumbnailTimestamp(thumbnailSeek(m, i, count)))
+			x := c.ThumbnailGap + (i%c.ThumbnailColumns)*(l.CellWidth+c.ThumbnailGap) + 2
+			top := l.HeaderHeight + c.ThumbnailGap + (i/c.ThumbnailColumns)*(l.CellHeight+c.ThumbnailGap)
+			bottom := l.Height - (top + l.CellHeight) + 2
+			// Trim to the actual glyph bounds and add equal padding on both
+			// sides. Font bearings and baselines no longer offset the label.
+			args = append(args, "(")
+			args = append(args, thumbnailTimeLabelArgs(thumbnailTimestamp(thumbnailSeek(m, i, count)), point)...)
+			args = append(args, ")", "-gravity", "southwest", "-geometry", fmt.Sprintf("+%d+%d", x, bottom), "-compose", "over", "-composite")
 		}
 	}
 	args = append(args, "-strip", "-colorspace", "sRGB", "-quality", strconv.Itoa(c.ThumbnailQuality), target)
@@ -349,4 +348,8 @@ func makeThumbnail(ctx context.Context, c Config, it Item, target string) error 
 		return fmt.Errorf("拼图保存失败：%w", e)
 	}
 	return nil
+}
+
+func thumbnailTimeLabelArgs(text string, point int) []string {
+	return []string{"-background", "black", "-fill", "white", "-stroke", "none", "-interline-spacing", "0", "-pointsize", strconv.Itoa(point), "label:" + text, "-trim", "+repage", "-bordercolor", "black", "-border", "4x3"}
 }

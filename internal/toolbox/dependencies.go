@@ -20,7 +20,7 @@ type Dependency struct {
 
 func ToolExists(tool string) bool {
 	switch tool {
-	case "format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail":
+	case "format", "rename", "number", "describe", "exif", "pdf", "image", "video", "thumbnail", "archive", "extract", "dedupe":
 		return true
 	}
 	return false
@@ -36,13 +36,15 @@ func RequiredDependencies(c Config) []Dependency {
 	magick := Dependency{Key: "Magick", Name: "ImageMagick", Purpose: "处理图片", Path: c.Magick,
 		DownloadURL: "https://imagemagick.org/download/#windows", GuideURL: "https://imagemagick.org/download/#windows",
 		Instructions: "普通 Windows 电脑选择 x64 安装包，安装完成后点击“自动查找”。也可以解压 portable 便携版，再选择其中的 magick.exe；请保留整个程序文件夹。"}
-	exif := Dependency{Key: "Exiftool", Name: "ExifTool", Purpose: "清除图片元数据", Path: c.Exiftool,
+	exif := Dependency{Key: "Exiftool", Name: "ExifTool", Purpose: "清理图片与视频元数据", Path: c.Exiftool,
 		DownloadURL: "https://exiftool.org/", GuideURL: "https://exiftool.org/install.html#Windows",
 		Instructions: "下载 Windows 版本并解压整个压缩包，将 exiftool(-k).exe 改名为 exiftool.exe，然后在这里选择它。若压缩包中含 exiftool_files 文件夹，请与 EXE 放在一起。"}
 	font := Dependency{Key: "Font", Name: "中文字体", Purpose: "显示 PDF 目录的中文标题", Path: c.Font,
 		DownloadURL: "https://github.com/notofonts/noto-cjk/releases", GuideURL: "https://github.com/notofonts/noto-cjk",
 		Instructions: "通常会自动找到系统自带的中文字体，无需下载。未找到时，可下载 Noto CJK 的 TTF 字体，解压后选择 .ttf 或 .ttc 文件。"}
 	switch c.Tool {
+	case "archive", "extract":
+		return []Dependency{{Key: "SevenZip", Name: "7-Zip", Purpose: "使用 7-Zip 打包、解压与校验资源", Path: c.SevenZip, DownloadURL: "https://www.7-zip.org/download.html", GuideURL: "https://www.7-zip.org/", Instructions: "完整版已内置，无需安装。手动设置时，下载 Windows x64 版本并选择 7z.exe，保留同目录的 7z.dll。精简版 7za.exe 不支持 RAR。"}}
 	case "describe":
 		return []Dependency{ffprobe}
 	case "video":
@@ -50,6 +52,10 @@ func RequiredDependencies(c Config) []Dependency {
 	case "image":
 		return []Dependency{magick}
 	case "exif":
+		if c.MetadataTypes == "videos" || c.MetadataTypes == "all" {
+			ffmpeg.Purpose = "以流复制方式清理视频容器元数据"
+			return []Dependency{exif, ffmpeg, ffprobe}
+		}
 		return []Dependency{exif}
 	case "pdf":
 		return []Dependency{magick, font}
@@ -113,6 +119,9 @@ func CheckDependencies(ctx context.Context, c Config, verify bool) []Dependency 
 		if d.Key == "Exiftool" {
 			arg = "-ver"
 		}
+		if d.Key == "SevenZip" {
+			arg = "i"
+		}
 		out, e := run(checkCtx, p, arg)
 		timedOut := checkCtx.Err() != nil
 		cancel()
@@ -125,13 +134,15 @@ func CheckDependencies(ctx context.Context, c Config, verify bool) []Dependency 
 			}
 			continue
 		}
-		version := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+		version := strings.TrimSpace(strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0])
 		correct := false
 		switch d.Key {
 		case "FFmpeg":
 			correct = strings.HasPrefix(strings.ToLower(version), "ffmpeg version")
 		case "FFprobe":
 			correct = strings.HasPrefix(strings.ToLower(version), "ffprobe version")
+		case "SevenZip":
+			correct = strings.Contains(version, "7-Zip")
 		case "Magick":
 			correct = strings.Contains(version, "ImageMagick")
 		case "Exiftool":
@@ -155,6 +166,24 @@ func CheckDependencies(ctx context.Context, c Config, verify bool) []Dependency 
 func ScopeConfig(c Config) Config {
 	r := Config{Tool: c.Tool, Root: c.Root, Recursive: c.Recursive}
 	switch c.Tool {
+	case "format":
+		r.FormatCleanOther, r.FormatDeleteMode = c.FormatCleanOther, c.FormatDeleteMode
+	case "dedupe":
+		return Config{Tool: c.Tool, DedupeProgram: c.DedupeProgram}
+	case "extract":
+		r.Output, r.SevenZip = c.Output, c.SevenZip
+		r.ExtractConflict, r.ExtractLayout, r.ExtractPassword = c.ExtractConflict, c.ExtractLayout, c.ExtractPassword
+		r.ExtractDeleteSource = c.ExtractDeleteSource
+		r.ExtractDeleteMode = c.ExtractDeleteMode
+	case "archive":
+		r.Output, r.SevenZip = c.Output, c.SevenZip
+		r.Files, r.Dirs = c.Files, c.Dirs
+		r.ArchiveMode, r.ArchivePassword, r.ArchiveExtras = c.ArchiveMode, c.ArchivePassword, c.ArchiveExtras
+		r.ArchiveSplit, r.ArchiveVolume, r.ArchiveFirstVolume = c.ArchiveSplit, c.ArchiveVolume, c.ArchiveFirstVolume
+		r.ArchiveDirPrefix, r.ArchiveFilePrefix = c.ArchiveDirPrefix, c.ArchiveFilePrefix
+		r.ArchiveStart, r.ArchiveDigits, r.ArchiveLevel = c.ArchiveStart, c.ArchiveDigits, c.ArchiveLevel
+		r.ArchiveMarker = c.ArchiveMarker
+		r.Recursive = false
 	case "thumbnail":
 		r.Output, r.FFmpeg, r.FFprobe, r.Magick = c.Output, c.FFmpeg, c.FFprobe, c.Magick
 		r.ThumbnailColumns, r.ThumbnailRows = c.ThumbnailColumns, c.ThumbnailRows
@@ -198,8 +227,13 @@ func ScopeConfig(c Config) Config {
 	case "exif":
 		r.Output = c.Output
 		r.Exiftool = c.Exiftool
+		r.MetadataTypes = c.MetadataTypes
+		if c.MetadataTypes == "videos" || c.MetadataTypes == "all" {
+			r.FFmpeg, r.FFprobe = c.FFmpeg, c.FFprobe
+		}
 	case "video":
 		r.Output = c.Output
+		r.VideoMode, r.VideoAcceleration = c.VideoMode, c.VideoAcceleration
 		r.FFmpeg = c.FFmpeg
 		r.FFprobe = c.FFprobe
 		r.CRF = c.CRF
@@ -255,4 +289,11 @@ func detectFont() string {
 		}
 	}
 	return ""
+}
+
+func detectSevenZip() string {
+	if p := detectProgram("7z", "sevenzip"); p != "" {
+		return p
+	}
+	return detectProgram("7za", "sevenzip")
 }

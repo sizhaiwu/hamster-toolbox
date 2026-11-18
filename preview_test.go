@@ -52,3 +52,13 @@ func TestPreviewPaginationAndFilteringAcrossFullPlan(t *testing.T) {
 		t.Fatal("summary mutated server state")
 	}
 }
+
+func TestVideoCommandRequiresCurrentPlanMembership(t *testing.T) {
+	s := &server{token: "test-session", plan: &toolbox.Plan{Config: toolbox.Config{Tool: "video"}, Items: []toolbox.Item{{Source: "allowed", Conflict: "skip"}}}, state: state{PlanID: "current"}}
+	for _, body := range []map[string]string{{"PlanID": "stale", "Source": "allowed"}, {"PlanID": "current", "Source": "outside"}, {"PlanID": "current", "Source": "allowed"}} {
+		w := requestAPI(t, s, "/api/video-commands", body)
+		if w.Code != 400 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}

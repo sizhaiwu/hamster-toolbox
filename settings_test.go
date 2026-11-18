@@ -9,9 +9,100 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestArchivePasswordIsNeverPersisted(t *testing.T) {
+	s := &server{dataDir: t.TempDir()}
+	c := toolbox.DefaultConfig()
+	c.Tool = "archive"
+	c.ArchivePassword = "Private-Test-Secret!"
+	c.ArchiveVolume = "500m"
+	if _, e := s.saveWorkspace(c); e != nil {
+		t.Fatal(e)
+	}
+	b, e := os.ReadFile(filepath.Join(s.dataDir, "settings.json"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if strings.Contains(string(b), c.ArchivePassword) {
+		t.Fatal("password persisted")
+	}
+	p, e := s.loadPreferences()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if p.Workspaces["archive"].ArchivePassword != "" || p.Workspaces["archive"].ArchiveVolume != "500m" {
+		t.Fatal("settings wrong")
+	}
+	// Also strip stale passwords from an older or manually edited settings file.
+	p.Workspaces["archive"] = c
+	b, e = json.Marshal(p)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(s.dataDir, "settings.json"), b, 0600); e != nil {
+		t.Fatal(e)
+	}
+	p, e = s.loadPreferences()
+	if e != nil || p.Workspaces["archive"].ArchivePassword != "" {
+		t.Fatal("stale password returned", e)
+	}
+	if c.ArchivePassword != "Private-Test-Secret!" {
+		t.Fatal("live task password modified")
+	}
+}
+
+func TestTemporaryExtractPasswordIsNeverPersisted(t *testing.T) {
+	s := &server{dataDir: t.TempDir()}
+	c := toolbox.DefaultConfig()
+	c.Tool = "extract"
+	c.ExtractPassword = "Extract-Secret-Only!"
+	if _, e := s.saveWorkspace(c); e != nil {
+		t.Fatal(e)
+	}
+	b, e := os.ReadFile(filepath.Join(s.dataDir, "settings.json"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if strings.Contains(string(b), c.ExtractPassword) {
+		t.Fatal("temporary extraction password persisted")
+	}
+	p, e := s.loadPreferences()
+	if e != nil || p.Workspaces["extract"].ExtractPassword != "" || p.Workspaces["extract"].ExtractConflict != "rename" {
+		t.Fatal("extraction settings wrong", e)
+	}
+}
+
+func TestExtractDeleteModeMigratesToRecycle(t *testing.T) {
+	s := &server{dataDir: t.TempDir()}
+	old := preferences{Version: 1, LastTool: "extract", Workspaces: map[string]toolbox.Config{"extract": {Tool: "extract", ExtractDeleteSource: true}}}
+	b, e := json.Marshal(old)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(s.dataDir, "settings.json"), b, 0600); e != nil {
+		t.Fatal(e)
+	}
+	p, e := s.loadPreferences()
+	if e != nil {
+		t.Fatal(e)
+	}
+	c := p.Workspaces["extract"]
+	if !c.ExtractDeleteSource || c.ExtractDeleteMode != "recycle" {
+		t.Fatal("legacy cleanup did not adopt recoverable default")
+	}
+	c.ExtractDeleteMode = "permanent"
+	if _, e = s.saveWorkspace(c); e != nil {
+		t.Fatal(e)
+	}
+	p, e = s.loadPreferences()
+	if e != nil || p.Workspaces["extract"].ExtractDeleteMode != "permanent" {
+		t.Fatal("explicit cleanup preference not preserved", e)
+	}
+}
 
 func TestRetiredCompressionSettingsAreMigrated(t *testing.T) {
 	for _, tc := range []struct {
@@ -46,7 +137,9 @@ func TestRetiredCompressionSettingsAreMigrated(t *testing.T) {
 			}
 			expected := original.Workspaces["image"]
 			expected.ImageFormats = tc.want
-			if !reflect.DeepEqual(image, expected) || !reflect.DeepEqual(got.Workspaces["video"], original.Workspaces["video"]) {
+			expectedVideo := original.Workspaces["video"]
+			expectedVideo.VideoMode, expectedVideo.VideoAcceleration = "compatible", "auto"
+			if !reflect.DeepEqual(image, expected) || !reflect.DeepEqual(got.Workspaces["video"], expectedVideo) {
 				t.Fatal("other settings changed", got)
 			}
 			if _, e = s.saveWorkspace(image); e != nil {
@@ -68,7 +161,7 @@ func TestWorkspaceSettingsSurviveRestart(t *testing.T) {
 	dir := t.TempDir()
 	s := &server{dataDir: dir}
 	image := toolbox.Config{Tool: "image", Root: "C:/photos", Output: "C:/small-photos", Quality: 75, Magick: "C:/image/magick.exe", FFmpeg: "unused", ImageFormats: []string{".png"}, PngMode: "webp-png", PngQuality: 92}
-	video := toolbox.Config{Tool: "video", Root: "D:/videos", Output: "D:/small-videos", CRF: 28, FFmpeg: "D:/video/ffmpeg.exe", FFprobe: "D:/video/ffprobe.exe"}
+	video := toolbox.Config{Tool: "video", Root: "D:/videos", Output: "D:/small-videos", CRF: 28, VideoMode: "archive", VideoAcceleration: "intel", FFmpeg: "D:/video/ffmpeg.exe", FFprobe: "D:/video/ffprobe.exe"}
 	for _, c := range []toolbox.Config{image, video, image} {
 		if _, e := s.saveWorkspace(c); e != nil {
 			t.Fatal(e)
@@ -91,7 +184,7 @@ func TestWorkspaceSettingsSurviveRestart(t *testing.T) {
 	if c := p.Workspaces["image"]; c.PngMode != "webp-png" || c.PngQuality != 92 {
 		t.Fatal(c)
 	}
-	if c := p.Workspaces["video"]; c.Output != video.Output || c.CRF != 28 || c.FFmpeg != video.FFmpeg || c.Magick != "" {
+	if c := p.Workspaces["video"]; c.Output != video.Output || c.CRF != 28 || c.VideoMode != "archive" || c.VideoAcceleration != "intel" || c.FFmpeg != video.FFmpeg || c.Magick != "" {
 		t.Fatal(c)
 	}
 }
@@ -177,6 +270,59 @@ func TestProgramPickerOnlyListsRelevantFiles(t *testing.T) {
 	if len(listing.Files) != 1 || filepath.Base(listing.Files[0]) != "program.exe" {
 		t.Fatal(listing)
 	}
+	w = requestAPI(t, s, "/api/browse", map[string]any{"Path": dir, "Kind": "file"})
+	if e := json.Unmarshal(w.Body.Bytes(), &listing); e != nil || len(listing.Files) != 3 {
+		t.Fatal("extra-file picker omitted files", e, listing)
+	}
+}
+
+func TestArchiveExecutionRecordOmitsPasswordIntegration(t *testing.T) {
+	if os.Getenv("TOOLBOX_INTEGRATION") == "" {
+		t.Skip("set TOOLBOX_INTEGRATION=1")
+	}
+	c := toolbox.DefaultConfig()
+	c.Tool = "archive"
+	c.Root = t.TempDir()
+	c.SevenZip, _ = filepath.Abs("tools/sevenzip/7za.exe")
+	c.ArchivePassword = "Record-Secret!"
+	c.ArchiveSplit = "none"
+	if e := os.WriteFile(filepath.Join(c.Root, "test.txt"), []byte("resource"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	p, e := toolbox.BuildPlan(context.Background(), c, func(string) {})
+	if e != nil {
+		t.Fatal(e)
+	}
+	s := &server{token: "test-session", dataDir: t.TempDir(), plan: p, state: state{Status: "ready", PlanID: "archive-plan", Tool: "archive", Total: len(p.Items), Items: p.Items}}
+	w := requestAPI(t, s, "/api/execute", map[string]any{"PlanID": "archive-plan"})
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		files, _ := filepath.Glob(filepath.Join(s.dataDir, "*.json"))
+		if len(files) > 0 {
+			b, e := os.ReadFile(files[0])
+			var record struct {
+				State state
+				Plan  toolbox.Plan
+			}
+			if e == nil && json.Unmarshal(b, &record) == nil {
+				if strings.Contains(string(b), c.ArchivePassword) || record.Plan.Config.ArchivePassword != "" {
+					t.Fatal("record leaked password")
+				}
+				if record.State.Result.Success != 1 {
+					t.Fatal(record.State)
+				}
+				if p.Config.ArchivePassword != c.ArchivePassword {
+					t.Fatal("record redaction changed live task")
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("execution record not written")
 }
 
 func TestBuiltinPreviewAPI(t *testing.T) {
@@ -363,5 +509,31 @@ func TestExampleRenameSettingsSurviveRestart(t *testing.T) {
 	p, e := toolbox.BuildPlan(context.Background(), restored, func(string) {})
 	if e != nil || len(p.Items) != 1 || filepath.Base(p.Items[0].Target) != "新名称_002 资源" {
 		t.Fatal(p, e)
+	}
+}
+
+func TestFormatCleanupSettingsSurviveRestart(t *testing.T) {
+	c := toolbox.DefaultConfig()
+	c.Tool, c.FormatCleanOther, c.FormatDeleteMode = "format", true, "permanent"
+	s := &server{dataDir: t.TempDir()}
+	if _, e := s.saveWorkspace(c); e != nil {
+		t.Fatal(e)
+	}
+	restarted := &server{dataDir: s.dataDir}
+	prefs, e := restarted.loadPreferences()
+	if e != nil {
+		t.Fatal(e)
+	}
+	got := prefs.Workspaces["format"]
+	if !got.FormatCleanOther || got.FormatDeleteMode != "permanent" {
+		t.Fatal(got)
+	}
+	c.Tool = "rename"
+	if _, e := s.saveWorkspace(c); e != nil {
+		t.Fatal(e)
+	}
+	prefs, e = restarted.loadPreferences()
+	if e != nil || prefs.Workspaces["rename"].FormatCleanOther || prefs.Workspaces["rename"].FormatDeleteMode != "" {
+		t.Fatal(prefs, e)
 	}
 }

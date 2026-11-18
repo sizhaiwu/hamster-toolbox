@@ -36,13 +36,14 @@ type state struct {
 	Actionable, Conflicts int
 }
 type server struct {
-	mu         sync.Mutex
-	state      state
-	plan       *toolbox.Plan
-	cancel     context.CancelFunc
-	token      string
-	dataDir    string
-	settingsMu sync.Mutex
+	mu          sync.Mutex
+	state       state
+	plan        *toolbox.Plan
+	cancel      context.CancelFunc
+	token       string
+	dataDir     string
+	settingsMu  sync.Mutex
+	passwordsMu sync.Mutex
 }
 
 func (s *server) line(m string) {
@@ -82,6 +83,12 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
+	case "/api/dedupe-info", "/api/dedupe-open":
+		s.dedupeAPI(w, r)
+	case "/api/passwords", "/api/password-get", "/api/password-save", "/api/password-delete":
+		s.passwordAPI(w, r)
+	case "/api/video-commands":
+		s.videoCommands(w, r)
 	case "/api/info":
 		send(w, appInfo())
 	case "/api/defaults":
@@ -186,7 +193,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 				dirs = append(dirs, filepath.Join(p, d.Name()))
 			} else if d.Type()&os.ModeSymlink == 0 {
 				ext := strings.ToLower(filepath.Ext(d.Name()))
-				if req.Kind == "program" && ext == ".exe" || req.Kind == "font" && (ext == ".ttf" || ext == ".ttc" || ext == ".otf") {
+				if req.Kind == "file" || req.Kind == "program" && ext == ".exe" || req.Kind == "font" && (ext == ".ttf" || ext == ".ttc" || ext == ".otf") {
 					files = append(files, filepath.Join(p, d.Name()))
 				}
 			}
@@ -279,10 +286,13 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			snapshot := s.state
 			s.mu.Unlock()
 			os.MkdirAll(s.dataDir, 0755)
+			recordPlan := *p
+			recordPlan.Config.ArchivePassword = ""
+			recordPlan.Config.ExtractPassword = ""
 			data, _ := json.MarshalIndent(struct {
 				State state
 				Plan  *toolbox.Plan
-			}{snapshot, p}, "", "  ")
+			}{snapshot, &recordPlan}, "", "  ")
 			if e := os.WriteFile(filepath.Join(s.dataDir, time.Now().Format("20060102-150405")+"-"+randomID()[:6]+".json"), data, 0644); e != nil {
 				s.line("日志保存失败：" + e.Error())
 			}
@@ -370,6 +380,7 @@ func main() {
 			*dataDir = filepath.Join(filepath.Dir(exe), "data")
 		}
 	}
+	toolbox.ProtectDataDirectory(*dataDir)
 	s := &server{token: randomID(), dataDir: *dataDir, state: state{Status: "idle", Logs: []string{}, Items: []toolbox.Item{}}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", s.guard(s.api))
