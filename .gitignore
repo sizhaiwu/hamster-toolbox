@@ -10,6 +10,11 @@
 *.7z
 *.partial
 
+# Intentionally public synthetic archives for hands-on samples
+!/samples/assets/plain.zip
+!/samples/assets/second.zip
+!/samples/assets/encrypted.7z
+
 # Local development
 node_modules/
 coverage/

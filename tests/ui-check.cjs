@@ -41,7 +41,8 @@ function createUI(port, supportsMask = true) {
     else if(path==='password-get') value={Password:passwordVault.find(x=>x.ID===body.ID).Password};
     else if(path==='password-save') {const at=passwordVault.findIndex(x=>x.ID===body.ID);const record={...body,ID:body.ID||'test-password-'+passwordVault.length};if(at>=0)passwordVault[at]=record;else passwordVault.push(record);value={ok:true};}
     else if(path==='password-delete') {passwordVault.splice(passwordVault.findIndex(x=>x.ID===body.ID),1);value={ok:true};}
-    else if(path==='video-commands') value=[{Label:'hevc_nvenc',PowerShell:"& 'ffmpeg.exe' '-i' 'source.mp4' 'target.mp4'"},{Label:'libx265（备用）',PowerShell:"& 'ffmpeg.exe' '-c:v' 'libx265' 'target.mp4'"}];
+    else if(path==='cli-commands') value={Preview:'toolbox cli '+body.Tool,Execute:'toolbox cli '+body.Tool+' --execute',Notice:'PowerShell 命令，仅预览默认不执行'};
+    else if(path==='video-commands'||path==='native-commands') value=[{Label:'hevc_nvenc',PowerShell:"& 'ffmpeg.exe' '-i' 'source.mp4' 'target.mp4'"},{Label:'libx265（备用）',PowerShell:"& 'ffmpeg.exe' '-c:v' 'libx265' 'target.mp4'"}];
     else if(path==='info') value={Name:'仓鼠工具箱',Version:'0.1.0'};
     else if(path==='settings') value=storage;
     else if(path==='number-info') value={Name:'Sample作者',Style:body.NumberStyle==='custom'?'custom':'dash',MaxNumber:98,NextNumber:99,Digits:3,Existing:98,Pending:100};
@@ -90,6 +91,8 @@ function createUI(port, supportsMask = true) {
   assert.equal($('dependencies').hidden,true);assert.equal($('FFmpeg'),null);
   assert.equal($('CRF').disabled,true);assert.equal($('MinMB').disabled,true);
   input('Root','E:/测试输入');
+  $('showCLI').click();await until(()=>$('cliDialog').open&&!$('copyCLI').disabled,'CLI command dialog');assert.equal($('cliCode').value,'toolbox cli format');
+  $('cliAction').value='Execute';$('cliAction').dispatchEvent(new w.Event('change'));$('copyCLI').click();await until(()=>copiedCommand==='toolbox cli format --execute','copy execute CLI');$('closeCLI').click();assert.equal($('cliCode').value,'');
   planMode='zero';let planCount=requests.filter(r=>r.path==='plan').length;
   $('preview').click();
   await until(()=>requests.filter(r=>r.path==='plan').length===planCount+1&&$('message').textContent.includes('没有需要修改'),'native format click and empty feedback');

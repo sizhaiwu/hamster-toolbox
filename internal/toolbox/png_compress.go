@@ -114,11 +114,11 @@ func compressImage(ctx context.Context, c Config, source, target string) error {
 		return fmt.Errorf("%w：%s", errImageSkipped, reason)
 	}
 	if !strings.EqualFold(filepath.Ext(source), ".png") {
-		_, e := run(ctx, c.Magick, source, "-auto-orient", "-quality", strconv.Itoa(c.Quality), target)
+		_, e := run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
 		return e
 	}
 	if c.PngMode == "" || c.PngMode == "lossless" {
-		_, e = run(ctx, c.Magick, source, "-define", "png:compression-level=9", "-define", "png:compression-filter=5", "PNG00:"+target)
+		_, e = run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
 		return e
 	}
 	original, e := inspectImage(ctx, c.Magick, source)
@@ -127,7 +127,7 @@ func compressImage(ctx context.Context, c Config, source, target string) error {
 	}
 	// Format prefix is essential when the destination deliberately still ends in .png.
 	// No resize, crop or auto-orient is applied, so stored pixel dimensions stay fixed.
-	_, e = run(ctx, c.Magick, source, "-quality", strconv.Itoa(c.PngQuality), "-define", "webp:lossless=false", "-define", "webp:method=6", "-define", "webp:alpha-quality=100", "-define", "webp:use-sharp-yuv=true", "WEBP:"+target)
+	_, e = run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
 	if e != nil {
 		return fmt.Errorf("WebP 编码失败，请确认 ImageMagick 支持 WebP：%w", e)
 	}

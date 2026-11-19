@@ -1,0 +1,72 @@
+﻿{
+    "License":  "MIT",
+    "Files":  [
+                  {
+                      "SHA256":  "6c6d9baa06fc4048c2e6e76c22f5124c7364877cf8ca012fc4db9aadadd17a45",
+                      "Name":  "color-card.jpg",
+                      "Bytes":  120972
+                  },
+                  {
+                      "SHA256":  "d406a0a8cc7e278800fb0736b6aa93191792df5f0c8aee13cb0600e78925106f",
+                      "Name":  "color-card.webp",
+                      "Bytes":  25688
+                  },
+                  {
+                      "SHA256":  "a62cfbce604725c6273396571b4e40b248f794e524daee66cb5642db504e15a9",
+                      "Name":  "color-card-near.jpg",
+                      "Bytes":  25406
+                  },
+                  {
+                      "SHA256":  "e8b8490558d47c4c1aacd539862320feee2474319fdae422a032a333711ac490",
+                      "Name":  "encrypted.7z",
+                      "Bytes":  302
+                  },
+                  {
+                      "SHA256":  "706c1bc7905cb940282a5b2d5c010cc45efbdf5855bee19588270d749b7aa1d5",
+                      "Name":  "metadata-demo.mkv",
+                      "Bytes":  1580859
+                  },
+                  {
+                      "SHA256":  "2b012ca7d52d242cf8efce016e054ed5af3ddb7c41e2cb3cc6b9bc0c72675a4e",
+                      "Name":  "motion-demo.mp4",
+                      "Bytes":  1582325
+                  },
+                  {
+                      "SHA256":  "59654e9398c625473b473f468c5b071de450ddb87e39e539c60fdfe7b113d79a",
+                      "Name":  "note.txt",
+                      "Bytes":  105
+                  },
+                  {
+                      "SHA256":  "ddacc014ef049e1d45197b2e36aa8a43fc0c04b0247ab54ad9d433946bd954b2",
+                      "Name":  "plain.zip",
+                      "Bytes":  121367
+                  },
+                  {
+                      "SHA256":  "c7b9d61fb574c81e276c88358a571d7f2117cf830e4cfc0466a19c1ac9489f3c",
+                      "Name":  "second.zip",
+                      "Bytes":  255
+                  },
+                  {
+                      "SHA256":  "5ef8342180b5881964acadd165d7523a049c9b6d4f8265346e7b0777abe27a2b",
+                      "Name":  "split.7z.001",
+                      "Bytes":  65536
+                  },
+                  {
+                      "SHA256":  "9b7f37c2897d9d5a0cf64e6a27aa7b6e4e921903dad0b8781c13de0741811450",
+                      "Name":  "split.7z.002",
+                      "Bytes":  55824
+                  },
+                  {
+                      "SHA256":  "684369f4c86a95895a1f278c3aaf3cc410af15e54955885579ba75801a4d4264",
+                      "Name":  "tone-demo.wav",
+                      "Bytes":  44200
+                  },
+                  {
+                      "SHA256":  "d6944c3666c7e3b8bd35d569d876b15c1754328454bd544cd24e8adedae2fae5",
+                      "Name":  "transparent-card.png",
+                      "Bytes":  4150096
+                  }
+              ],
+    "PublicDemoPassword":  "hamster-demo",
+    "Origin":  "Synthetic images, test pattern video, sine-wave audio and demo archives generated for Hamster Toolbox"
+}

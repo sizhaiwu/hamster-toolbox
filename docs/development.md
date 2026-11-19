@@ -10,6 +10,8 @@
 
 Go 后端仅使用标准库，前端为内嵌 HTML/CSS/JavaScript。Node.js 和 npm 仅用于开发测试，不是用户运行依赖。
 
+供普通用户动手体验的合成素材和复制脚本见 [体验素材](../samples/README.md)。素材完整性与场景覆盖检查由 `go test . -run TestSampleAssetsAndScenarioCoverage` 运行；设置 `HAMSTER_CLI_TEST_EXE` 后，`go test . -run TestSample -count=1 -v` 会在临时副本中实际执行 11 项批处理，不启动去重软件。
+
 ## 获取源码
 
 ```powershell
@@ -91,6 +93,7 @@ Remove-Item Env:TOOLBOX_HARDWARE_INTEGRATION
 | `internal/toolbox` | 扫描、改名、媒体处理及便携依赖逻辑 |
 | `web` | 内嵌界面 |
 | `tests` | 前端交互测试 |
+| `samples`、`try-samples.cmd` | 合成体验素材、各工具练习布局和独立副本准备脚本 |
 | `release` | 发布包中的快速说明和第三方说明 |
 | `docs` | 使用、开发和发布文档 |
 | `tools-manifest.json` | 外部组件版本、来源和 SHA256 |

@@ -1,0 +1,128 @@
+[
+  {
+    "Tool": "format", "Directory": "01-format", "Title": "目录统计命名",
+    "Settings": {"Recursive": true},
+    "Hint": "输出留空；先观察旧统计名如何更新。勾选清理无关文件时，目录中的说明.txt会进入清理预览，默认使用回收站。",
+    "Expected": "相册的旧统计信息刷新为实际数量和大小；内部媒体保留。",
+    "Files": [
+      {"Asset":"color-card.jpg","Path":"input/彩色相册 [70P2V-517MB]/照片01.jpg"},
+      {"Asset":"transparent-card.png","Path":"input/彩色相册 [70P2V-517MB]/照片02.png"},
+      {"Asset":"motion-demo.mp4","Path":"input/彩色相册 [70P2V-517MB]/短片.mp4"},
+      {"Asset":"tone-demo.wav","Path":"input/彩色相册 [70P2V-517MB]/音频.wav"},
+      {"Asset":"note.txt","Path":"input/彩色相册 [70P2V-517MB]/说明.txt"},
+      {"Asset":"color-card.jpg","Path":"input/另一相册 [99P]/封面.jpg"}
+    ]
+  },
+  {
+    "Tool":"rename", "Directory":"02-rename", "Title":"批量重命名",
+    "Settings":{"RenameMode":"example","Find":"test 第001期","Replace":"","Files":true,"Dirs":true,"ExampleNumber":true,"ExampleAtStart":true},
+    "Hint":"查找方式选按示例，查找填 test 第001期，替换留空；开启编号可变、只替换名称开头。",
+    "Expected":"test 第001期 彩色图.jpg → 彩色图.jpg；002、003等编号也能匹配。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/test 第001期 彩色图.jpg"},
+      {"Asset":"transparent-card.png","Path":"input/test 第002期 透明图.png"},
+      {"Asset":"color-card.jpg","Path":"input/test 第003期 相册/封面.jpg"}
+    ]
+  },
+  {
+    "Tool":"number", "Directory":"03-number", "Title":"目录批量编号",
+    "Settings":{"NumberStyle":"number","StartNumber":29,"NumberDigits":3,"NumberKeepOriginal":true,"NumberOrder":"name"},
+    "Hint":"样式选仅编号，起始29，位数3，保留原目录名。名称留空。",
+    "Expected":"资源1、资源2、资源10依次成为029 - 资源1、030 - 资源2、031 - 资源10；028 - 已有资源跳过。",
+    "Files":[
+      {"Asset":"note.txt","Path":"input/资源1/说明.txt"},
+      {"Asset":"note.txt","Path":"input/资源2/说明.txt"},
+      {"Asset":"note.txt","Path":"input/资源10/说明.txt"},
+      {"Asset":"note.txt","Path":"input/028 - 已有资源/说明.txt"}
+    ]
+  },
+  {
+    "Tool":"describe", "Directory":"04-describe", "Title":"媒体信息命名", "Settings":{},
+    "Hint":"输出留空，直接扫描。",
+    "Expected":"视频和音频名称附加真实分辨率（视频）、时长和体积，不重新编码。",
+    "Files":[
+      {"Asset":"motion-demo.mp4","Path":"input/彩色运动短片.mp4"},
+      {"Asset":"tone-demo.wav","Path":"input/短提示音.wav"}
+    ]
+  },
+  {
+    "Tool":"exif", "Directory":"05-exif", "Title":"清理元数据", "Settings":{"MetadataTypes":"all"},
+    "Hint":"类型选择图片和视频；素材含Hamster Demo等虚构标签，用于观察清理效果，不含真实作者或定位。",
+    "Expected":"toolbox-output/exif中生成副本；JPG、MP4、MKV中的演示作者、标题或注释被清理。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/带演示作者的图片.jpg"},
+      {"Asset":"motion-demo.mp4","Path":"input/带演示标题的视频.mp4"},
+      {"Asset":"metadata-demo.mkv","Path":"input/带演示标题的视频.mkv"}
+    ]
+  },
+  {
+    "Tool":"pdf", "Directory":"06-pdf", "Title":"PDF图册索引", "Settings":{},
+    "Hint":"输出留空；两个直接子目录各有一张封面。",
+    "Expected":"toolbox-output/目录索引.pdf，包含两个相册封面页。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/彩色卡片/封面.jpg"},
+      {"Asset":"transparent-card.png","Path":"input/透明几何/封面.png"}
+    ]
+  },
+  {
+    "Tool":"image", "Directory":"07-image", "Title":"压缩图片",
+    "Settings":{"ImageFormats":["jpg","png","webp"],"Quality":75,"PngMode":"webp-png","PngQuality":90},
+    "Hint":"勾选JPG、PNG、WebP；普通质量75；PNG选高画质WebP保留.png文件名、画质90。也可只勾PNG体验补压。",
+    "Expected":"toolbox-output/image中生成较小副本，尺寸不变；未选格式不处理。PNG在本设置下实际编码为WebP。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/高质量彩色图.jpg"},
+      {"Asset":"transparent-card.png","Path":"input/未优化透明图.png"},
+      {"Asset":"color-card.webp","Path":"input/静态WebP.webp"}
+    ]
+  },
+  {
+    "Tool":"video", "Directory":"08-video", "Title":"压缩视频",
+    "Settings":{"VideoMode":"efficient","VideoAcceleration":"cpu","CRF":23,"MinMB":0,"MinKbps":0},
+    "Hint":"选高效模式、仅CPU、均衡（23）。必须在高级设置把最小体积和最小码率均设为0，否则5秒小样本可能被默认阈值过滤。",
+    "Expected":"toolbox-output/video中生成更小的MP4，640×360、约5秒；原视频保留。可换不同模式或加速方式对比。",
+    "Files":[{"Asset":"motion-demo.mp4","Path":"input/五秒彩色运动.mp4"}]
+  },
+  {
+    "Tool":"thumbnail", "Directory":"09-thumbnail", "Title":"视频缩略图",
+    "Settings":{"ThumbnailColumns":3,"ThumbnailRows":3,"ThumbnailWidth":960,"ThumbnailInfo":true,"ThumbnailTime":true},
+    "Hint":"建议3行3列、总宽960；保留文件信息和画面时间。",
+    "Expected":"视频预览图/五秒彩色运动.mp4.jpg，含9格画面与时间文字。",
+    "Files":[{"Asset":"motion-demo.mp4","Path":"input/五秒彩色运动.mp4"}]
+  },
+  {
+    "Tool":"archive", "Directory":"10-archive", "Title":"打包资源（7-Zip）",
+    "Settings":{"ArchiveMode":"pure","ArchiveSplit":"none"}, "Extras":"extras/说明.txt",
+    "Hint":"先选纯净打包、不分卷；进阶体验可切换加入附加文件，并选择同级extras中的说明.txt。原脚本分卷规则也可单独试用。",
+    "Expected":"0utput_7z中生成D_001.7z和F_001.7z，并写入目录清单；原资源保留。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/演示相册/封面.jpg"},
+      {"Asset":"transparent-card.png","Path":"input/演示相册/透明图.png"},
+      {"Asset":"motion-demo.mp4","Path":"input/五秒短片.mp4"},
+      {"Asset":"note.txt","Path":"extras/说明.txt"}
+    ]
+  },
+  {
+    "Tool":"extract", "Directory":"11-extract", "Title":"解压资源",
+    "Settings":{"ExtractPassword":"hamster-demo","ExtractConflict":"rename","ExtractLayout":"separate","ExtractDeleteSource":false},
+    "Hint":"公开演示密码为hamster-demo。默认每包单独目录、重名自动重命名、保留原包；切换合并输出可以观察note.txt的重名处理。清理原包只会操作这次复制出的样本。",
+    "Expected":"解压资源下分别得到普通ZIP、加密7z、加密分卷7z的内容；分卷只显示一个入口任务。",
+    "Files":[
+      {"Asset":"plain.zip","Path":"input/plain.zip"},
+      {"Asset":"second.zip","Path":"input/second.zip"},
+      {"Asset":"encrypted.7z","Path":"input/encrypted.7z"},
+      {"Asset":"split.7z.001","Path":"input/split.7z.001"}
+    ], "IncludeSplitVolumes":true
+  },
+  {
+    "Tool":"dedupe", "Directory":"12-dedupe", "Title":"文件去重", "Settings":{},
+    "Hint":"打开Video Duplicate Finder，手动选择此输入目录扫描。包含完全相同的图片和视频，以及一张重新编码的近似图片；识别结果受外部软件阈值影响。工具箱不自动删除。",
+    "Expected":"可观察相同图片/视频的重复分组；外部软件需另行安装。",
+    "Files":[
+      {"Asset":"color-card.jpg","Path":"input/图片A.jpg"},
+      {"Asset":"color-card.jpg","Path":"input/图片A-完全副本.jpg"},
+      {"Asset":"color-card-near.jpg","Path":"input/图片A-近似副本.jpg"},
+      {"Asset":"motion-demo.mp4","Path":"input/视频A.mp4"},
+      {"Asset":"motion-demo.mp4","Path":"input/视频A-完全副本.mp4"}
+    ]
+  }
+]

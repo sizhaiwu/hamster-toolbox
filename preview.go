@@ -28,7 +28,13 @@ func (s *server) videoCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range p.Items {
 		if item.Source == req.Source {
-			commands, e := toolbox.VideoCommands(r.Context(), p.Config, item)
+			var commands []toolbox.VideoCommand
+			var e error
+			if r.URL.Path == "/api/native-commands" {
+				commands, e = toolbox.NativeCommands(r.Context(), p.Config, item)
+			} else {
+				commands, e = toolbox.VideoCommands(r.Context(), p.Config, item)
+			}
 			if e != nil {
 				fail(w, e)
 				return

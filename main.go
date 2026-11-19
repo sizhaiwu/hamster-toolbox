@@ -83,11 +83,13 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
+	case "/api/cli-commands":
+		s.cliCommandsAPI(w, r)
 	case "/api/dedupe-info", "/api/dedupe-open":
 		s.dedupeAPI(w, r)
 	case "/api/passwords", "/api/password-get", "/api/password-save", "/api/password-delete":
 		s.passwordAPI(w, r)
-	case "/api/video-commands":
+	case "/api/video-commands", "/api/native-commands":
 		s.videoCommands(w, r)
 	case "/api/info":
 		send(w, appInfo())
@@ -322,6 +324,9 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "cli" {
+		os.Exit(cliMain(os.Args[2:]))
+	}
 	port := flag.Int("port", 0, "本地监听端口，0 为自动分配")
 	noOpen := flag.Bool("no-open", false, "不自动打开浏览器")
 	dataDir := flag.String("data", "", "任务日志目录")

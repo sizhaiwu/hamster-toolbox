@@ -110,6 +110,15 @@ function showMessage(text, error = false) {
   $('message').textContent = text;
   $('message').classList.toggle('error', error);
 }
+let cliCommandSet = null;
+$('showCLI').onclick = async () => {
+  $('cliCode').value='';$('cliMessage').textContent='';$('cliNotice').textContent='正在生成命令…';$('cliAction').value='Preview';$('copyCLI').disabled=true;cliCommandSet=null;$('cliDialog').showModal();
+  try {cliCommandSet=await api('cli-commands',config());$('cliNotice').textContent=cliCommandSet.Notice;$('cliCode').value=cliCommandSet.Preview;$('copyCLI').disabled=false;}
+  catch(e){$('cliMessage').textContent=e.message;}
+};
+$('cliAction').onchange=()=>{if(cliCommandSet)$('cliCode').value=cliCommandSet[$('cliAction').value];$('cliMessage').textContent='';};
+$('closeCLI').onclick=()=>{$('cliDialog').close();$('cliCode').value='';cliCommandSet=null;};
+$('copyCLI').onclick=async()=>{try{await navigator.clipboard.writeText($('cliCode').value);$('cliMessage').textContent='已复制，请粘贴到 PowerShell 执行。';}catch(e){$('cliCode').select();$('cliMessage').textContent='请按 Ctrl+C 复制选中的命令。';}};
 function invalidate() { planID = ''; lastActionError = ''; showMessage(''); updateActions(); }
 function setSettingsStatus(text,bad=false) { for (const id of ['settingsStatus','dedupeSettingsStatus']) {$(id).textContent=text;$(id).classList.toggle('bad',bad);} }
 function queueSave(snapshot) {
@@ -532,7 +541,7 @@ function renderItems(items, total, status) {
     detail.className = 'preview-result-detail'; detail.textContent = item.Conflict || item.Note || '可以执行'; result.append(badge, detail);
     tr.append(comparison, result);
     tr.lastChild.className = item.Conflict ? 'bad' : 'ok';
-    if (tool === 'video' && !item.Conflict && previewPlan) comparison.append(videoCommandDetails(item, previewPlan));
+    if (['video','image','describe','exif','archive','extract'].includes(tool) && !item.Conflict && previewPlan) comparison.append(videoCommandDetails(item, previewPlan));
     $('items').append(tr);
   }
   $('previewCount').textContent = total ? '共 ' + total + ' 项' : '';
@@ -604,20 +613,21 @@ function previewComparison(item) {
 }
 function videoCommandDetails(item, id) {
   const details = document.createElement('details'); details.className = 'video-command';
-  const summary = document.createElement('summary'); summary.textContent = '查看 / 复制压缩命令';
+  const summary = document.createElement('summary'); summary.textContent = tool==='video' ? '查看 / 复制压缩命令' : '查看 / 复制原生命令（高级）';
   const message = document.createElement('p'); message.className = 'hint'; message.setAttribute('role', 'status');
   const selector = document.createElement('select'); selector.setAttribute('aria-label', '选择压缩命令'); selector.hidden = true;
   const code = document.createElement('textarea'); code.readOnly = true; code.rows = 5; code.hidden = true; code.setAttribute('aria-label', 'PowerShell 压缩命令'); code.spellcheck = false;
   const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制 PowerShell 命令'; copy.hidden = true;
   const note = document.createElement('p'); note.className = 'hint'; note.hidden = true;
   note.textContent = '粘贴到 Windows PowerShell 执行。自动创建输出目录，不覆盖已有文件。独立命令不含工具箱的自动回退、结果校验和“未变小就丢弃”；完成后请自行检查输出。';
+  if(tool!=='video')note.textContent='原生命令直接调用外部程序，不包含完整安全校验、回退、清理原包或“未变小就跳过”；解压按所选重名规则处理，覆盖模式会覆盖文件。多步流程请使用页面顶部的工具箱 CLI。加密包需先设置指定密码环境变量。';
   details.append(summary, message, selector, code, copy, note);
   let loaded = false, loading = false, commands = [];
   details.addEventListener('toggle', async () => {
     if (!details.open || loaded || loading) return;
     loading = true; message.textContent = '正在检测编码器并生成命令，不会压缩文件…';
     try {
-      commands = await api('video-commands', { PlanID: id, Source: item.Source });
+      commands = await api(tool==='video' ? 'video-commands' : 'native-commands', { PlanID: id, Source: item.Source });
       if (!commands.length) throw Error('没有可用命令');
       for (const command of commands) { const option = document.createElement('option'); option.textContent = command.Label; selector.append(option); }
       selector.selectedIndex = 0; selector.hidden = commands.length < 2;

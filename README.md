@@ -40,8 +40,11 @@
 
 ## 文档
 
+- [一键准备体验素材](samples/README.md)：双击 `try-samples.cmd`，用合成素材体验各项功能。
 - [使用指南](docs/usage.md)
 - [各工具输入与输出示例](docs/examples.md)
+- [CLI 命令行与页面复制命令](docs/cli.md)（开发版）
+- [各工具 CLI 参数手册](docs/cli-reference.md)（开发版）
 - [开发与测试](docs/development.md)
 - [打包与发布](docs/packaging.md)
 - [外部组件与配置](docs/dependencies.md)

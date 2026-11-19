@@ -5,3 +5,11 @@
 *.jpeg binary
 *.ico binary
 *.pdf binary
+*.webp binary
+*.mp4 binary
+*.mkv binary
+*.wav binary
+*.zip binary
+*.7z binary
+/samples/assets/*.7z.* binary
+/samples/assets/note.txt -text whitespace=cr-at-eol
