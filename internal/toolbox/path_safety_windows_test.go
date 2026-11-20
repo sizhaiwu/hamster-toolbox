@@ -76,3 +76,34 @@ func TestSafetyWindowsAliasesAndDevicePaths(t *testing.T) {
 		t.Fatal("short-name system directory accepted")
 	}
 }
+
+func TestBrowserDirectorySizeWindowsShortAlias(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "directory with a long name")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file(t, filepath.Join(root, "sample.txt"), []byte("12345"))
+	src, err := syscall.UTF16PtrFromString(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]uint16, 32768)
+	n, err := syscall.GetShortPathName(src, &buffer[0], uint32(len(buffer)))
+	if err != nil || n == 0 || n >= uint32(len(buffer)) {
+		t.Skip("short names unavailable")
+	}
+	alias := syscall.UTF16ToString(buffer[:n])
+	if sameExtractPath(alias, root) {
+		t.Skip("filesystem did not provide a short alias")
+	}
+	scope, err := NewBrowserScope(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, selectedScope := range []*BrowserScope{nil, scope} {
+		result, err := BrowserDirectorySize(context.Background(), alias, selectedScope)
+		if err != nil || !result.Complete || result.Size != 5 || result.Files != 1 {
+			t.Fatalf("short alias size: %+v, %v", result, err)
+		}
+	}
+}

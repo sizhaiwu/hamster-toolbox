@@ -19,8 +19,14 @@ type DirectorySize struct {
 // The original guest scope is retained; links and protected paths are excluded.
 func BrowserDirectorySize(ctx context.Context, path string, scope *BrowserScope) (DirectorySize, error) {
 	result := DirectorySize{Complete: true}
+	// Compare physical paths consistently, including Windows 8.3 aliases and
+	// macOS's temporary-directory aliases, without accepting directory links.
+	var err error
+	path, err = resolveOrdinaryPath(path, true)
+	if err != nil {
+		return result, err
+	}
 	if scope == nil {
-		var err error
 		scope, err = NewBrowserScope(path)
 		if err != nil {
 			return result, err
@@ -106,7 +112,7 @@ func BrowserDirectorySize(ctx context.Context, path string, scope *BrowserScope)
 			}
 		}
 	}
-	err := walk(path, 0)
+	err = walk(path, 0)
 	if err != nil {
 		result.Complete = false
 		if ctx.Err() != nil {
