@@ -44,7 +44,7 @@ try {
     $packageName = 'hamster-toolbox-' + $Version + '-windows-x64-' + $stamp
     # Keep the payload in place after execution; Windows can retain short-lived
     # image locks. The staging parent itself exercises Unicode and spaces.
-    $stage = Join-Path $repo ('work\package-' + [guid]::NewGuid().ToString('N') + ' ' + ([string][char]0x4ED3) + ([string][char]0x9F20) + ' portable test')
+    $stage = Join-Path $repo ('work\p-' + [guid]::NewGuid().ToString('N') + ' ' + ([string][char]0x4ED3) + ([string][char]0x9F20))
     $payload = Join-Path $stage $packageName
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
     $manifestHash = (Get-FileHash -LiteralPath (Join-Path $repo 'tools-manifest.json') -Algorithm SHA256).Hash
