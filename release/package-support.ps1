@@ -53,19 +53,3 @@ function Copy-VerifiedReleaseTools([string]$Source, [string]$Destination, [strin
     }
     if (-not $VerifyOnly) { [IO.File]::WriteAllBytes((Join-Path $destinationRoot 'bundle-files.json'),$markerBytes) }
 }
-function Move-ReleaseDirectory([string]$Workspace,[string]$Source,[string]$Destination) {
-    $workspaceRoot=[IO.Path]::GetFullPath($Workspace).TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
-    $sourcePath=[IO.Path]::GetFullPath($Source)
-    $destinationPath=[IO.Path]::GetFullPath($Destination)
-    if (-not $sourcePath.StartsWith($workspaceRoot,[StringComparison]::OrdinalIgnoreCase) -or -not $destinationPath.StartsWith($workspaceRoot,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetDirectoryName($sourcePath) -ne [IO.Path]::GetDirectoryName($destinationPath)) { throw 'Release directory rename must stay inside its staging directory.' }
-    $item=Get-Item -LiteralPath $sourcePath -Force -ErrorAction Stop
-    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or (Test-Path -LiteralPath $destinationPath)) { throw 'Invalid source or existing destination for release directory rename.' }
-    for($attempt=1;$attempt -le 8;$attempt++) {
-        try { [IO.Directory]::Move($sourcePath,$destinationPath); return }
-        catch {
-            if ($attempt -eq 8 -or -not ($_.Exception.InnerException -is [IO.IOException] -or $_.Exception.InnerException -is [UnauthorizedAccessException]) -or (Test-Path -LiteralPath $destinationPath) -or -not (Test-Path -LiteralPath $sourcePath)) { throw }
-            Write-Host ('Temporary release folder is in use; retrying ('+$attempt+'/8)...')
-            Start-Sleep -Milliseconds (150*$attempt)
-        }
-    }
-}

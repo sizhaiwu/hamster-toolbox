@@ -42,7 +42,9 @@ try {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $buildTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     $packageName = 'hamster-toolbox-' + $Version + '-windows-x64-' + $stamp
-    $stage = Join-Path $repo ('work\package-' + [guid]::NewGuid().ToString('N'))
+    # Keep the payload in place after execution; Windows can retain short-lived
+    # image locks. The staging parent itself exercises Unicode and spaces.
+    $stage = Join-Path $repo ('work\package-' + [guid]::NewGuid().ToString('N') + ' ' + ([string][char]0x4ED3) + ([string][char]0x9F20) + ' portable test')
     $payload = Join-Path $stage $packageName
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
     $manifestHash = (Get-FileHash -LiteralPath (Join-Path $repo 'tools-manifest.json') -Algorithm SHA256).Hash
@@ -62,13 +64,12 @@ try {
     $Version | Set-Content -LiteralPath (Join-Path $payload 'VERSION.txt') -Encoding ASCII
 
     Write-Host '[4/6] Verifying the staged binary and bundled tools...'
-    # Test a relocated Unicode path, empty profile, and system-only PATH before
-    # publishing. Character codes keep this script compatible with PowerShell 5.
-    $testFolder = Join-Path $stage (([string][char]0x4ED3)+([string][char]0x9F20)+' portable test')
-    foreach ($path in @($payload,$testFolder)) {
+    # Test the Unicode staging path, empty profile, and system-only PATH before
+    # publishing, without moving executables after they have been started.
+    $testFolder = $payload
+    foreach ($path in @($testFolder)) {
         if (-not [IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($stage)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe acceptance-test path.' }
     }
-    Move-ReleaseDirectory $stage $payload $testFolder
     $testExe = Join-Path $testFolder 'hamster-toolbox.exe'
     $profile = Join-Path $stage 'empty-profile'
     $temp = Join-Path $profile 'temp'
@@ -93,7 +94,6 @@ try {
     } finally {
         foreach ($key in $testEnv.Keys) { [Environment]::SetEnvironmentVariable($key,$testEnv[$key],'Process') }
         Set-Location -LiteralPath $repo
-        Move-ReleaseDirectory $stage $testFolder $payload
     }
     $releaseInfo = @{
         Product='Hamster Toolbox'; Version=$Version; BuiltUTC=$buildTime; Platform='windows/amd64'

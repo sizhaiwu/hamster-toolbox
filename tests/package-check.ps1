@@ -12,15 +12,6 @@ function Expect-Failure([scriptblock]$Action, [string]$Message) {
     if (-not $failed) { throw ('Expected failure: '+$Message) }
 }
 try {
-    $renameSource=Join-Path $testRoot 'rename-source'
-    $renameTarget=Join-Path $testRoot 'rename-target'
-    New-Item -ItemType Directory -Path $renameSource | Out-Null
-    [IO.File]::WriteAllText((Join-Path $renameSource 'fixture.txt'),'preserve release payload')
-    Move-ReleaseDirectory $testRoot $renameSource $renameTarget
-    if ((Get-Content -LiteralPath (Join-Path $renameTarget 'fixture.txt') -Raw) -ne 'preserve release payload' -or (Test-Path -LiteralPath $renameSource)) { throw 'Release rename did not preserve its contents.' }
-    Expect-Failure { Move-ReleaseDirectory $testRoot $renameTarget (Join-Path (Split-Path -Parent $testRoot) 'outside-release') } 'rename outside staging'
-    New-Item -ItemType Directory -Path $renameSource | Out-Null
-    Expect-Failure { Move-ReleaseDirectory $testRoot $renameTarget $renameSource } 'rename must not overwrite an existing directory'
     $source = Join-Path $testRoot 'tools'
     New-Item -ItemType Directory -Path (Join-Path $source 'bin') | Out-Null
     [IO.File]::WriteAllText((Join-Path $source 'bin\demo.exe'),'synthetic runtime')
