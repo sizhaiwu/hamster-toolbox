@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 )
 
 type Config struct {
+	Workers                                                                                                int
 	FormatCleanOther                                                                                       bool
 	FormatDeleteMode                                                                                       string
 	ExtractDeleteMode                                                                                      string
@@ -37,6 +39,7 @@ type Config struct {
 	Tool, Root, Output, Find, Replace, Prefix, Suffix, FFmpeg, FFprobe, Magick, Exiftool, Font             string
 	Recursive, Files, Dirs, Regex                                                                          bool
 	Quality, CRF, MinMB, MinKbps                                                                           int
+	VideoHDR                                                                                               string
 	VideoMode, VideoAcceleration                                                                           string
 	MetadataTypes                                                                                          string
 	NumberName, NumberStyle, NumberOrder, NumberFilter                                                     string
@@ -88,6 +91,9 @@ func within(root, p string) bool {
 	return e == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator))
 }
 func validName(n string) bool {
+	if runtime.GOOS != "windows" && len(n) > 255 {
+		return false
+	}
 	if n == "" || n == "." || n == ".." || strings.TrimRight(n, " .") != n || len(utf16.Encode([]rune(n))) > 255 || strings.ContainsAny(n, "<>:\"/\\|?*") {
 		return false
 	}
@@ -99,7 +105,7 @@ func validName(n string) bool {
 	return !regexp.MustCompile("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$").MatchString(strings.ToUpper(strings.Split(n, ".")[0]))
 }
 func DefaultConfig() Config {
-	return Config{FormatDeleteMode: "recycle", ExtractDeleteMode: "recycle", DedupeProgram: DetectDedupeProgram(), ExtractConflict: "rename", ExtractLayout: "separate", SevenZip: detectSevenZip(), ArchiveMode: "pure", ArchiveSplit: "script", ArchiveVolume: "3g", ArchiveFirstVolume: "10k", ArchiveDirPrefix: "D_", ArchiveFilePrefix: "F_", ArchiveStart: 1, ArchiveDigits: 3, ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, MetadataTypes: "images", VideoMode: "efficient", VideoAcceleration: "auto", CRF: 18, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
+	return Config{VideoHDR: "preserve", Workers: 1, FormatDeleteMode: "recycle", ExtractDeleteMode: "recycle", DedupeProgram: DetectDedupeProgram(), ExtractConflict: "rename", ExtractLayout: "separate", SevenZip: detectSevenZip(), ArchiveMode: "pure", ArchiveSplit: "script", ArchiveVolume: "3g", ArchiveFirstVolume: "10k", ArchiveDirPrefix: "D_", ArchiveFilePrefix: "F_", ArchiveStart: 1, ArchiveDigits: 3, ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, MetadataTypes: "images", VideoMode: "efficient", VideoAcceleration: "auto", CRF: 18, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
 }
 func Normalize(c Config) (Config, error) {
 	if c.Tool == "dedupe" {
@@ -173,7 +179,20 @@ func Normalize(c Config) (Config, error) {
 			return c, e
 		}
 	}
+	if c.Tool == "image" || c.Tool == "exif" || c.Tool == "thumbnail" || c.Tool == "video" {
+		if c.Workers == 0 {
+			c.Workers = 1
+		}
+		limit := 8
+		if c.Tool == "video" {
+			limit = 3
+		}
+		if c.Workers < 1 || c.Workers > limit {
+			return c, fmt.Errorf("并发数须为 1–%d", limit)
+		}
+	}
 	if c.Tool == "image" {
+
 		c.ImageFormats, e = normalizeImageFormats(c.ImageFormats)
 		if e != nil {
 			return c, e
@@ -282,11 +301,20 @@ func scan(ctx context.Context, c Config) ([]string, error) {
 			if excluded(d.Name()) || (c.Output != "" && within(c.Output, p)) {
 				return filepath.SkipDir
 			}
+			if filter, ok := ctx.Value(remainingScanKey{}).(remainingScanFilter); ok && IndependentFileTask(c.Tool) {
+				if !filter.directories[sourceKey(p)] || !c.Recursive {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			a = append(a, p)
 			if !c.Recursive {
 				return filepath.SkipDir
 			}
 		} else if !strings.EqualFold(p, c.Output) {
+			if filter, ok := ctx.Value(remainingScanKey{}).(remainingScanFilter); ok && IndependentFileTask(c.Tool) && !filter.sources[sourceKey(p)] {
+				return nil
+			}
 			a = append(a, p)
 		}
 		return nil
@@ -347,8 +375,8 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 			return nil, e
 		}
 		p.Items = append(p.Items, cleanup...)
+		p.formatStats = stats
 		if c.FormatCleanOther {
-			p.formatStats = stats
 			log(fmt.Sprintf("清理预览：%d 个非媒体文件；执行前请核对文件清单", len(cleanup)))
 		}
 	}
@@ -363,6 +391,7 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 		name := s.Name()
 		dst := ""
 		note := ""
+		sourceVideoNote := ""
 		switch c.Tool {
 		case "rename":
 			if s.IsDir() && !c.Dirs || !s.IsDir() && !c.Files {
@@ -447,7 +476,8 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				if v.Bitrate < int64(c.MinKbps)*1000 {
 					continue
 				}
-				ve := v.supported()
+				_, ve := effectiveHDRConfig(c, v)
+				sourceVideoNote = hdrPlanNote(c, v)
 				if ve != nil {
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
@@ -496,7 +526,7 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				}
 			}
 			if c.Tool == "video" {
-				note = videoPlanNote(c)
+				note = sourceVideoNote
 			}
 			if c.Tool == "image" && strings.EqualFold(filepath.Ext(src), ".png") {
 				if c.PngMode == "webp-png" {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 
 	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
@@ -59,6 +60,20 @@ func buildCLICommands(c toolbox.Config, exe string) (cliCommands, error) {
 		return "$toolboxEncoding = $OutputEncoding\ntry {\n  $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\n" + string(data) + "\n'@ | " + run + "\n} finally { $OutputEncoding = $toolboxEncoding }"
 	}
 	notice := "PowerShell 命令。预览只扫描；执行命令会重新扫描，并按当前参数处理整个目录。保留工具箱的校验、回退与安全防护。"
+	if runtime.GOOS != "windows" {
+		command = posixLiteral(exe) + " cli " + c.Tool + " --config -"
+		if secretEnv != "" {
+			command += " --password-env " + secretEnv
+		}
+		makeCommand = func(execute bool) string {
+			run := command
+			if execute {
+				run += " --execute"
+			}
+			return "printf '%s\\n' " + posixLiteral(string(data)) + " | " + run
+		}
+		notice = "终端命令（sh/bash/zsh）。预览只扫描；执行会重新扫描并处理整个目录，保留工具箱校验与安全防护。"
+	}
 	if secretEnv != "" {
 		notice += "命令不包含密码，请先在终端设置环境变量 " + secretEnv + "。"
 	}
@@ -67,6 +82,7 @@ func buildCLICommands(c toolbox.Config, exe string) (cliCommands, error) {
 	}
 	return cliCommands{makeCommand(false), makeCommand(true), notice}, nil
 }
+func posixLiteral(v string) string { return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'" }
 
 func (s *server) cliCommandsAPI(w http.ResponseWriter, r *http.Request) {
 	var c toolbox.Config

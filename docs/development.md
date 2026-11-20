@@ -1,111 +1,56 @@
-# 开发与测试
+# 开发与贡献
 
-[返回首页](../README.md)
+[文档目录](README.md) · [测试与验收](testing.md) · [平台支持](platforms.md)
 
 ## 环境
 
-- Windows 10/11 64 位。
-- Go 1.23 或更新版本。
-- Node.js 22 或更新的 LTS 版本，用于可选的前端交互测试。
+- Go：`go.mod` 声明 Go 1.23.0，工具链为 1.23.7；使用可满足该要求的 Go 环境。
+- Node.js：仅用于界面回归，要求见 `package.json`；CI 使用 Node 24。普通用户运行不需要 Node/npm。
+- Windows 完整组件由 `prepare-tools.ps1` 准备；Linux/macOS 自行安装本机依赖。
 
-Go 后端仅使用标准库，前端为内嵌 HTML/CSS/JavaScript。Node.js 和 npm 仅用于开发测试，不是用户运行依赖。
+后端为 Go HTTP 服务，前端为内嵌 HTML/CSS/JavaScript，无需前端构建。Go 模块依赖见 `go.mod`/`go.sum`，包括平台系统接口与 Windows 命名管道支持。
 
-供普通用户动手体验的合成素材和复制脚本见 [体验素材](../samples/README.md)。素材完整性与场景覆盖检查由 `go test . -run TestSampleAssetsAndScenarioCoverage` 运行；设置 `HAMSTER_CLI_TEST_EXE` 后，`go test . -run TestSample -count=1 -v` 会在临时副本中实际执行 11 项批处理，不启动去重软件。
-
-## 获取源码
+## 获取源码和运行
 
 ```powershell
 git clone https://github.com/sizhaiwu/hamster-toolbox.git
 cd hamster-toolbox
-```
-
-## 构建和运行
-
-双击 `build.cmd`，或执行：
-
-```powershell
 go test ./...
 go build -buildvcs=false -trimpath -ldflags="-s -w" -o hamster-toolbox.exe .
 .\hamster-toolbox.exe
 ```
 
-开发构建显示为 `dev`。完整发布构建及版本号注入由 `package.cmd` 完成，详见[打包文档](packaging.md)。
-
-媒体功能需要外部组件，可先执行：
+Windows 也可运行 `build.cmd`，Linux/macOS 使用 `sh build.sh`。源码构建不等于含依赖的便携包，发布流程见[打包说明](packaging.md)。Windows 媒体组件准备：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare-tools.ps1
 ```
 
-脚本会下载清单中的固定版本，检查 SHA256，并整理到 `tools`，后续可复用下载缓存。
-
-## 测试
-
-基础检查不依赖媒体程序：
-
-```powershell
-go test ./...
-go vet ./...
-```
-
-前端交互回归：
-
-```powershell
-npm ci --ignore-scripts
-npm run test:ui
-```
-
-测试使用隔离 DOM 和模拟接口，覆盖工具切换、参数保存、依赖提示、预览、编号和冲突处理。
-
-准备好 `tools` 后，运行真实媒体集成测试：
-
-```powershell
-$env:TOOLBOX_INTEGRATION = '1'
-go test ./... -count=1
-Remove-Item Env:TOOLBOX_INTEGRATION
-```
-
-集成测试优先使用仓库内准备的组件，也可使用 PATH 中的程序。所有样本由测试生成，读写范围是临时目录。
-
-视频专项测试使用生成的样本，覆盖三种模式、故障回退、音频重试、10-bit、VFR 时间戳、旋转、奇数尺寸、AAC 数据不变以及 HDR 跳过。具有 NVIDIA 和 Intel 核显的开发机可额外启用实际硬件编码验证（普通 CI 不要求显卡）：
-
-```powershell
-$env:TOOLBOX_INTEGRATION = '1'
-$env:TOOLBOX_HARDWARE_INTEGRATION = '1'
-go test ./internal/toolbox -run TestVideo -v
-Remove-Item Env:TOOLBOX_INTEGRATION
-Remove-Item Env:TOOLBOX_HARDWARE_INTEGRATION
-```
-
-发布构建还提供随包验证命令：
-
-```powershell
-.\hamster-toolbox.exe -version
-.\hamster-toolbox.exe -check-tools
-.\hamster-toolbox.exe -self-test
-```
+脚本从固定清单下载、校验 SHA256 并复用缓存。源码树构建的 Go 程序默认显示 `dev`；脚本可能按 `VERSION` 注入开发标识，打包时注入正式版本和构建信息。
 
 ## 代码结构
 
-| 位置 | 内容 |
+| 位置 | 职责 |
 | --- | --- |
-| `main.go`、`preview.go`、`settings.go` | 本地服务、预览接口和工具设置 |
-| `internal/toolbox` | 扫描、改名、媒体处理及便携依赖逻辑 |
-| `web` | 内嵌界面 |
-| `tests` | 前端交互测试 |
-| `samples`、`try-samples.cmd` | 合成体验素材、各工具练习布局和独立副本准备脚本 |
-| `release` | 发布包中的快速说明和第三方说明 |
-| `docs` | 使用、开发和发布文档 |
-| `tools-manifest.json` | 外部组件版本、来源和 SHA256 |
+| `main.go`、`preview.go`、`settings.go` | 服务启动、批处理接口、状态和设置 |
+| `cli.go`、`commands.go` | CLI 参数、完整命令与底层命令导出 |
+| `internal/toolbox` | 扫描、执行、媒体处理、路径防护、依赖与便携自测 |
+| `file_browser*.go`、`file_sharing*.go` | 浏览、文件操作、媒体缓存、共享与来源权限 |
+| `native_player*.go`、平台辅助文件 | mpv 启动与受限 IPC、系统应用和文件操作 |
+| `web` | 工具箱、资源管理器、播放器与共享设置界面 |
+| `tests` | DOM/模拟接口交互回归，`npm run test:ui` 为完整入口 |
+| `samples`、`try-samples.cmd` | 合成素材、场景配置和体验副本 |
+| `release`、`tools-manifest.json` | 随包说明、许可、固定组件来源和校验值 |
+| `docs/brand`、`generate-brand.ps1`、`brand_windows_*.syso` | 原始品牌图、技术尺寸和 Windows 图标资源 |
 
-`.github/workflows/ci.yml` 在 Windows 上运行 Go 和前端测试，不会发布程序或改动仓库。
+## 修改与验证
 
-## 贡献
+共用视觉变量位于 `web/theme.css`；工具箱布局在 `web/toolbox-layout.css`，资源管理器布局在 `web/explorer-layout.css`，悬浮窗口样式与逻辑单独维护。修改后检查桌面、手机、弹窗、悬停和键盘焦点。
 
-提交修改前运行相关测试。增加处理能力时同步说明支持格式、输出位置和已有文件的处理方式；新增组件时同步维护下载清单与第三方说明。
+[测试指南](testing.md)集中列出基础、专项、真实媒体、硬件与便携验收命令。CI 配置在 `.github/workflows/ci.yml`，在 Windows/Linux/macOS 运行 Go、静态检查和 UI 测试，不自动发布。某次远程运行是否成功应查看实际 Actions 结果。
 
-问题反馈请提供版本、复现步骤及经过脱敏的日志。不要把个人媒体、完整路径、私人配置或第三方二进制文件提交到源码仓库。
+## 贡献和文档
 
-资源打包的实际分卷、加密、解压、附加文件、取消清理和输出冲突测试：`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestArchive -count=1`。Windows PowerShell 先设置 `$env:TOOLBOX_INTEGRATION="1"`。测试仅使用临时合成资源，不读取私人脚本或媒体。
+功能变化同步[功能清单](features.md)、对应操作指南与输入输出示例；CLI 参数变化同步[参数手册](cli-reference.md)，组件变化同步清单和第三方说明。默认值、格式范围和保护规则以代码为准，不把目标功能写成已经支持。
 
-解压集成测试：`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestExtract -count=1`。覆盖重名规则、加密分卷、损坏包、路径安全与原生 RAR 解码；使用合成资源，不依赖个人压缩包。Windows 账户加密密码列表由 `go test . -run TestPasswordVault` 验证。
+公开截图只使用合成媒体。不要提交私人路径、日志、设置、密码库、下载缓存、第三方二进制文件或体验副本。问题反馈提供程序版本、复现步骤和脱敏日志。项目代码采用 MIT；第三方组件遵守各自许可。

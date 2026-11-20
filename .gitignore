@@ -36,3 +36,6 @@ desktop.ini
 # Current-user encrypted password vault
 passwords.dat
 .passwords-*
+
+# Native executable built from source
+/hamster-toolbox

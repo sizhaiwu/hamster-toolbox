@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -16,7 +17,10 @@ type DedupeInfo struct {
 }
 
 func dedupeExecutableName(name string) bool {
-	for _, allowed := range []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe"} {
+	if runtime.GOOS != "windows" && strings.HasSuffix(strings.ToLower(name), ".exe") {
+		return false
+	}
+	for _, allowed := range []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe", "VDF.GUI", "VideoDuplicateFinder", "VideoDuplicateFinderGUI"} {
 		if strings.EqualFold(name, allowed) {
 			return true
 		}
@@ -50,7 +54,7 @@ func dedupePathAt(path, base string, restore bool) string {
 }
 
 func detectDedupeAt(base string, roots []string) string {
-	names := []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe"}
+	names := []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe", "VDF.GUI", "VideoDuplicateFinder", "VideoDuplicateFinderGUI"}
 	find := func(dir string) string {
 		for _, name := range names {
 			p := filepath.Join(dir, name)
@@ -104,6 +108,12 @@ func detectDedupeAt(base string, roots []string) string {
 func DetectDedupeProgram() string {
 	base := executableDirectory()
 	roots := []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)")}
+	if runtime.GOOS != "windows" {
+		if home, e := os.UserHomeDir(); e == nil {
+			roots = append(roots, filepath.Join(home, "Applications"), filepath.Join(home, "Downloads"), filepath.Join(home, ".local/bin"))
+		}
+		roots = append(roots, "/Applications", "/usr/local/bin", "/opt/homebrew/bin")
+	}
 	if local := os.Getenv("LOCALAPPDATA"); local != "" {
 		roots = append(roots, filepath.Join(local, "Programs"), filepath.Join(local, "VideoDuplicateFinder"))
 	}
@@ -116,7 +126,7 @@ func DetectDedupeProgram() string {
 	if p := detectDedupeAt(base, roots); p != "" {
 		return p
 	}
-	for _, name := range []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe"} {
+	for _, name := range []string{"VDF.GUI.exe", "VideoDuplicateFinder.exe", "VideoDuplicateFinderGUI.exe", "VDF.GUI", "VideoDuplicateFinder", "VideoDuplicateFinderGUI"} {
 		if p, e := exec.LookPath(name); e == nil {
 			return p
 		}
@@ -135,7 +145,7 @@ func InspectDedupeProgram(path string) DedupeInfo {
 		return info
 	}
 	if !dedupeExecutableName(filepath.Base(path)) {
-		info.Message = "请选择 VDF.GUI.exe（旧版可选 VideoDuplicateFinder.exe），不要选择 CLI 或 Web 版本。"
+		info.Message = "请选择当前系统的图形界面程序 VDF.GUI（Windows 为 VDF.GUI.exe），不要选择 CLI 或 Web 版本。"
 		return info
 	}
 	if !regularFile(path) {

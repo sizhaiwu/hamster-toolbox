@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
@@ -63,7 +64,11 @@ func cliFields(tool string) map[string]bool {
 
 func runCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(stdout, "用法：hamster-toolbox.exe cli <工具> --root <目录> [选项] [--execute]\n默认仅扫描，--execute 才执行；Ctrl+C 取消。\n工具：format rename number describe exif pdf image video thumbnail archive extract dedupe\n参数：--config <JSON文件或->、--password-env <环境变量名>；<工具> --help 查看全部参数。\n示例：hamster-toolbox.exe cli format --root E:\\media\n      hamster-toolbox.exe cli video --root E:\\videos --video-mode efficient --video-acceleration cpu --execute")
+		executable, media, videos := "hamster-toolbox.exe", `E:\media`, `E:\videos`
+		if runtime.GOOS != "windows" {
+			executable, media, videos = "./hamster-toolbox", "/path/to/media", "/path/to/videos"
+		}
+		fmt.Fprintf(stdout, "用法：%s cli <工具> --root <目录> [选项] [--execute]\n默认仅扫描，--execute 才执行；Ctrl+C 取消。\n工具：format rename number describe exif pdf image video thumbnail archive extract dedupe\n参数：--config <JSON文件或->、--password-env <环境变量名>；<工具> --help 查看全部参数。\n示例：%s cli format --root %s\n      %s cli video --root %s --video-mode efficient --video-acceleration cpu --execute\n", executable, executable, media, executable, videos)
 		return 0
 	}
 	tool := args[0]

@@ -2,6 +2,7 @@ package main
 
 // Keep terminal help readable without requiring users to know Config field names.
 var cliFieldHelp = map[string]string{
+	"Workers":             "同时处理的独立文件数；图片/元数据/缩略图 1–8，视频 1–3，默认 1；提高并发会增加内存与编码资源占用",
 	"Root":                "输入目录；必须指定，不能使用盘符根目录或受保护目录",
 	"Output":              "输出目录；PDF 工具填写以 .pdf 结尾的文件路径，留空使用工具默认位置",
 	"Recursive":           "扫描子目录；关闭只扫描输入目录的下一层",
@@ -30,6 +31,7 @@ var cliFieldHelp = map[string]string{
 	"Quality":             "JPEG 与静态 WebP 质量 1–100，默认 60；越低通常越小",
 	"PngMode":             "PNG 方案：lossless 无损（默认）、webp-png WebP 编码保留 .png 名、webp 转 .webp",
 	"PngQuality":          "PNG 转 WebP 的画质 1–100，默认 90；无损 PNG 模式忽略",
+	"VideoHDR":            "HDR 处理：preserve 保留 HLG/HDR10（默认）、sdr 转普通 BT.709、skip 跳过、base 保留 HLG 基层并移除杜比动态信息",
 	"VideoMode":           "视频模式：compatible H.264、efficient H.265（默认）、archive H.265 CPU 慢速",
 	"VideoAcceleration":   "视频编码加速：auto 自动（默认）、nvidia、intel、amd、cpu；不可用回退 CPU",
 	"CRF":                 "视频质量等级 0–51，默认 18，越低越清晰且通常越大；不同编码器会换算",

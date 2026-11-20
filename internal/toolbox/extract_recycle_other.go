@@ -2,8 +2,14 @@
 
 package toolbox
 
-import "errors"
-
 func recycleExtractFiles(paths []string) (recycleResult, error) {
-	return recycleResult{}, errors.New("当前系统暂不支持回收站清理，原文件已保留；不会改为永久删除")
+	result := recycleResult{}
+	for _, path := range paths {
+		if e := browserRecycle([]string{path}); e != nil {
+			return result, e
+		}
+		result.Count++
+		result.Paths = append(result.Paths, path)
+	}
+	return result, nil
 }

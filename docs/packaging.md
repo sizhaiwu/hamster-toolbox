@@ -1,47 +1,92 @@
 # 打包与发布
 
-[返回首页](../README.md)
+[文档目录](README.md) · [安装与更新](installation.md) · [发布检查](release-readiness.md)
 
-发布给其他人使用时，双击 package.cmd。维护者电脑需要 Go 和 Windows 自带的 PowerShell、tar；接收者只需要解压使用，不需要开发环境。
+打包脚本只生成本地分发文件，不提交源码、不推送 Git、不创建 GitHub Release。版本默认读取 `VERSION`；当前版本说明见 [v0.2.2](releases/0.2.2.md)。正式操作前以维护者明确授权为准。
 
-首次打包会根据 tools-manifest.json 下载固定版本的 FFmpeg、ImageMagick 便携版、ExifTool、Noto 中文字体，以及图片组件所需的微软运行库，核对 SHA256 后整理到 tools。以后会校验并复用已有组件与 work/downloads 下载缓存，日常更新无需重复下载。
+## 构建环境
 
-打包顺序：检查组件完整性 → Go 测试（已有 Node/jsdom 时也运行界面测试）→ 构建带版本号的 EXE → 严格检查随包组件 → 使用临时文件实际验证十一种工具 → 生成 ZIP 和 SHA256 校验文件。
+维护者需要 Windows x64、Go 1.23.7 或更新版本、Node.js 18+ / npm，以及 PowerShell 和系统 tar。首次运行 `npm ci --ignore-scripts` 安装界面测试依赖。安装包另需 Inno Setup 6.5+ 或 7；可通过 `-ISCC` 指定编译器。
 
-打包结果在 dist 目录：
+接收者无需 Go、Python、Node.js、Inno Setup 或配置 PATH。源码 ZIP 与不含组件的更新 ZIP 不能作为完整版单独使用。
 
-- hamster-toolbox-版本-windows-x64-时间.zip：完整版，发给新用户，包含依赖、开源字体、原组件许可说明和快速使用说明。
-- hamster-toolbox-版本-windows-x64-时间-update.zip：程序更新包，发给已有对应完整版的用户；先退出旧程序，再复制到原目录覆盖程序文件，保留 tools。
-- 对应 .sha256 文件：用于检查压缩包完整性。
+打包前等待任务结束，从托盘退出本目录的工具箱；控制台模式则退出控制台，并正常关闭正在使用组件的 mpv 等程序。脚本不会强制结束用户进程，组件被占用时应先处理占用再重试。
 
-更新包也包含新版快速说明和第三方声明，避免更新程序后仍保留过时的使用提示。
+## 检查与打包命令
 
-完整版与更新包使用文件白名单生成，不会复制个人设置、执行日志、data、work、源码、测试文件或旧版 EXE。设置保存在当前 Windows 用户配置目录，程序更新不会覆盖。
+只检查源码、界面和分发脚本，不生成包：
 
-后续发布先修改 VERSION（例如 0.1.1），然后双击 package.cmd。也可以在 PowerShell 中指定版本：
+```powershell
+.\check-release.ps1 -SourceOnly
+```
 
-    .\package.ps1 -Version 0.1.1
+核对某个完整运行目录的组件、哈希和十一项批处理自测：
 
-只需要程序更新 ZIP 时：
+```powershell
+.\check-release.ps1 -RuntimeDirectory 'D:\toolbox-verification'
+```
 
-    .\package.ps1 -Version 0.1.1 -UpdateOnly
+省略参数时检查当前项目运行目录。新旧组件清单不符时会失败，不会自动替换正在使用的组件。单独源码检查不等于最终发行包已经通过验收。
 
-更新组件时，需要修改 tools-manifest.json 中的版本、下载地址和经核对的 SHA256，再重新打包。程序会识别组件清单与版本不匹配并提示使用新版完整版；组件发生变化时应向用户提供完整版。
+生成完整便携 ZIP 和程序更新 ZIP：
 
-运行时诊断：
+```powershell
+.\package.ps1 -Version 0.2.2
+```
 
-    hamster-toolbox.exe -version
-    hamster-toolbox.exe -check-tools
-    hamster-toolbox.exe -self-test
+同时生成安装包：
 
-`-check-tools` 只检查随包组件，不会用 PATH 中的媒体程序替代缺失组件；`-self-test` 在临时目录生成测试数据，实际验证十一种工具，不读取或修改个人设置及用户媒体。依赖缺失、测试失败或压缩失败时，脚本不会发布不完整的 ZIP。
+```powershell
+.\package.ps1 -Version 0.2.2 -Installer
+# 编译器不在默认位置时
+.\package.ps1 -Version 0.2.2 -Installer -ISCC 'D:\build-tools\Inno Setup\ISCC.exe'
+```
 
-版本号和构建信息保存在 release-info.json，界面页脚也会显示程序版本。打包脚本同时更新项目目录下的 hamster-toolbox.exe，旧程序保存在 work 中。
+也可双击 `package.cmd` / `package-installer.cmd`，默认读取 `VERSION`。当前 `-Installer` 会在 ZIP 之外增加安装 EXE，不是仅安装器模式；`-UpdateOnly` 只省略完整 ZIP，更新包仍不含 `tools`。
+
+测试包可显式使用 `-Version 0.2.2-dev`。正式发行须从包含全部修复的源码重新构建，使用正式版本号，不重命名旧测试包冒充正式包。
+
+## 组件与构建流程
+
+1. 根据 `tools-manifest.json` 准备固定版本的 FFmpeg/FFprobe、ImageMagick、ExifTool、7-Zip、中文字体、mpv 及所需运行库，核对来源与 SHA256。可复用已经核验的 `tools` 和下载缓存。
+2. 运行 Go 测试、`npm run test:ui` 全部界面测试和分发脚本回归；缺少 Node/npm/jsdom、许可声明或测试失败会停止。静态检查由发布前的 `check-release.ps1` 覆盖。
+3. 构建带版本与构建时间的控制台 EXE 和无控制台托盘 EXE，按白名单复制组件与说明。组件清单 `tools/bundle-files.json` 中每项均须通过哈希、路径和普通文件校验，拒绝链接、越界及重复条目。
+4. 在中文含空格目录、空配置与仅系统 PATH 下做组件检查和十一项批处理自测。mpv 的版本探测不等于所有显卡已实测硬解，原生播放应另做样本验收。
+5. 生成发行文件、`release-info.json` 和每份附件对应的 SHA256，然后更新项目目录下的启动文件并保留旧 EXE。验收目录更名遇到短暂文件占用时会有限重试；持续失败则停止，不强行结束其他进程。程序、组件与用户资源不混合打包。
+
+更新组件时修改清单中的固定版本、下载地址、经核对的 SHA256，并同步 [组件说明](dependencies.md)和第三方许可。组件变化时应向用户提供本版完整包，单独更新程序不能更新旧 `tools`。
+
+## 分发文件
+
+结果位于项目 `dist` 目录，文件名包含版本、平台和构建标识：
+
+| 文件 | 内容与用途 |
+| --- | --- |
+| `hamster-toolbox-版本-windows-x64-标识-setup.exe` | 完整安装包，推荐普通用户；安装后创建快捷方式，可选登录自启 |
+| `hamster-toolbox-版本-windows-x64-标识.zip` | 完整便携包，包含两个 EXE、组件、字体、版本信息与许可证 |
+| `hamster-toolbox-版本-windows-x64-标识-update.zip` | 程序和说明更新包，不含组件；仅用于已有匹配组件的完整目录 |
+| 每份附件的 `.sha256` | 校验文件是否传输完整，不代替发布者签名 |
+
+本版从 v0.2.1 或更早版本升级时优先使用安装包或完整 ZIP。安装版用户优先运行新安装器；便携完整包解压到新目录后使用，避免混用 DLL。更新前结束任务、备份私人数据，详见 [安装说明](installation.md)及随包 `UPDATE.txt`。
+
+白名单包含程序、`start-toolbox.cmd`、组件清单、版本/构建信息、快速说明、MIT、Go 依赖及第三方许可。安装器另带 Inno Setup 许可。不会加入个人设置、密码库、历史、日志、缩略图缓存、源码、测试素材、`.git`、`data`、`work` 或旧版 EXE。Windows 个人数据默认在当前用户配置目录的 `media-toolbox` 下，与程序目录分开。
+
+## 最终包验收
+
+对真正准备上传的附件核对 SHA256；完整 ZIP 重新解压到新目录、安装器在独立位置或测试机安装。运行以下命令并从快捷方式打开界面：
+
+```powershell
+.\hamster-toolbox.exe -version
+.\hamster-toolbox.exe -check-tools
+.\hamster-toolbox.exe -self-test
+```
+
+再用仓库合成素材检查共享首次登录、媒体预览、压缩/缩略图、分卷解压及实时进度、开关自启和升级配置保留。原始用户资源不作为可公开分发的验收素材。生成文件通过检查后再交付，不能用旧测试安装包或开发目录代替。
 
 ## GitHub 发布
 
-源码及维护脚本提交到 Git；完整 ZIP、更新 ZIP 和对应的 SHA256 文件作为 GitHub Release 附件发布。`tools`、`dist`、`work` 和个人记录目录已由忽略规则排除。
+维护者授权后再提交并推送所有应公开的源码、网页、脚本、文档、测试和品牌素材；组件 `tools`、安装包 `dist`、本地验收 `work` 及私人数据不进入 Git。
 
-项目 MIT 许可证会包含在完整包和更新包中；第三方组件的原始许可与来源清单也会保留。CI 仅运行测试，不会自动提交、推送或发布 Release。
+正式标签与 `VERSION` 一致。GitHub Release 的附件包括完整 ZIP、更新 ZIP、安装 EXE（本版构建时）及各自 SHA256；下载说明区分三种用途，并附本版更新与限制。发布说明以[对应版本说明](releases/0.2.2.md)为基础。CI 只运行检查，不会自动提交、推送或上传 Release。
 
-界面的“文件去重”是可选外部软件入口，不随包附带 Video Duplicate Finder。十一项批处理工具执行便携自测，外部入口的路径识别、设置保存与界面跳转由 Go/API 和界面测试验证，不会在打包自测时打开本机去重软件。
+当前程序和安装器未签名；如另行配置签名，应在签名后重新生成 SHA256。最终附件和新测试机验收状态记录到[发布检查](release-readiness.md)。

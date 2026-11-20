@@ -253,6 +253,9 @@ func thumbnailSeek(m thumbnailVideo, index, count int) float64 {
 }
 
 func makeThumbnail(ctx context.Context, c Config, it Item, target string) error {
+	return makeThumbnailWithLog(ctx, c, it, target, nil)
+}
+func makeThumbnailWithLog(ctx context.Context, c Config, it Item, target string, log func(string)) error {
 	m, e := probeThumbnail(ctx, c.FFprobe, it.Source)
 	if e != nil {
 		return e
@@ -268,6 +271,7 @@ func makeThumbnail(ctx context.Context, c Config, it Item, target string) error 
 	canvas := image.NewRGBA(image.Rect(0, 0, c.ThumbnailWidth, l.Height))
 	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 	count := c.ThumbnailColumns * c.ThumbnailRows
+	extractor := thumbnailFrameExtractor{program: c.FFmpeg, source: it.Source, log: log}
 	for i := 0; i < count; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -275,19 +279,9 @@ func makeThumbnail(ctx context.Context, c Config, it Item, target string) error 
 		frame := filepath.Join(filepath.Dir(target), "frame.png")
 		seek := thumbnailSeek(m, i, count)
 		filter := fmt.Sprintf("scale=%d:%d:flags=lanczos,setsar=1", l.CellWidth, l.CellHeight)
-		// Input seeking decodes only a nearby GOP, rather than the whole video.
-		_, e = run(ctx, c.FFmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-ss", strconv.FormatFloat(seek, 'f', 6, 64), "-i", it.Source, "-map", "0:V:0", "-an", "-sn", "-frames:v", "1", "-vf", filter, "-threads", "1", "-f", "image2", "-update", "1", frame)
+		img, e := extractor.frame(ctx, frame, filter, seek)
 		if e != nil {
 			return fmt.Errorf("第 %d/%d 张画面截取失败：%w", i+1, count, e)
-		}
-		f, e := os.Open(frame)
-		if e != nil {
-			return fmt.Errorf("%s 处未能截取画面：%w", thumbnailTimestamp(seek), e)
-		}
-		img, de := png.Decode(f)
-		f.Close()
-		if de != nil {
-			return de
 		}
 		if img.Bounds().Dx() != l.CellWidth || img.Bounds().Dy() != l.CellHeight {
 			return fmt.Errorf("截帧尺寸与拼图设置不一致")

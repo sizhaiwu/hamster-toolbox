@@ -274,6 +274,7 @@ func TestVideoCompressionIntegration(t *testing.T) {
 			t.Fatal(e)
 		}
 		active := c
+		active.VideoHDR = "skip"
 		active.Root, active.Output = root, ""
 		p, e := BuildPlan(context.Background(), active, quiet)
 		if e != nil || len(p.Items) != 1 || !strings.Contains(p.Items[0].Conflict, "HDR") {

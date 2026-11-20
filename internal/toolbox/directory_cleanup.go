@@ -58,18 +58,7 @@ func executeFormat(ctx context.Context, p *Plan, log func(string), progress func
 		log("清理已取消，未执行后续目录改名")
 		return result
 	}
-	actual, e := measureDirectoryTree(ctx, p.Config.Root)
-	if e == nil && len(actual) != len(p.formatStats) {
-		e = errors.New("资源目录结构已变化")
-	}
-	if e == nil {
-		for path, expected := range p.formatStats {
-			if got, ok := actual[path]; !ok || got != expected {
-				e = errors.New("资源内容已变化")
-				break
-			}
-		}
-	}
+	e := validateFormatSnapshot(ctx, p)
 	if e != nil {
 		if ctx.Err() == nil {
 			result.Failed++
@@ -79,10 +68,27 @@ func executeFormat(ctx context.Context, p *Plan, log func(string), progress func
 	}
 	remaining := *p
 	remaining.Config.FormatCleanOther = false
+	remaining.formatStats = nil // Already checked after cleanup, before any rename.
 	remaining.Items = renames
 	next := Execute(ctx, &remaining, log, func(done, _ int) { progress(cleaned+done, total) })
 	result.Success += next.Success
 	result.Failed += next.Failed
 	result.Skipped += next.Skipped
 	return result
+}
+
+func validateFormatSnapshot(ctx context.Context, p *Plan) error {
+	actual, e := measureDirectoryTree(ctx, p.Config.Root)
+	if e != nil {
+		return e
+	}
+	if len(actual) != len(p.formatStats) {
+		return errors.New("资源目录结构已变化")
+	}
+	for path, expected := range p.formatStats {
+		if got, ok := actual[path]; !ok || got != expected {
+			return errors.New("资源内容已变化")
+		}
+	}
+	return nil
 }

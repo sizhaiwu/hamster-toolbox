@@ -62,6 +62,7 @@ nav{min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#4a686b tr
 .github-link{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:10px 12px;border:1px solid #3c6065;border-radius:6px;color:#d1e8df;font-size:14px;line-height:1.5;text-decoration:none}
 .github-link:hover{background:#29484a;color:#fff}
 #cliDialog{width:860px}#cliCode{font:14px/1.7 Consolas,"Microsoft YaHei",monospace;min-height:280px;max-height:55vh}#cliMessage{font-size:14px}header{gap:14px;flex-wrap:wrap;height:auto;min-height:78px;padding:12px 0}
+#openFiles{display:flex;align-items:center;gap:14px;width:100%;padding:14px;margin:4px 0 12px;border:1px solid #3f6a61;border-radius:8px;background:#24493f;color:#dcffe8;font-size:16px;line-height:1.5;text-decoration:none;flex-shrink:0}#openFiles:hover{background:#315c4e}#openFiles>span:first-child{font-size:21px}@media(max-width:680px){#openFiles{width:auto;white-space:nowrap;margin:4px 8px 4px 0;padding:12px 14px}}
 @media(max-width:680px){.aside-foot{display:block;margin-top:12px;padding:0;border-top:0}.aside-foot>span,.aside-foot>small{display:none}.github-link{margin-top:0}}
 
 .dedupe-panel{max-width:1000px}.dedupe-panel .ready-note{margin-bottom:24px}.button-link{display:inline-flex;align-items:center;text-decoration:none;border:1px solid #dce4e7;border-radius:6px;padding:10px 14px;color:#47616a;font-size:12px}.button-link:hover{background:#f3f7f5}.download-guide{margin-top:24px;padding:18px;background:#f3f7f5;border-radius:7px;color:#4d626a;font-size:12px;line-height:1.9}.download-guide ol{padding-left:22px}.download-guide .hint{margin:12px 0 0}#dedupeMessage{overflow-wrap:anywhere;font-size:12px;line-height:1.8}#dedupeSettingsStatus{margin:18px 0 0}
@@ -145,3 +146,20 @@ main{max-width:none;padding-left:28px;padding-right:28px}
 @media(max-width:1350px) and (min-width:1101px){.settings .two{grid-template-columns:1fr}}
 @media(max-width:1100px){.layout{grid-template-columns:minmax(0,1fr)}main{padding-left:24px;padding-right:24px}}
 @media(max-width:680px){main{padding-left:16px;padding-right:16px}.workspace-results .status{padding:20px;gap:12px 16px}.status .stat-grid{gap:12px}.workspace-results .results th:last-child{width:105px}.workspace-results .terminal-panel .preview-name-line{grid-template-columns:60px minmax(0,1fr);gap:6px}}
+
+/* Compact tool navigation: preserve readable labels and scroll only when needed. */
+@media(min-width:681px){
+  aside{padding:14px 12px}
+  .brand{gap:10px;padding:0 8px;margin-bottom:20px;flex-shrink:0}
+  .brand>b{font-size:26px;padding:4px 9px}
+  .navlabel{margin:0 10px 8px;flex-shrink:0}
+  nav button{min-height:38px;padding:7px 12px;margin:1px 0;gap:10px}
+  #openFiles{min-height:40px;padding:8px 12px;margin:0 0 7px;gap:10px}
+  .aside-foot{padding:10px 8px 0}
+  .aside-foot small{display:none}
+  .github-link{margin-top:8px;padding:7px 10px}
+}
+@media(min-width:681px) and (pointer:coarse){nav button,#openFiles{min-height:44px}}
+#toggleSidebar{flex-shrink:0;min-width:42px;min-height:42px;font-size:21px}
+body.sidebar-collapsed aside{transform:translateX(-100%);visibility:hidden;position:fixed}
+body.sidebar-collapsed main{margin-left:0}

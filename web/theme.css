@@ -1,0 +1,23 @@
+/* Shared visual tokens for the toolbox and local/shared file browser. */
+:root{
+  --ui-font:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  --ui-weight-regular:400;
+  --ui-weight-control:600;
+  --ui-weight-active:700;
+  --ui-canvas:#f6f7f9;
+  --ui-sidebar:#f7f8fa;
+  --ui-surface:#fff;
+  --ui-text:#25323d;
+  --ui-muted:#75838e;
+  --ui-line:#e7ebef;
+  --ui-accent:#28765f;
+  --ui-accent-hover:#21634f;
+  --ui-accent-soft:#edf5f1;
+  --ui-focus:#65aa93;
+  --ui-danger:#b63c33;
+  --ui-radius:10px;
+  --ui-sidebar-width:244px;
+  --ui-dialog-shadow:0 20px 70px #14253626;
+}
+
+.brand-mascot{display:block;width:48px;height:48px;object-fit:contain;flex-shrink:0;user-select:none;-webkit-user-drag:none}#toolboxSidebar .brand>b:has(.brand-mascot),#sidebar .brand b:has(.brand-mascot){width:48px;height:48px;padding:0;background:transparent;border-radius:0}#loginPanel .logo{width:88px;height:88px;margin:0 auto 16px;background:transparent}#loginPanel .logo .brand-mascot{width:88px;height:88px}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -18,6 +19,9 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 	}
 	if e := validateItemPaths(c, it); e != nil {
 		return nil, e
+	}
+	if runtime.GOOS != "windows" {
+		return nativePOSIXCommands(c, it)
 	}
 	quote := powerShellLiteral
 	run := func(exe string, args []string) string {
@@ -71,6 +75,11 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 		label = "7-Zip · 纯净打包（不含后续校验）"
 	case "extract":
 		args := []string{"x", "-y", "-bd", map[string]string{"rename": "-aou", "skip": "-aos", "overwrite": "-aoa"}[c.ExtractConflict], "-o" + it.Target}
+		types, err := extractTypeOptions(it.Source)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, types...)
 		command = run(c.SevenZip, args)
 		if c.ExtractPassword != "" {
 			command += " ('-p'+$env:TOOLBOX_EXTRACT_PASSWORD)"
@@ -85,8 +94,15 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 }
 
 func imageCompressionArgs(c Config, source, target string) []string {
+	return append([]string{"-limit", "thread", "2"}, imageCompressionBaseArgs(c, source, target)...)
+}
+func imageCompressionBaseArgs(c Config, source, target string) []string {
 	if !strings.EqualFold(filepath.Ext(source), ".png") {
-		return []string{source, "-auto-orient", "-quality", strconv.Itoa(c.Quality), target}
+		format := "JPEG:"
+		if strings.EqualFold(filepath.Ext(source), ".webp") {
+			format = "WEBP:"
+		}
+		return []string{source, "-auto-orient", "-quality", strconv.Itoa(c.Quality), format + target}
 	}
 	if c.PngMode == "" || c.PngMode == "lossless" {
 		return []string{source, "-define", "png:compression-level=9", "-define", "png:compression-filter=5", "PNG00:" + target}

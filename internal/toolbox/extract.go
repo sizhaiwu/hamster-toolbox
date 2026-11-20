@@ -74,6 +74,10 @@ func extractArchiveName(path string) (string, bool) {
 		n, _ := strconv.Atoi(m[2])
 		return m[1], n == 1
 	}
+	if m := extractNumericSplitPattern.FindStringSubmatch(name); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return strings.TrimSuffix(name, m[0]), n == 1
+	}
 	if !has(name, ".7z .zip .rar") {
 		return "", false
 	}
@@ -91,6 +95,10 @@ func extractVolumes(source string) ([]archiveEntry, error) {
 	if m := extractSplitPattern.FindStringSubmatch(name); m != nil {
 		base := name[:len(name)-len(m[2])]
 		re := regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(base) + `\d+$`)
+		match = re.MatchString
+	} else if m := extractNumericSplitPattern.FindStringSubmatch(name); m != nil {
+		base := name[:len(name)-len(m[1])]
+		re := regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(base) + `\d{3,}$`)
 		match = re.MatchString
 	} else if m := extractRARPartPattern.FindStringSubmatch(name); m != nil {
 		re := regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(m[1]) + `\.part\d+\.rar$`)
@@ -212,6 +220,15 @@ func buildExtractPlan(ctx context.Context, c Config, log func(string)) (*Plan, e
 		name, ok := extractArchiveName(source)
 		if !ok {
 			continue
+		}
+		if unnamedExtractSplit(source) {
+			format, err := extractSplitType(source)
+			if err != nil {
+				return nil, err
+			}
+			if format == "" {
+				continue
+			}
 		}
 		target := c.Output
 		if c.ExtractLayout == "separate" {
@@ -466,6 +483,7 @@ func publishExtractFile(ctx context.Context, source, target, rule string) (renam
 }
 
 func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func(string)) (err error) {
+	live := newExtractProgress(ctx, it.Source, log)
 	if e := checkExtractVolumes(ctx, it, job); e != nil {
 		return e
 	}
@@ -486,10 +504,13 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 		return e
 	}
 	option := map[string]string{"rename": "-aou", "skip": "-aos", "overwrite": "-aoa"}[c.ExtractConflict]
-	if _, e = runExtractCommand(ctx, c, it.Source, "x", "-y", "-bd", "-bso0", "-bsp0", "-sccUTF-8", "-spd", option, "-p"+c.ExtractPassword, "-o"+payload, "--", it.Source); e != nil {
+	live.phase("extract", 0, 0)
+	if _, e = runExtractCommandProgress(ctx, c, it.Source, live.percent, "x", "-y", "-bso0", "-bsp1", "-bse2", "-sccUTF-8", "-spd", option, "-p"+c.ExtractPassword, "-o"+payload, "--", it.Source); e != nil {
 		return e
 	}
 	stagedFiles := 0
+	var stagedBytes int64
+	live.phase("validate", 0, 0)
 	// Check the entire staged tree before publishing any file.
 	e = filepath.WalkDir(payload, func(path string, d fs.DirEntry, e error) error {
 		if e != nil {
@@ -507,6 +528,9 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 		}
 		if s.Mode().IsRegular() {
 			stagedFiles++
+			stagedBytes = addExtractBytes(stagedBytes, s.Size())
+			live.value.FilesDone = stagedFiles
+			live.emit(false)
 		}
 		if !s.IsDir() && !s.Mode().IsRegular() {
 			return errors.New("解压结果含特殊文件")
@@ -532,6 +556,8 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 	}
 	dirs := map[string]string{".": root}
 	written, renamed, skipped := 0, 0, 0
+	live.phase("publish", stagedFiles, stagedBytes)
+	copyCtx := context.WithValue(ctx, copyProgressKey{}, live.copyBytes)
 	defer func() {
 		if err != nil && written > 0 && !errors.Is(err, errExtractDeleteSource) {
 			log(fmt.Sprintf("当前压缩包已写出 %d 个文件，已完成的文件保留", written))
@@ -561,7 +587,12 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 			dirs[rel] = target
 			return nil
 		}
-		rename, skip, e := publishExtractFile(ctx, path, filepath.Join(parent, d.Name()), c.ExtractConflict)
+		before := live.value.BytesDone
+		info, e := d.Info()
+		if e != nil {
+			return e
+		}
+		rename, skip, e := publishExtractFile(copyCtx, path, filepath.Join(parent, d.Name()), c.ExtractConflict)
 		if e != nil {
 			return e
 		}
@@ -573,6 +604,10 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 				renamed++
 			}
 		}
+		live.value.FilesDone++
+		live.value.BytesDone = addExtractBytes(before, info.Size())
+		live.writingPercent()
+		live.emit(false)
 		return nil
 	})
 	if err == nil {
@@ -589,10 +624,17 @@ func extractOne(ctx context.Context, c Config, it Item, job extractJob, log func
 			}
 			if skipped > 0 || stagedFiles != expectedFiles || written != stagedFiles {
 				log("原压缩包已保留：存在跳过或未全部独立写出的内容")
-			} else if e := deleteExtractSources(ctx, c, it, job, log); e != nil {
-				return e
+			} else {
+				live.phase("cleanup", 0, 0)
+				if e := deleteExtractSources(ctx, c, it, job, log); e != nil {
+					return e
+				}
 			}
 		}
+		live.value.Phase = "complete"
+		live.value.Percent = 100
+		live.value.PercentKnown = true
+		live.emit(true)
 	}
 	return
 }
@@ -621,7 +663,8 @@ func executeExtract(ctx context.Context, p *Plan, log func(string), progress fun
 			result.Failed++
 			break
 		}
-		if e := extractOne(ctx, p.Config, it, p.extracts[i], log); e != nil {
+		itemCtx := context.WithValue(ctx, extractPositionKey{}, extractPosition{i + 1, len(p.Items)})
+		if e := extractOne(itemCtx, p.Config, it, p.extracts[i], log); e != nil {
 			if ctx.Err() != nil {
 				log("解压已取消，已完成的文件保留")
 				break

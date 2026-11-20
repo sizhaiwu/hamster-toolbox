@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -67,6 +68,12 @@ func TestCLICommandsNoPasswordAndQuotes(t *testing.T) {
 	}
 	if !strings.Contains(commands.Execute, "--execute") || !strings.Contains(all, "TOOLBOX_ARCHIVE_PASSWORD") {
 		t.Fatal(all)
+	}
+	if runtime.GOOS != "windows" {
+		if !strings.Contains(commands.Preview, "printf") {
+			t.Fatal(commands.Preview)
+		}
+		return
 	}
 	encoded := strings.Split(strings.Split(commands.Preview, "\n@'\n")[1], "\n'@")[0]
 	var got toolbox.Config

@@ -10,9 +10,20 @@ import (
 )
 
 type preferences struct {
-	Version    int
-	LastTool   string
-	Workspaces map[string]toolbox.Config
+	BrowserAutoPlay     *bool `json:",omitempty"`
+	BrowserMuted        *bool `json:",omitempty"`
+	RememberPlayback    *bool `json:",omitempty"`
+	RestoreTabs         *bool `json:",omitempty"`
+	DefaultPlayer       string
+	FontScale           int
+	ThumbnailCacheMB    *int `json:",omitempty"`
+	Version             int
+	LastTool            string
+	Workspaces          map[string]toolbox.Config
+	SidebarCollapsed    bool
+	ArchiveAdvancedOpen bool
+	TaskPopup           *bool `json:",omitempty"`
+	TaskSound           *bool `json:",omitempty"`
 }
 
 func (s *server) loadPreferences() (preferences, error) {
@@ -38,12 +49,18 @@ func (s *server) loadPreferences() (preferences, error) {
 		p.Workspaces["image"] = c
 	}
 	for key, c := range p.Workspaces {
+		if c.Workers == 0 && (key == "image" || key == "video" || key == "exif" || key == "thumbnail") {
+			c.Workers = 1
+		}
 		if key == "format" && c.FormatDeleteMode == "" {
 			c.FormatDeleteMode = "recycle"
 		}
 		// Existing users retain the H.264 output compatibility of their saved jobs.
 		if key == "video" && c.VideoMode == "" {
 			c.VideoMode = "compatible"
+		}
+		if key == "video" && c.VideoHDR == "" {
+			c.VideoHDR = "preserve"
 		}
 		if key == "video" && c.VideoAcceleration == "" {
 			c.VideoAcceleration = "auto"
@@ -77,28 +94,38 @@ func (s *server) saveWorkspace(c toolbox.Config) (preferences, error) {
 		saved.ExtractPassword = ""
 		p.Workspaces[key] = toolbox.PortableConfig(saved)
 	}
-	if e = os.MkdirAll(s.dataDir, 0700); e != nil {
-		return p, e
+	return p, s.writePreferences(p)
+}
+
+// The caller holds settingsMu so workspace and UI updates cannot overwrite each other.
+func (s *server) writePreferences(p preferences) error {
+	for key, c := range p.Workspaces {
+		c.ArchivePassword = ""
+		c.ExtractPassword = ""
+		p.Workspaces[key] = toolbox.PortableConfig(c)
+	}
+	if e := os.MkdirAll(s.dataDir, 0700); e != nil {
+		return e
 	}
 	b, e := json.MarshalIndent(p, "", "  ")
 	if e != nil {
-		return p, e
+		return e
 	}
 	f, e := os.CreateTemp(s.dataDir, ".settings-*.json")
 	if e != nil {
-		return p, e
+		return e
 	}
 	name := f.Name()
 	defer os.Remove(name)
 	if _, e = f.Write(b); e != nil {
 		f.Close()
-		return p, e
+		return e
 	}
 	if e = f.Close(); e != nil {
-		return p, e
+		return e
 	}
 	if e = os.Rename(name, filepath.Join(s.dataDir, "settings.json")); e != nil {
-		return p, e
+		return e
 	}
-	return p, nil
+	return nil
 }

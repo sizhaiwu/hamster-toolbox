@@ -1,16 +1,22 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Version = '',
-    [switch]$UpdateOnly
+    [switch]$UpdateOnly,
+    [switch]$Installer,
+    [string]$ISCC = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repo = $PSScriptRoot
+. (Join-Path $repo 'release\package-support.ps1')
+. (Join-Path $repo 'release\installer-support.ps1')
+if ($Installer) { $ISCC = Resolve-InnoCompiler $ISCC $repo }
 if (-not $Version) { $Version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim() }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$') { throw 'Version must look like 0.1.0 or 0.1.0-beta.1' }
 if ($env:OS -ne 'Windows_NT') { throw 'Run this packaging script on Windows x64.' }
 $null = Get-Command go -ErrorAction Stop
+Assert-ReleaseUIPrerequisites $repo
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 $OutputEncoding = [Console]::OutputEncoding
 $savedLocation = Get-Location
@@ -26,10 +32,12 @@ try {
     Write-Host '[2/6] Running tests...'
     & go test ./...
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed. No release was published.' }
-    if ((Get-Command node -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath (Join-Path $repo 'node_modules\jsdom\package.json'))) {
-        & node tests/ui-check.cjs
-        if ($LASTEXITCODE -ne 0) { throw 'UI tests failed. No release was published.' }
-    }
+    & npm run test:ui
+    if ($LASTEXITCODE -ne 0) { throw 'UI tests failed. No release was published.' }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'tests\package-check.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Packaging safety checks failed. No release was published.' }
+
+    Assert-ReleaseGoNotices $repo
 
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $buildTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -44,20 +52,23 @@ try {
     $flags = '-s -w -X main.appVersion=' + $Version + ' -X main.buildTime=' + $buildTime + ' -X main.toolsManifestSHA256=' + $manifestHash
     & go build -buildvcs=false -trimpath -ldflags $flags -o $exe .
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+    $desktopExe=Join-Path $payload 'hamster-toolbox-desktop.exe'
+    & go build -buildvcs=false -trimpath -ldflags ($flags+' -H windowsgui -X main.desktopMode=true') -o $desktopExe .
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop launcher build failed.' }
     # Whitelist only release files; never copy the repository, data, or work.
-    Copy-Item -LiteralPath (Join-Path $repo 'tools') -Destination (Join-Path $payload 'tools') -Recurse
+    Copy-VerifiedReleaseTools (Join-Path $repo 'tools') (Join-Path $payload 'tools') $manifestHash
     foreach ($name in @('start-toolbox.cmd','tools-manifest.json','LICENSE')) { Copy-Item -LiteralPath (Join-Path $repo $name) -Destination $payload }
-    foreach ($name in @('QUICKSTART.txt','THIRD-PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $repo ('release\'+$name)) -Destination $payload }
+    foreach ($name in @('QUICKSTART.txt','THIRD-PARTY.txt','GO-DEPENDENCIES.txt')) { Copy-Item -LiteralPath (Join-Path $repo ('release\'+$name)) -Destination $payload }
     $Version | Set-Content -LiteralPath (Join-Path $payload 'VERSION.txt') -Encoding ASCII
 
-    Write-Host '[4/6] Verifying the staged binary and all eleven tools...'
+    Write-Host '[4/6] Verifying the staged binary and bundled tools...'
     # Test a relocated Unicode path, empty profile, and system-only PATH before
     # publishing. Character codes keep this script compatible with PowerShell 5.
     $testFolder = Join-Path $stage (([string][char]0x4ED3)+([string][char]0x9F20)+' portable test')
     foreach ($path in @($payload,$testFolder)) {
         if (-not [IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($stage)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe acceptance-test path.' }
     }
-    Move-Item -LiteralPath $payload -Destination $testFolder
+    Move-ReleaseDirectory $stage $payload $testFolder
     $testExe = Join-Path $testFolder 'hamster-toolbox.exe'
     $profile = Join-Path $stage 'empty-profile'
     $temp = Join-Path $profile 'temp'
@@ -82,12 +93,13 @@ try {
     } finally {
         foreach ($key in $testEnv.Keys) { [Environment]::SetEnvironmentVariable($key,$testEnv[$key],'Process') }
         Set-Location -LiteralPath $repo
-        Move-Item -LiteralPath $testFolder -Destination $payload
+        Move-ReleaseDirectory $stage $testFolder $payload
     }
     $releaseInfo = @{
         Product='Hamster Toolbox'; Version=$Version; BuiltUTC=$buildTime; Platform='windows/amd64'
         ToolsManifestSHA256=$manifestHash
         ExecutableSHA256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+        DesktopExecutableSHA256=(Get-FileHash -LiteralPath $desktopExe -Algorithm SHA256).Hash
         Dependencies=@($check.Dependencies | ForEach-Object { @{Key=$_.Key;Version=$_.Message} })
     }
     $releaseInfo | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $payload 'release-info.json') -Encoding UTF8
@@ -102,12 +114,17 @@ try {
     }
     $update = Join-Path $stage 'update'
     New-Item -ItemType Directory -Path $update | Out-Null
-    foreach ($name in @('hamster-toolbox.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $update }
+    foreach ($name in @('hamster-toolbox.exe','hamster-toolbox-desktop.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt','GO-DEPENDENCIES.txt')) { Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $update }
     Copy-Item -LiteralPath (Join-Path $repo 'release\UPDATE.txt') -Destination $update
     $updateZip = Join-Path $stage ($packageName+'-update.zip')
     [IO.Compression.ZipFile]::CreateFromDirectory($update,$updateZip,[IO.Compression.CompressionLevel]::Optimal,$false)
     $artifacts = @($updateZip)
     if (-not $UpdateOnly) { $artifacts = @($zip)+$artifacts }
+    if ($Installer) {
+        Write-Host 'Building the optional Windows installer...'
+        $installerArtifact=Build-HamsterInstaller $repo $payload $Version $stage ($packageName+'-setup') $ISCC
+        $artifacts += $installerArtifact
+    }
     $published = @()
     foreach ($artifact in $artifacts) {
         $name = [IO.Path]::GetFileName($artifact)
@@ -121,9 +138,12 @@ try {
     Write-Host '[6/6] Updating the local executable (previous copy is preserved)...'
     $localExe = Join-Path $repo 'hamster-toolbox.exe'
     if (Test-Path -LiteralPath $localExe) {
-        Move-Item -LiteralPath $localExe -Destination (Join-Path $repo ('work\hamster-toolbox-before-'+[guid]::NewGuid().ToString('N')+'.exe'))
+        Move-Item -LiteralPath $localExe -Destination (Join-Path $repo ('hamster-toolbox-before-'+[guid]::NewGuid().ToString('N')+'.exe'))
     }
     Copy-Item -LiteralPath $exe -Destination $localExe
+    $localDesktop=Join-Path $repo 'hamster-toolbox-desktop.exe'
+    if (Test-Path -LiteralPath $localDesktop) { Move-Item -LiteralPath $localDesktop -Destination (Join-Path $repo ('hamster-desktop-before-'+[guid]::NewGuid().ToString('N')+'.exe')) }
+    Copy-Item -LiteralPath $desktopExe -Destination $localDesktop
     Write-Host ''
     foreach ($file in $published) { Write-Host ('READY: '+$file) }
     Write-Host 'Full ZIP: new users. Update ZIP: replace program files in an existing full folder.'

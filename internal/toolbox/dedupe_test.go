@@ -2,13 +2,18 @@ package toolbox
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestDedupeDetectionAndCommand(t *testing.T) {
 	base := t.TempDir()
 	apps := t.TempDir()
-	program := filepath.Join(apps, "VideoDuplicateFinder", "VDF.GUI.exe")
+	name := "VDF.GUI.exe"
+	if runtime.GOOS != "windows" {
+		name = "VDF.GUI"
+	}
+	program := filepath.Join(apps, "VideoDuplicateFinder", name)
 	file(t, program, []byte("test fixture"))
 	if p := detectDedupeAt(base, []string{apps}); p != program {
 		t.Fatal(p)

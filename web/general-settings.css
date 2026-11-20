@@ -1,0 +1,26 @@
+#generalSettingsDialog{width:500px;max-height:85dvh;padding:24px;overflow-y:auto;scrollbar-width:thin}
+#generalSettingsDialog>.section-title{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:calc(20px * var(--user-font-scale,1));margin:0 0 18px}
+#generalSettingsDialog>.section-title button{font-size:calc(14px * var(--user-font-scale,1));min-height:36px;padding:6px 12px}
+.general-settings-tabs{display:flex;gap:6px;padding:4px;background:#f1f4f6;border-radius:9px;margin-bottom:22px}
+.general-settings-tabs button{flex:1;min-height:38px;background:transparent;border:1px solid transparent;font-size:calc(14px * var(--user-font-scale,1));padding:6px 8px;border-radius:7px;white-space:nowrap}
+.general-settings-tabs button[aria-selected=true]{background:white;border-color:#dae5de;color:#276c51;box-shadow:0 1px 3px #213f2e0b}
+#generalSettingsDialog section>label:not(.check){display:block;margin:16px 0;font-size:calc(14px * var(--user-font-scale,1))}
+#generalSettingsDialog section>label.check{display:flex;align-items:center;gap:10px;margin:20px 0;font-size:calc(15px * var(--user-font-scale,1));line-height:1.6}
+#generalSettingsDialog :is(select,input:not([type=checkbox])){width:100%;margin-top:7px;min-height:44px;font-size:calc(15px * var(--user-font-scale,1))}
+#generalSettingsDialog :is(select,input:not([type=checkbox])){height:auto;padding:10px 12px;line-height:1.5}
+#generalSettingsDialog button{font-family:var(--ui-font);font-weight:var(--ui-weight-control);line-height:1.5}
+#generalSettingsDialog .check input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:0 0 20px;padding:0;margin:0;accent-color:var(--ui-accent)}
+#generalSettingsDialog .hint{font-size:calc(13px * var(--user-font-scale,1));line-height:1.8;color:#81908c;margin:16px 0 0}
+#generalSettingsStatus{min-height:24px;overflow-wrap:anywhere}
+.version-entry,#sidebar .sidebar-bottom>button.version-entry{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;width:100%;min-height:36px;margin-top:8px;padding:7px 10px;border:1px solid #e2e7eb;border-radius:8px;background:#fff;color:#526570;font-size:13px;line-height:1.5;text-align:left}
+.version-entry #sidebarVersion{display:inline;font-size:12px;color:#78877f;font-weight:400;overflow-wrap:anywhere}.version-entry #versionBadge{font-size:11px;color:#206b4e;background:#e6f4eb;border-radius:4px;padding:1px 5px;font-weight:600}
+#versionInfoDialog{width:460px;max-width:calc(100vw - 24px);max-height:85dvh;padding:24px;overflow-y:auto;color:var(--ui-text,#253b43);font-family:var(--ui-font,"Segoe UI","Microsoft YaHei",sans-serif)}
+.version-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.version-heading h2{margin:0;font-size:20px}.version-heading button{min-height:36px;padding:6px 12px;font-size:14px}
+.version-facts{margin:22px 0}.version-facts>div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;margin:15px 0;font-size:14px;line-height:1.7}.version-facts dt{color:#81908c}.version-facts dd{margin:0;font-weight:600;overflow-wrap:anywhere}#versionBuild{font-size:12px;font-weight:400}
+#versionCheckStatus{font-size:14px;line-height:1.8;overflow-wrap:anywhere}#versionInfoDialog[data-state=available] #versionCheckStatus{color:#206b4e}.version-note{color:#81908c;font-size:13px;line-height:1.8}.version-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}.version-actions button,.version-actions a{font-size:14px;line-height:1.5}.version-actions a{color:#386e58;text-decoration:none;padding:8px 0}
+@media(max-width:600px){#versionInfoDialog{padding:20px}.version-facts>div{grid-template-columns:80px minmax(0,1fr);gap:8px}}
+.task-result-dialog{width:460px;padding:24px}.task-result-heading{display:flex;align-items:center;gap:12px}.task-result-heading h2{font-size:21px;margin:0;line-height:1.5}
+#taskResultIcon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:50%;background:#e6f4ec;color:#288254;font-size:23px}
+.task-result-dialog[data-kind=warning] #taskResultIcon{background:#fff2d9;color:#a46a14}.task-result-dialog[data-kind=error] #taskResultIcon{background:#fdece8;color:#b6483c}
+#taskResultTool{font-size:calc(15px * var(--user-font-scale,1));font-weight:600;margin:20px 0 8px}#taskResultMessage{font-size:calc(15px * var(--user-font-scale,1));line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;max-height:45dvh;overflow-y:auto}.task-result-dialog .dialog-actions{display:flex;justify-content:flex-end;margin-top:22px}
+@media(max-width:600px){#generalSettingsDialog{padding:20px;max-width:calc(100vw - 24px)}.general-settings-tabs button{font-size:calc(13px * var(--user-font-scale,1));padding:7px 5px}}

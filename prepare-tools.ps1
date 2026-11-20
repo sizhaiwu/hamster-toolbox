@@ -7,7 +7,10 @@ Set-StrictMode -Version Latest
 $repo = $PSScriptRoot
 $manifestPath = Join-Path $repo 'tools-manifest.json'
 $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
-$preparationHash = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
+$preparationSources = @($PSCommandPath) + @(Get-ChildItem -LiteralPath (Join-Path $repo 'release\mpv') -File | Sort-Object Name | ForEach-Object { $_.FullName })
+$preparationRecords = @($preparationSources | ForEach-Object { [IO.Path]::GetFileName($_)+':'+(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
+$preparationHasher = [Security.Cryptography.SHA256]::Create()
+try { $preparationHash = [BitConverter]::ToString($preparationHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes(($preparationRecords -join "`n")))).Replace('-','') } finally { $preparationHasher.Dispose() }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $tools = Join-Path $repo 'tools'
 $marker = Join-Path $tools 'bundle-files.json'
@@ -134,6 +137,23 @@ foreach ($asset in $manifest.Assets) {
     } else { & $tar -xf $archive -C $extract }
     if ($LASTEXITCODE -ne 0) { throw ('Extraction failed: ' + $asset.Name) }
     switch ($asset.Kind) {
+        'mpv' {
+            $players = @(Get-ChildItem -LiteralPath $extract -Filter mpv.exe -File -Recurse)
+            if ($players.Count -ne 1) { throw 'Expected one mpv executable in archive.' }
+            # Keep only the player runtime, rather than association/install or
+            # self-update scripts that would bypass the pinned component set.
+            foreach ($name in @('mpv.exe','d3dcompiler_43.dll')) {
+                $file = Join-Path $players[0].Directory.FullName $name
+                if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw ('Missing mpv runtime file: '+$name) }
+                Copy-Item -LiteralPath $file -Destination $dest
+            }
+            $fontConfig = Join-Path $players[0].Directory.FullName 'mpv\fonts.conf'
+            if (Test-Path -LiteralPath $fontConfig -PathType Leaf) {
+                New-Item -ItemType Directory -Path (Join-Path $dest 'mpv') -Force | Out-Null
+                Copy-Item -LiteralPath $fontConfig -Destination (Join-Path $dest 'mpv')
+            }
+            foreach ($name in @('Copyright','LICENSE.GPL','LICENSE.LGPL','README.txt')) { Copy-Item -LiteralPath (Join-Path $repo ('release\mpv\'+$name)) -Destination $dest }
+        }
         'ffmpeg' {
             $ff = @(Get-ChildItem -LiteralPath $extract -Filter ffmpeg.exe -File -Recurse)
             if ($ff.Count -ne 1) { throw 'Expected one FFmpeg executable in archive.' }
@@ -192,6 +212,14 @@ $files = @(Get-ChildItem -LiteralPath $newTools -File -Recurse | Sort-Object Ful
 foreach ($path in @($tools,$newTools)) {
     if (-not [IO.Path]::GetFullPath($path).StartsWith($repo+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe tools path.' }
 }
-if (Test-Path -LiteralPath $tools) { Move-Item -LiteralPath $tools -Destination (Join-Path $repo ('work\tools-backup-'+[guid]::NewGuid().ToString('N'))) }
+if (Test-Path -LiteralPath $tools) {
+    $componentUsers = @(Get-Process | ForEach-Object {
+        try { $processPath = $_.Path } catch { $processPath = $null }
+        if ($processPath -and ($processPath.StartsWith($tools+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
+            ((Split-Path -Parent $processPath) -eq $repo -and ([IO.Path]::GetFileName($processPath) -like 'hamster-*.exe' -or [IO.Path]::GetFileName($processPath) -eq 'media-toolbox.exe')))) { $_.Id }
+    })
+    if ($componentUsers.Count -gt 0) { throw ('Components need rebuilding. Finish tasks and close the running toolbox/player first. Process IDs: '+($componentUsers -join ', ')) }
+    Move-Item -LiteralPath $tools -Destination (Join-Path $repo ('work\tools-backup-'+[guid]::NewGuid().ToString('N')))
+}
 Move-Item -LiteralPath $newTools -Destination $tools
 Write-Host 'Portable dependencies prepared. Archives are cached under work/downloads.'

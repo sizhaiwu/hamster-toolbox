@@ -195,6 +195,10 @@ func recycleLocalPath(path string) error {
 }
 
 func recycleExtractFiles(paths []string) (recycleResult, error) {
+	return recycleWindowsPaths(paths, false)
+}
+
+func recycleWindowsPaths(paths []string, allowDirectories bool) (recycleResult, error) {
 	if len(paths) == 0 {
 		return recycleResult{}, nil
 	}
@@ -203,7 +207,7 @@ func recycleExtractFiles(paths []string) (recycleResult, error) {
 			return recycleResult{}, e
 		}
 		st, e := os.Lstat(path)
-		if e != nil || !st.Mode().IsRegular() {
+		if e != nil || (!st.Mode().IsRegular() && !(allowDirectories && st.IsDir())) {
 			return recycleResult{}, errors.New("待回收的文件不存在或不是普通文件，已停止清理")
 		}
 	}

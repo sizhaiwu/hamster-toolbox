@@ -55,6 +55,36 @@ func TestArchivePasswordIsNeverPersisted(t *testing.T) {
 	}
 }
 
+func TestArchiveAdvancedDisclosurePersistence(t *testing.T) {
+	s := &server{token: "test-session", dataDir: t.TempDir()}
+	p, err := s.loadPreferences()
+	if err != nil || p.ArchiveAdvancedOpen {
+		t.Fatal("old settings should keep advanced options collapsed", p, err)
+	}
+	for _, open := range []bool{true, false} {
+		w := requestAPI(t, s, "/api/ui-settings", map[string]any{"ArchiveAdvancedOpen": open})
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		// Parameter and other UI saves must preserve this independent preference.
+		c := toolbox.DefaultConfig()
+		c.Tool = "archive"
+		c.ArchiveStart = 29
+		if _, err = s.saveWorkspace(c); err != nil {
+			t.Fatal(err)
+		}
+		w = requestAPI(t, s, "/api/ui-settings", map[string]any{"SidebarCollapsed": true, "TaskSound": false})
+		if w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+		restarted := &server{dataDir: s.dataDir}
+		p, err = restarted.loadPreferences()
+		if err != nil || p.ArchiveAdvancedOpen != open || !p.SidebarCollapsed || p.TaskSound == nil || *p.TaskSound || p.Workspaces["archive"].ArchiveStart != 29 {
+			t.Fatal("UI preference or workspace settings lost after restart", p, err)
+		}
+	}
+}
+
 func TestTemporaryExtractPasswordIsNeverPersisted(t *testing.T) {
 	s := &server{dataDir: t.TempDir()}
 	c := toolbox.DefaultConfig()
@@ -137,8 +167,11 @@ func TestRetiredCompressionSettingsAreMigrated(t *testing.T) {
 			}
 			expected := original.Workspaces["image"]
 			expected.ImageFormats = tc.want
+			expected.Workers = 1
 			expectedVideo := original.Workspaces["video"]
 			expectedVideo.VideoMode, expectedVideo.VideoAcceleration = "compatible", "auto"
+			expectedVideo.Workers = 1
+			expectedVideo.VideoHDR = "preserve"
 			if !reflect.DeepEqual(image, expected) || !reflect.DeepEqual(got.Workspaces["video"], expectedVideo) {
 				t.Fatal("other settings changed", got)
 			}
@@ -162,6 +195,9 @@ func TestWorkspaceSettingsSurviveRestart(t *testing.T) {
 	s := &server{dataDir: dir}
 	image := toolbox.Config{Tool: "image", Root: "C:/photos", Output: "C:/small-photos", Quality: 75, Magick: "C:/image/magick.exe", FFmpeg: "unused", ImageFormats: []string{".png"}, PngMode: "webp-png", PngQuality: 92}
 	video := toolbox.Config{Tool: "video", Root: "D:/videos", Output: "D:/small-videos", CRF: 28, VideoMode: "archive", VideoAcceleration: "intel", FFmpeg: "D:/video/ffmpeg.exe", FFprobe: "D:/video/ffprobe.exe"}
+	image.Magick = filepath.Join(dir, "programs", "magick")
+	video.FFmpeg = filepath.Join(dir, "programs", "ffmpeg")
+	video.FFprobe = filepath.Join(dir, "programs", "ffprobe")
 	for _, c := range []toolbox.Config{image, video, image} {
 		if _, e := s.saveWorkspace(c); e != nil {
 			t.Fatal(e)
@@ -261,6 +297,7 @@ func TestProgramPickerOnlyListsRelevantFiles(t *testing.T) {
 	for _, n := range []string{"program.exe", "font.ttf", "photo.jpg"} {
 		os.WriteFile(filepath.Join(dir, n), []byte("test"), 0600)
 	}
+	os.Chmod(filepath.Join(dir, "program.exe"), 0700)
 	s := &server{token: "test-session"}
 	w := requestAPI(t, s, "/api/browse", map[string]any{"Path": dir, "Kind": "program"})
 	var listing struct{ Files []string }
@@ -300,19 +337,16 @@ func TestArchiveExecutionRecordOmitsPasswordIntegration(t *testing.T) {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		files, _ := filepath.Glob(filepath.Join(s.dataDir, "*.json"))
+		files, _ := filepath.Glob(filepath.Join(s.dataDir, "task-history", "*.json"))
 		if len(files) > 0 {
 			b, e := os.ReadFile(files[0])
-			var record struct {
-				State state
-				Plan  toolbox.Plan
-			}
-			if e == nil && json.Unmarshal(b, &record) == nil {
-				if strings.Contains(string(b), c.ArchivePassword) || record.Plan.Config.ArchivePassword != "" {
+			var record taskRecord
+			if e == nil && json.Unmarshal(b, &record) == nil && record.Status == "finished" {
+				if strings.Contains(string(b), c.ArchivePassword) || record.Config.ArchivePassword != "" {
 					t.Fatal("record leaked password")
 				}
-				if record.State.Result.Success != 1 {
-					t.Fatal(record.State)
+				if record.Result.Success != 1 {
+					t.Fatal(record)
 				}
 				if p.Config.ArchivePassword != c.ArchivePassword {
 					t.Fatal("record redaction changed live task")

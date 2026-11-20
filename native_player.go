@@ -1,0 +1,425 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+
+	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
+)
+
+type nativePlayerConfig struct{ Program string }
+type nativePlaybackView struct {
+	ID, Name, Kind, Decoder, Codec  string
+	Connected, Paused, Muted, OnTop bool
+	Time, Duration                  float64
+}
+type nativePlayback struct {
+	mu                sync.Mutex
+	write             sync.Mutex
+	view              nativePlaybackView
+	cmd               *exec.Cmd
+	conn              net.Conn
+	endpoint, tempDir string
+}
+type nativePlayerManager struct {
+	mu                          sync.Mutex
+	configuration               sync.Mutex
+	program, dataDir, lastError string
+	sessions                    map[string]*nativePlayback
+}
+
+func (b *fileBrowser) nativePlayer() *nativePlayerManager {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.native == nil {
+		b.native = &nativePlayerManager{dataDir: b.dataDir, sessions: map[string]*nativePlayback{}}
+		data, err := os.ReadFile(filepath.Join(b.dataDir, "native-player.json"))
+		if err == nil {
+			var c nativePlayerConfig
+			if json.Unmarshal(data, &c) == nil {
+				b.native.program = c.Program
+			}
+		}
+	}
+	return b.native
+}
+func resolveNativePlayer(configured string) string {
+	exe, _ := os.Executable()
+	base := filepath.Dir(exe)
+	if configured != "" {
+		if !filepath.IsAbs(configured) {
+			configured = filepath.Join(base, configured)
+		}
+		if st, e := os.Stat(configured); e == nil && st.Mode().IsRegular() {
+			return configured
+		}
+	}
+	name := "mpv"
+	if runtime.GOOS == "windows" {
+		name = "mpv.exe"
+	}
+	for _, candidate := range []string{filepath.Join(base, "tools", "mpv", name), filepath.Join(base, "tools", name)} {
+		if st, e := os.Stat(candidate); e == nil && st.Mode().IsRegular() {
+			return candidate
+		}
+	}
+	if found, e := exec.LookPath(name); e == nil {
+		full, _ := filepath.Abs(found)
+		return full
+	}
+	return ""
+}
+func (m *nativePlayerManager) status() map[string]any {
+	m.mu.Lock()
+	program, lastError := m.program, m.lastError
+	sessions := make([]*nativePlayback, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	m.mu.Unlock()
+	views := []nativePlaybackView{}
+	for _, session := range sessions {
+		session.mu.Lock()
+		views = append(views, session.view)
+		session.mu.Unlock()
+	}
+	sort.Slice(views, func(i, j int) bool {
+		if views[i].Name == views[j].Name {
+			return views[i].ID < views[j].ID
+		}
+		return views[i].Name < views[j].Name
+	})
+	resolved := resolveNativePlayer(program)
+	return map[string]any{"Available": resolved != "", "Program": resolved, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
+}
+func (m *nativePlayerManager) configure(program string) error {
+	m.configuration.Lock()
+	defer m.configuration.Unlock()
+	program = strings.Trim(strings.TrimSpace(program), "\"")
+	if program != "" {
+		if err := validateExternalProgram(program); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, program, "--version")
+		prepareNativePlayerCommand(cmd)
+		out := &nativePlayerBuffer{}
+		cmd.Stdout = out
+		cmd.Stderr = io.Discard
+		if err := cmd.Run(); err != nil || !strings.HasPrefix(strings.TrimSpace(out.String()), "mpv ") {
+			return errors.New("请选择 mpv 程序文件，当前程序未通过版本检查")
+		}
+	}
+	if err := os.MkdirAll(m.dataDir, 0700); err != nil {
+		return err
+	}
+	stored := program
+	exe, _ := os.Executable()
+	base := filepath.Dir(exe)
+	if relative, e := filepath.Rel(base, program); program != "" && e == nil && strings.HasPrefix(filepath.ToSlash(relative), "tools/") {
+		stored = filepath.ToSlash(relative)
+	}
+	data, _ := json.MarshalIndent(nativePlayerConfig{Program: stored}, "", "  ")
+	tmp, e := os.CreateTemp(m.dataDir, ".native-player-*.tmp")
+	if e != nil {
+		return e
+	}
+	defer os.Remove(tmp.Name())
+	if _, e = tmp.Write(data); e != nil {
+		tmp.Close()
+		return e
+	}
+	if e = tmp.Close(); e != nil {
+		return e
+	}
+	if e = os.Rename(tmp.Name(), filepath.Join(m.dataDir, "native-player.json")); e != nil {
+		return e
+	}
+	m.mu.Lock()
+	m.program = stored
+	m.lastError = ""
+	m.mu.Unlock()
+	return nil
+}
+
+// Bounded diagnostics only; never let a player flood the service's memory.
+type nativePlayerBuffer struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+func (b *nativePlayerBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data = append(b.data, p...)
+	if len(b.data) > 8192 {
+		b.data = append([]byte{}, b.data[len(b.data)-8192:]...)
+	}
+	return len(p), nil
+}
+func (b *nativePlayerBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.data) }
+func nativePlayerArgs(file, endpoint string, index int) []string {
+	args := []string{"--no-config", "--load-scripts=no", "--ytdl=no", "--input-terminal=no", "--terminal=no", "--hwdec=auto", "--vo=gpu-next", "--ontop=yes", "--border=no", "--keep-open=yes", "--keepaspect-window=no", "--auto-window-resize=no", "--autofit=75%x80%", "--window-dragging=yes", "--osc=yes", "--osd-font-size=28", "--osd-scale-by-window=no", "--script-opts=osc-windowcontrols=yes,osc-visibility=auto,osc-scalewindowed=1.4,osc-scalefullscreen=1.25,osc-vidscale=no,osc-deadzonesize=0", "--mute=no", "--input-media-keys=no", "--sub-auto=no", "--audio-file-auto=no", "--title=仓鼠播放器 · ${filename}", "--input-ipc-server=" + endpoint}
+	if browserKind(file) == "image" {
+		args = append(args, "--image-display-duration=inf")
+	}
+	if runtime.GOOS == "windows" {
+		args = append(args, "--gpu-context=d3d11")
+	}
+	args = append(args, fmt.Sprintf("--geometry=+%d+%d", 40+(index%5)*24, 40+(index%5)*24), "--", file)
+	return args
+}
+func (m *nativePlayerManager) open(file string) error {
+	m.mu.Lock()
+	program := resolveNativePlayer(m.program)
+	index := len(m.sessions)
+	m.mu.Unlock()
+	if program == "" {
+		return errors.New("未找到 mpv，请在原生播放器设置中选择程序或按指引下载")
+	}
+	id := randomID()
+	endpoint, dir, err := nativePlayerEndpoint(id)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(program, nativePlayerArgs(file, endpoint, index)...)
+	prepareNativePlayerCommand(cmd)
+	diagnostics := &nativePlayerBuffer{}
+	cmd.Stderr = diagnostics
+	cmd.Stdout = io.Discard
+	s := &nativePlayback{view: nativePlaybackView{ID: id, Name: filepath.Base(file), Kind: browserKind(file), Muted: false, OnTop: true}, cmd: cmd, endpoint: endpoint, tempDir: dir}
+	if err = cmd.Start(); err != nil {
+		if dir != "" {
+			os.Remove(dir)
+		}
+		return fmt.Errorf("无法启动 mpv：%w", err)
+	}
+	m.mu.Lock()
+	m.sessions[id] = s
+	m.lastError = ""
+	m.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		err := cmd.Wait()
+		cancel()
+		s.mu.Lock()
+		conn := s.conn
+		s.conn = nil
+		s.view.Connected = false
+		s.mu.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+		if s.tempDir != "" {
+			os.Remove(s.endpoint)
+			os.Remove(s.tempDir)
+		}
+		m.mu.Lock()
+		delete(m.sessions, id)
+		if err != nil {
+			m.lastError = "原生播放器已退出：" + strings.TrimSpace(diagnostics.String())
+			if len(m.lastError) > 1500 {
+				m.lastError = m.lastError[:1500]
+			}
+		}
+		m.mu.Unlock()
+	}()
+	go s.monitor(ctx)
+	return nil
+}
+func (s *nativePlayback) send(command []any) error {
+	s.write.Lock()
+	defer s.write.Unlock()
+	s.mu.Lock()
+	conn := s.conn
+	s.mu.Unlock()
+	if conn == nil {
+		return errors.New("播放器正在启动或已关闭")
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	return json.NewEncoder(conn).Encode(map[string]any{"command": command})
+}
+func (s *nativePlayback) monitor(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	var conn net.Conn
+	for ctx.Err() == nil {
+		candidate, err := dialNativePlayer(ctx, s.endpoint)
+		if err == nil {
+			conn = candidate
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(80 * time.Millisecond):
+		}
+	}
+	if conn == nil {
+		return
+	}
+	s.mu.Lock()
+	s.conn = conn
+	s.view.Connected = true
+	s.mu.Unlock()
+	defer func() {
+		conn.Close()
+		s.mu.Lock()
+		if s.conn == conn {
+			s.conn = nil
+			s.view.Connected = false
+		}
+		s.mu.Unlock()
+	}()
+	for index, name := range []string{"hwdec-current", "video-codec", "time-pos", "duration", "pause", "mute", "ontop"} {
+		if s.send([]any{"observe_property", index + 1, name}) != nil {
+			return
+		}
+	}
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 4096), 128<<10)
+	for scanner.Scan() {
+		var message struct {
+			Event, Name string
+			Data        json.RawMessage
+		}
+		if json.Unmarshal(scanner.Bytes(), &message) != nil || message.Event != "property-change" {
+			continue
+		}
+		s.mu.Lock()
+		switch message.Name {
+		case "hwdec-current":
+			json.Unmarshal(message.Data, &s.view.Decoder)
+		case "video-codec":
+			json.Unmarshal(message.Data, &s.view.Codec)
+		case "time-pos":
+			json.Unmarshal(message.Data, &s.view.Time)
+		case "duration":
+			json.Unmarshal(message.Data, &s.view.Duration)
+		case "pause":
+			json.Unmarshal(message.Data, &s.view.Paused)
+		case "mute":
+			json.Unmarshal(message.Data, &s.view.Muted)
+		case "ontop":
+			json.Unmarshal(message.Data, &s.view.OnTop)
+		}
+		s.mu.Unlock()
+	}
+}
+func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Action, ID, Path, Version, Program string
+		Value                              float64
+	}
+	d := json.NewDecoder(r.Body)
+	d.DisallowUnknownFields()
+	if d.Decode(&req) != nil {
+		fail(w, errors.New("原生播放器请求无效"))
+		return
+	}
+	m := b.nativePlayer()
+	var err error
+	switch req.Action {
+	case "status":
+	case "configure":
+		err = m.configure(req.Program)
+	case "open":
+		kind := browserKind(req.Path)
+		if !filepath.IsAbs(req.Path) || strings.ContainsFunc(req.Path, unicode.IsControl) || (kind != "video" && kind != "image") {
+			err = errors.New("请选择资源管理器中的本机图片或视频")
+			break
+		}
+		b.mu.Lock()
+		ref, ok := b.references[req.Version]
+		b.mu.Unlock()
+		if !ok || time.Since(ref.At) > 15*time.Minute {
+			err = errors.New("选择已过期，请刷新目录后重试")
+			break
+		}
+		if err = ref.Ref.Check(req.Path); err != nil {
+			break
+		}
+		var f *os.File
+		f, err = toolbox.BrowseOpen(req.Path)
+		if err != nil {
+			break
+		}
+		st, e := f.Stat()
+		if e != nil || !st.Mode().IsRegular() {
+			f.Close()
+			err = errors.New("只支持普通图片或视频文件")
+			break
+		}
+		if err = ref.Ref.Check(f.Name()); err == nil {
+			err = m.open(f.Name())
+		}
+		f.Close()
+	case "pause", "resume", "mute", "unmute", "pin", "unpin", "seek", "close":
+		m.mu.Lock()
+		session := m.sessions[req.ID]
+		m.mu.Unlock()
+		if session == nil {
+			err = errors.New("原生播放窗口已关闭")
+			break
+		}
+		var command []any
+		switch req.Action {
+		case "pause":
+			command = []any{"set_property", "pause", true}
+		case "resume":
+			session.mu.Lock()
+			ended := session.view.Duration > 0 && session.view.Time >= session.view.Duration-0.1
+			session.mu.Unlock()
+			if ended {
+				err = session.send([]any{"seek", 0, "absolute"})
+			}
+			command = []any{"set_property", "pause", false}
+		case "mute":
+			command = []any{"set_property", "mute", true}
+		case "unmute":
+			command = []any{"set_property", "mute", false}
+		case "pin":
+			command = []any{"set_property", "ontop", true}
+		case "unpin":
+			command = []any{"set_property", "ontop", false}
+		case "seek":
+			if math.IsNaN(req.Value) || math.IsInf(req.Value, 0) || req.Value < 0 || req.Value > 7*24*3600 {
+				err = errors.New("播放位置无效")
+			} else {
+				command = []any{"seek", req.Value, "absolute"}
+			}
+		case "close":
+			command = []any{"quit"}
+		}
+		if err == nil {
+			err = session.send(command)
+			if err != nil && req.Action == "close" {
+				err = session.cmd.Process.Kill()
+			}
+		}
+	default:
+		err = errors.New("不支持的播放器操作")
+	}
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	send(w, m.status())
+}

@@ -84,12 +84,24 @@ func pathContains(root, path string) bool {
 }
 
 func protectedPathReason(path string) string {
+	return protectedPathReasonMode(path, true)
+}
+
+func protectedPathReasonMode(path string, ancestors bool) string {
+	return protectedPathReasonOptions(path, ancestors, true)
+}
+func protectedPathReasonOptions(path string, ancestors, allowTemporary bool) string {
 	if filepath.Dir(path) == path {
 		return "盘符根目录或共享根目录"
 	}
 	var protected []protectedPath
+	tempRoot := protectionPath(os.TempDir())
+	temporaryChild := allowTemporary && tempRoot != "" && pathContains(tempRoot, path) && !sameExtractPath(tempRoot, path)
 	add := func(p, label string) {
 		if p == "" {
+			return
+		}
+		if runtime.GOOS == "darwin" && temporaryChild && label == "系统目录" && pathContains(protectionPath(p), tempRoot) {
 			return
 		}
 		// Preserve both the actual location and its logical system path, even
@@ -116,27 +128,31 @@ func protectedPathReason(path string) string {
 			return "管理共享"
 		}
 	} else {
-		for _, p := range []string{"/etc", "/bin", "/sbin", "/usr", "/var", "/System", "/Library"} {
+		for _, p := range []string{"/etc", "/bin", "/sbin", "/usr", "/var", "/System", "/Library", "/dev", "/proc", "/sys", "/run", "/boot", "/root", "/private", "/Applications", "/opt", "/lost+found"} {
 			add(p, "系统目录")
 		}
 	}
 	if home, e := os.UserHomeDir(); e == nil {
 		if h := protectionPath(home); h != "" {
-			if sameExtractPath(path, h) || sameExtractPath(path, filepath.Dir(h)) {
+			if ancestors && (sameExtractPath(path, h) || sameExtractPath(path, filepath.Dir(h))) {
 				return "用户目录根目录"
 			}
-			if pathContains(filepath.Dir(h), path) && !pathContains(h, path) {
+			if filepath.Dir(h) != filepath.Dir(filepath.Dir(h)) && pathContains(filepath.Dir(h), path) && !pathContains(h, path) && !sameExtractPath(path, filepath.Dir(h)) {
 				return "其他用户或公共配置目录"
 			}
 			// Individual temporary resource folders are usable; the entire Temp is not.
 			temp := protectionPath(os.TempDir())
-			inTemp := temp != "" && pathContains(temp, path) && !sameExtractPath(temp, path)
+			inTemp := allowTemporary && temp != "" && pathContains(temp, path) && !sameExtractPath(temp, path)
 			if sameExtractPath(temp, path) {
 				return "临时文件根目录"
 			}
 			if !inTemp {
 				add(filepath.Join(h, "AppData"), "用户应用配置目录")
 				add(filepath.Join(h, ".config"), "用户应用配置目录")
+				if runtime.GOOS != "windows" {
+					add(filepath.Join(h, "Library"), "用户应用配置目录")
+					add(filepath.Join(h, ".local"), "用户应用配置目录")
+				}
 			}
 			for _, p := range []string{"NTUSER.DAT", "ntuser.dat.LOG1", "ntuser.dat.LOG2", "ntuser.ini", ".ssh", ".aws", ".azure", ".gnupg", ".kube", ".codex", ".gitconfig"} {
 				add(filepath.Join(h, p), "用户配置或凭据")
@@ -151,7 +167,7 @@ func protectedPathReason(path string) string {
 	extraProtectedPaths.RUnlock()
 	for _, rule := range protected {
 		// Moving an ancestor would also move the protected directory.
-		if pathContains(rule.path, path) || pathContains(path, rule.path) {
+		if pathContains(rule.path, path) || ancestors && pathContains(path, rule.path) {
 			return rule.reason
 		}
 	}
@@ -161,6 +177,12 @@ func protectedPathReason(path string) string {
 // Resolve ordinary filesystem paths without applying write/delete protection.
 // Read-only inputs can be explicitly chosen outside the mutable resource area.
 func resolveNonLinkPath(path string) (string, error) {
+	return resolveOrdinaryPath(path, false)
+}
+
+// Root enumeration is only enabled by the read-only file browser. Existing
+// resource inputs and every write/delete guard continue rejecting roots.
+func resolveOrdinaryPath(path string, allowRoot bool) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", errors.New("路径为空")
 	}
@@ -171,10 +193,19 @@ func resolveNonLinkPath(path string) (string, error) {
 	if e != nil {
 		return "", e
 	}
+	if runtime.GOOS == "darwin" {
+		for _, alias := range []string{"/var", "/tmp", "/etc"} {
+			if p == alias || strings.HasPrefix(p, alias+"/") {
+				if target, e := os.Readlink(alias); e == nil && target == "/private"+alias {
+					p = target + strings.TrimPrefix(p, alias)
+				}
+			}
+		}
+	}
 	if runtime.GOOS == "windows" && (strings.HasPrefix(p, `\\.\`) || strings.HasPrefix(p, `\\?\`) || strings.Contains(strings.TrimPrefix(p, filepath.VolumeName(p)), ":")) {
 		return "", errors.New("安全拦截：不支持设备路径或备用数据流路径")
 	}
-	if filepath.Dir(p) == p {
+	if !allowRoot && filepath.Dir(p) == p {
 		return "", errors.New("安全拦截：不允许处理盘符根目录或共享根目录，请选择具体的资源子目录")
 	}
 	if volume := filepath.VolumeName(p); runtime.GOOS == "windows" && strings.HasPrefix(volume, `\\`) && strings.HasSuffix(volume, "$") {

@@ -1,0 +1,41 @@
+name: 问题反馈
+description: 提供版本、复现步骤与脱敏信息，方便定位问题。
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传私人媒体、真实资源名、完整私人路径、密码或带 session 的链接。安全漏洞请先阅读 SECURITY.md。
+  - type: input
+    id: version
+    attributes:
+      label: 工具箱版本
+      description: 可打开页面中的“关于与更新”查看版本及构建时间，或运行 hamster-toolbox.exe -version。
+      placeholder: 例如 0.2.2-dev
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统、浏览器与使用方式
+      placeholder: 例如 Windows 11 / Chrome / 本机访问 / 完整包
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 操作步骤、期望结果与实际结果
+      description: 使用虚构路径说明；媒体问题可附格式、分辨率和编码名称。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏日志或截图（选填）
+      description: 只保留必要报错；替换用户名、路径和资源名，遮挡访问口令与 session 参数。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 分享前检查
+      options:
+        - label: 我已检查附件与日志，不包含密码、会话链接或私人资源信息。
+          required: true

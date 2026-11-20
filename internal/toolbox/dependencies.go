@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -42,8 +43,25 @@ func RequiredDependencies(c Config) []Dependency {
 	font := Dependency{Key: "Font", Name: "中文字体", Purpose: "显示 PDF 目录的中文标题", Path: c.Font,
 		DownloadURL: "https://github.com/notofonts/noto-cjk/releases", GuideURL: "https://github.com/notofonts/noto-cjk",
 		Instructions: "通常会自动找到系统自带的中文字体，无需下载。未找到时，可下载 Noto CJK 的 TTF 字体，解压后选择 .ttf 或 .ttc 文件。"}
+
+	if runtime.GOOS != "windows" {
+		ffmpeg.DownloadURL = "https://ffmpeg.org/download.html"
+		ffmpeg.GuideURL = ffmpeg.DownloadURL
+		ffmpeg.Instructions = "安装当前系统版本的 FFmpeg（Linux 可用发行版包管理器，macOS 可用 Homebrew），然后自动查找或选择 ffmpeg；ffprobe 通常同时安装。"
+		ffprobe.DownloadURL = ffmpeg.DownloadURL
+		ffprobe.GuideURL = ffmpeg.GuideURL
+		ffprobe.Instructions = "与 FFmpeg 一起安装，选择 ffprobe 可执行文件。"
+		magick.DownloadURL = "https://imagemagick.org/script/download.php"
+		magick.GuideURL = magick.DownloadURL
+		magick.Instructions = "安装 ImageMagick 7，选择 magick 可执行文件；macOS 可用 Homebrew，Linux 请使用发行版或官方安装方式。"
+		exif.GuideURL = "https://exiftool.org/install.html"
+		exif.Instructions = "安装当前系统版本的 ExifTool，选择 exiftool 可执行文件；需要系统有 Perl。"
+	}
 	switch c.Tool {
 	case "archive", "extract":
+		if runtime.GOOS != "windows" {
+			return []Dependency{{Key: "SevenZip", Name: "7-Zip", Purpose: "打包、解压和校验资源", Path: c.SevenZip, DownloadURL: "https://www.7-zip.org/download.html", GuideURL: "https://www.7-zip.org/", Instructions: "安装当前系统与架构的 7-Zip，选择 7zz 或 7z 可执行文件；RAR 需要包含对应格式支持的版本。"}}
+		}
 		return []Dependency{{Key: "SevenZip", Name: "7-Zip", Purpose: "使用 7-Zip 打包、解压与校验资源", Path: c.SevenZip, DownloadURL: "https://www.7-zip.org/download.html", GuideURL: "https://www.7-zip.org/", Instructions: "完整版已内置，无需安装。手动设置时，下载 Windows x64 版本并选择 7z.exe，保留同目录的 7z.dll。精简版 7za.exe 不支持 RAR。"}}
 	case "describe":
 		return []Dependency{ffprobe}
@@ -165,6 +183,9 @@ func CheckDependencies(ctx context.Context, c Config, verify bool) []Dependency 
 // Ignore fields unrelated to the selected tool, even from older saved settings.
 func ScopeConfig(c Config) Config {
 	r := Config{Tool: c.Tool, Root: c.Root, Recursive: c.Recursive}
+	if c.Tool == "image" || c.Tool == "exif" || c.Tool == "thumbnail" || c.Tool == "video" {
+		r.Workers = c.Workers
+	}
 	switch c.Tool {
 	case "format":
 		r.FormatCleanOther, r.FormatDeleteMode = c.FormatCleanOther, c.FormatDeleteMode
@@ -234,6 +255,7 @@ func ScopeConfig(c Config) Config {
 	case "video":
 		r.Output = c.Output
 		r.VideoMode, r.VideoAcceleration = c.VideoMode, c.VideoAcceleration
+		r.VideoHDR = c.VideoHDR
 		r.FFmpeg = c.FFmpeg
 		r.FFprobe = c.FFprobe
 		r.CRF = c.CRF
@@ -248,16 +270,31 @@ func ScopeConfig(c Config) Config {
 	return r
 }
 
+func programName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
 func detectProgram(name, portableFolder string) string {
 	base, _ := os.Executable()
 	base = filepath.Dir(base)
-	for _, p := range []string{filepath.Join(base, "tools", portableFolder, name+".exe"), filepath.Join(base, "tools", portableFolder, "bin", name+".exe"), filepath.Join(base, "tools", name+".exe")} {
+	for _, p := range []string{filepath.Join(base, "tools", portableFolder, programName(name)), filepath.Join(base, "tools", portableFolder, "bin", programName(name)), filepath.Join(base, "tools", programName(name))} {
 		if s, e := os.Stat(p); e == nil && s.Mode().IsRegular() {
 			return p
 		}
 	}
 	if p, e := exec.LookPath(name); e == nil {
 		return p
+	}
+	if runtime.GOOS != "windows" {
+		for _, dir := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"} {
+			p := filepath.Join(dir, name)
+			if st, e := os.Stat(p); e == nil && st.Mode().IsRegular() && st.Mode().Perm()&0111 != 0 {
+				return p
+			}
+		}
 	}
 	if name == "magick" {
 		for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"} {
@@ -278,6 +315,15 @@ func detectFont() string {
 	if path := bundledDependency(executableDirectory(), "Font"); path != "" {
 		return path
 	}
+	if runtime.GOOS != "windows" {
+		home, _ := os.UserHomeDir()
+		for _, p := range []string{"/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/STHeiti Medium.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", filepath.Join(home, ".local/share/fonts/NotoSansCJKsc-Regular.otf"), filepath.Join(home, "Library/Fonts/NotoSansCJKsc-Regular.otf")} {
+			if regularFile(p) {
+				return p
+			}
+		}
+		return ""
+	}
 	root := os.Getenv("WINDIR")
 	if root == "" {
 		root = "C:/Windows"
@@ -292,6 +338,11 @@ func detectFont() string {
 }
 
 func detectSevenZip() string {
+	if runtime.GOOS != "windows" {
+		if p := detectProgram("7zz", "sevenzip"); p != "" {
+			return p
+		}
+	}
 	if p := detectProgram("7z", "sevenzip"); p != "" {
 		return p
 	}

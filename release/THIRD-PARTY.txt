@@ -2,10 +2,13 @@ Hamster Toolbox - bundled components
 
 Hamster Toolbox source code is licensed under MIT; see LICENSE.
 The third-party components below retain their separate upstream licenses.
+Go runtime, golang.org/x/sys and Microsoft go-winio notices are reproduced
+in GO-DEPENDENCIES.txt, included in both the full bundle and program update.
 
 Upstream component versions, download URLs, source locations and archive SHA256
 are recorded in tools-manifest.json. Original licenses and notices are preserved
-inside tools/ffmpeg, tools/imagemagick, tools/exiftool, tools/sevenzip and tools/fonts.
+inside tools/ffmpeg, tools/imagemagick, tools/exiftool, tools/sevenzip, tools/fonts
+and tools/mpv.
 
 FFmpeg Windows builds: https://www.gyan.dev/ffmpeg/builds/
 FFmpeg source: https://github.com/FFmpeg/FFmpeg
@@ -19,6 +22,10 @@ ExifTool source: https://github.com/exiftool/exiftool
 See tools/sevenzip/License.txt for the full runtime and
 tools/sevenzip/7za-License.txt for the standalone 7za console.
 Noto CJK fonts: https://github.com/notofonts/noto-cjk
+mpv (separate native player executable): https://mpv.io/
+mpv source and exact build: see tools/mpv/README.txt and tools-manifest.json.
+mpv and its bundled dependencies retain their own GPL/LGPL and other licenses.
+Keep tools/mpv/Copyright, LICENSE.GPL, LICENSE.LGPL and README.txt when distributing.
 Microsoft Visual C++ OpenMP runtime:
 https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
 Original Microsoft terms are included alongside the runtime in tools/imagemagick.

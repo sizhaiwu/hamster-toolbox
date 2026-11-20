@@ -1,0 +1,34 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {setup,wait}=require('./explorer-check.cjs');
+const ready=async t=>{await wait(()=>t.calls.some(c=>c.route==='list')&&t.$('notice').textContent!=='正在读取目录…','listing ready');await new Promise(resolve=>setTimeout(resolve,20))};
+const go=async(t,path)=>{t.$('location').value=path;t.$('go').click();await wait(()=>t.$('location').value===path&&!t.$('newFolder').disabled,'directory ready')};
+const change=(t,id,value)=>{t.$(id).value=value;t.$(id).dispatchEvent(new t.w.Event('change'))};
+const context=(t,index)=>t.d.querySelectorAll('.entry-open')[index].dispatchEvent(new t.w.MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:100,clientY:120}));
+const item=(t,text)=>[...t.$('contextMenu').querySelectorAll('button')].find(b=>b.textContent===text);
+(async()=>{
+ const store={value:null},t=setup(true,{preferencesStore:store});await ready(t);await go(t,'E:\\demo');
+ for(const id of ['back','forward','up','refresh','rename','move','remove','pageSize','order','sort','viewerClose','zoomIn','newTab','sidebarToggle'])assert(t.$(id).title,id+' must explain its purpose');
+ t.$('sidebarToggle').click();assert(t.d.body.classList.contains('sidebar-collapsed'));assert.equal(t.$('sidebar').inert,true);
+ change(t,'pageSize','50');await wait(()=>store.value?.pageSize===50,'page size saved');await ready(t);
+ assert.equal(t.calls.filter(c=>c.route==='list').at(-1).body.PageSize,50);
+ change(t,'order','desc');await wait(()=>store.value?.order==='desc','direction saved');await ready(t);
+ assert.equal(t.calls.filter(c=>c.route==='list').at(-1).body.Order,'desc');
+ const saved=t.w.sessionStorage.getItem('hamster.files.tabs.v1.local');
+ context(t,1);assert.equal(t.$('contextMenu').hidden,false);assert(item(t,'下载原文件'));assert(item(t,'重命名'));assert.equal(t.$('nameDialog').open,false);
+ item(t,'重命名').click();assert.equal(t.$('nameDialog').open,true);assert.equal(t.$('newName').value,'演示.jpg');t.$('nameCancel').click();
+ context(t,1);item(t,'删除…').click();assert.equal(t.$('deleteDialog').open,true);assert.equal(t.$('permanent').checked,false);assert(!t.calls.some(c=>c.route==='mutate'),'menu opens confirmation without deleting');t.$('deleteCancel').click();
+ context(t,0);item(t,'在本地文件管理器打开').click();await wait(()=>t.calls.some(c=>c.route==='open-local'&&c.body.Path==='E:\\demo\\相册')&&t.$('notice').textContent==='已在本机文件管理器打开','context native folder action');
+ context(t,1);t.$('contextMenu').dispatchEvent(new t.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(t.$('contextMenu').hidden);
+ const second=t.d.querySelectorAll('.entry-open')[2];second.dispatchEvent(new t.w.KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));assert(!t.$('contextMenu').hidden);assert.equal(t.d.activeElement.getAttribute('role'),'menuitem');
+ // Right-click on one of multiple selected files keeps the group for safe bulk actions.
+ t.$('contextMenu').dispatchEvent(new t.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ t.d.querySelectorAll('.entry-open')[1].dispatchEvent(new t.w.MouseEvent('click',{bubbles:true,ctrlKey:true}));context(t,2);
+ assert.equal(item(t,'重命名').disabled,true);assert.equal(item(t,'移动到…').disabled,false);assert(t.$('summary').textContent.includes('已选 2'));
+ let top;Object.defineProperty(t.w,'scrollY',{value:800,configurable:true});t.w.scrollTo=value=>top=value;t.w.dispatchEvent(new t.w.Event('scroll'));assert.equal(t.$('backTop').hidden,false);t.$('backTop').click();assert.equal(top.top,0);assert(t.$('contextMenu').hidden);
+ assert.equal(t.errors.length,0,t.errors.join('\n'));t.dom.window.close();
+ const restarted=setup(true,{url:'http://localhost:9999/files/?session=new',preferencesStore:store,workspace:saved});await ready(restarted);assert.equal(restarted.$('pageSize').value,'50');assert.equal(restarted.$('order').value,'desc');assert(restarted.d.body.classList.contains('sidebar-collapsed'));restarted.dom.window.close();
+ const guest=setup(false);await ready(guest);context(guest,1);assert(item(guest,'下载原文件'));assert(!item(guest,'重命名'));assert(!item(guest,'删除…'));assert(!item(guest,'在本地文件管理器打开'));change(guest,'pageSize','100');await ready(guest);assert(!guest.calls.some(c=>c.route==='preferences'));assert.equal(JSON.parse(guest.w.localStorage.getItem('hamster.files.view')).pageSize,100);assert.equal(guest.errors.length,0);guest.dom.window.close();
+ const css=fs.readFileSync('web/explorer.css','utf8');assert(css.includes('.sticky-navigation{position:sticky;top:0'));assert(css.includes('.sticky-navigation .tabs-row{position:static'));
+ console.log('PASS: remembered sidebar/page size/sort, tooltips, safe context menu, keyboard access, multiselection, top navigation and guest isolation');
+})().catch(e=>{console.error(e);process.exitCode=1});

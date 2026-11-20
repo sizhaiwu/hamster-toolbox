@@ -1,55 +1,52 @@
-# 🐹 仓鼠工具箱
+<p align="center"><img src="web/hamster-logo.png" width="136" height="136" alt="抱着资源文件夹的动漫仓鼠"></p>
+<h1 align="center">仓鼠工具箱</h1>
 
-一个 Windows 本地文件与媒体处理工具箱，支持批量改名、目录整理、图片和视频处理。文件在本机处理，界面通过浏览器操作。
+整理、处理和收藏本地资源的工具箱。通过浏览器操作，在本机处理文件；也能用命令行批处理，或共享资源给手机和其他电脑。
 
-想知道每个工具能做什么？查看 [12 项工具的输入与输出示例](docs/examples.md)。
+## 能做什么
 
-## 功能
+- **整理命名**：目录统计命名、批量重命名、自定义目录编号与续号、按媒体信息命名。
+- **图片与视频**：清理元数据、压缩图片和视频、生成视频缩略图拼图、PDF 图册索引。
+- **打包与解压**：7-Zip 加密、分卷、附加说明文件；识别常见及仅有 `.001/.002` 后缀的分卷，显示解压进度，管理常用密码。
+- **资源管理器**：多标签、快速访问、自然排序、图片缩放、视频时长、缩略图列表、大目录搜索、文件夹上传与续传、复制与跨盘移动、改名和删除。
+- **多种观看方式**：浏览器预览、悬停播放、多窗口悬浮查看；本机可用 mpv 独立窗口，优先硬件解码。
+- **共享与自动化**：多个目录或磁盘根目录共享，适配电脑、手机和平板；提供 CLI 和页面复制命令。去重可打开另行安装的 Video Duplicate Finder。
 
-- **整理与命名**：更新目录统计、按文字或编号示例批量改名、自定义目录编号与续号；可选清理非媒体文件。
-- **图片与图册**：压缩 JPEG / PNG / 静态 WebP，清理图片和视频元数据，生成 PDF 图册索引。
-- **视频与信息**：H.264 / H.265 压缩，显卡或 CPU 编码与自动回退，生成缩略图拼图，按媒体信息命名；可复制压缩命令。
-- **打包与解压**：7-Zip 打包为 7z，支持分卷、加密和附加文件；批量解压 7z / ZIP / RAR 及分卷包，共用常用密码列表。
-- **文件去重入口**：打开单独安装的 Video Duplicate Finder，查找重复或相似的视频、图片。
+[全部功能](docs/features.md) · [输入输出示例](docs/examples.md) · [文档目录](docs/README.md)
+
+## 开始使用
+
+1. 在 [Releases](https://github.com/sizhaiwu/hamster-toolbox/releases) 下载 **Windows x64 安装包 `*-setup.exe`**；喜欢便携版可选择完整 ZIP。源码包和 `*-update.zip` 不能单独使用，旧版可能不含本文全部功能。
+2. 安装后使用桌面或开始菜单快捷方式；便携版完整解压后运行 `hamster-toolbox-desktop.exe`。工具箱会在浏览器中打开，托盘可再次打开或退出。
+3. 批处理先“扫描并预览”，核对后执行；浏览文件则进入左侧“资源管理器”。
+
+顶部[任务历史](docs/task-history.md)可查看执行结果；图片/视频压缩、元数据清理及视频缩略图支持重扫失败和未完成文件，核对后继续处理。
+
+Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、Python 或 Node.js。去重软件需另行下载；Linux/macOS 请[从源码构建并准备本机依赖](docs/platforms.md)。
+
+需要控制台或 CLI 时使用 `hamster-toolbox.exe` / `start-toolbox.cmd`。安装版和便携版可选择 Windows 登录后静默自启（默认关闭）；工具箱页面底部“关于与更新”显示当前版本和最新正式版，详见[安装与更新](docs/installation.md)。
+
+先用[合成体验素材](samples/README.md)试用。媒体处理默认保留原件；改名直接修改名称，文件清理默认关闭。其他设备需先在本机开启共享，远程访问见[加密组网与内网穿透](docs/remote-access.md)。
 
 ## 界面预览
 
-左侧设置，右侧查看任务状态、处理前后对比和运行日志。依赖设置默认折叠。
+工具设置在左，状态、处理前后对比和运行日志在右。
 
-**目录统计命名：扫描后对比原名称与新名称**
+![工具箱与处理预览](docs/images/overview.jpg)
 
-![目录统计命名与处理前后对比](docs/images/overview.jpg)
+资源管理器支持文件预览、视频时长和多种观看方式。
 
-**视频压缩：选择模式与加速方式，查看压缩结果**
+![资源管理器与视频时长](docs/images/explorer.jpg)
 
-![视频压缩模式与输出预览](docs/images/video-compression.jpg)
+截图只使用合成素材，用于展示主要操作，具体按钮以当前版本为准。更多操作见[使用指南](docs/usage.md)、[资源管理器](docs/file-browser.md)和[媒体预览](docs/media-preview.md)。
 
-**7-Zip 打包：添加说明文件，预览分卷名称与输出位置**
+其他设备访问的[口令页和登录后界面](docs/remote-access.md#访客访问示例)见远程访问文档。
 
-![7-Zip 打包与附加文件预览](docs/images/archive.jpg)
+## 文档与开发
 
-截图使用临时生成的示例文件，不含个人资源或密码；截图中的体积与耗时不代表通用性能。
+文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
 
-## 使用
+- 使用：[CLI 入门](docs/cli.md) · [参数手册](docs/cli-reference.md) · [常见问题](docs/faq.md)
+- 维护：[开发](docs/development.md) · [测试](docs/testing.md) · [打包](docs/packaging.md) · [组件](docs/dependencies.md) · [安全](docs/safety.md)
 
-1. 从 [Releases](https://github.com/sizhaiwu/hamster-toolbox/releases) 下载完整版并完整解压；尚无发布包时可按开发文档自行打包。
-2. 双击 `hamster-toolbox.exe`，也可使用 `start-toolbox.cmd`。
-3. 选择工具和输入目录，点击“扫描并预览”，检查后执行。
-
-面向 **Windows 10/11 64 位**。完整版内置批处理所需组件，无需安装开发环境；文件去重软件需另行下载。改名会直接修改名称，清理文件和解压后清理原包均默认关闭，请先检查预览。
-
-## 文档
-
-- [一键准备体验素材](samples/README.md)：双击 `try-samples.cmd`，用合成素材体验各项功能。
-- [使用指南](docs/usage.md)
-- [各工具输入与输出示例](docs/examples.md)
-- [CLI 命令行与页面复制命令](docs/cli.md)（开发版）
-- [各工具 CLI 参数手册](docs/cli-reference.md)（开发版）
-- [开发与测试](docs/development.md)
-- [打包与发布](docs/packaging.md)
-- [外部组件与配置](docs/dependencies.md)
-- [安全与数据保护](docs/safety.md)
-
-## 许可证
-
-项目代码采用 [MIT](LICENSE) 许可证。随包外部组件遵循各自的许可证，见 [第三方说明](release/THIRD-PARTY.txt)。
+项目代码采用 [MIT](LICENSE) 许可证。Go 运行时与模块许可见 [Go 依赖声明](release/GO-DEPENDENCIES.txt)。第三方组件保留各自许可证，见[第三方说明](release/THIRD-PARTY.txt)；仓鼠形象见[品牌素材](docs/brand/README.md)。

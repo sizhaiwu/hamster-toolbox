@@ -1,8 +1,10 @@
 # CLI 参数手册
 
+[文档目录](README.md)
+
 [返回 CLI 入门](cli.md) · [返回首页](../README.md)
 
-适用于 0.2.2 开发版。以下默认值是直接运行 CLI 且没有提供 JSON 配置时的值，**不会沿用页面保存的设置**；页面复制的命令则会携带当时的页面参数。示例路径均为虚构。
+适用于当前源码的完整 CLI 功能。以下默认值是直接运行 CLI 且没有提供 JSON 配置时的值，**不会沿用页面保存的设置**；页面复制的命令则会携带当时的页面参数。示例路径均为虚构。
 
 工具索引：[目录统计命名](#format-目录统计命名)、[批量重命名](#rename-批量重命名)、[目录批量编号](#number-目录批量编号)、[媒体信息命名](#describe-媒体信息命名)、[清理元数据](#exif-清理元数据)、[PDF 图册索引](#pdf-pdf-图册索引)、[压缩图片](#image-压缩图片)、[压缩视频](#video-压缩视频)、[视频缩略图](#thumbnail-视频缩略图)、[打包资源](#archive-打包资源)、[解压资源](#extract-解压资源)、[文件去重](#dedupe-文件去重)。
 
@@ -162,6 +164,8 @@
 .\hamster-toolbox.exe cli exif --root 'E:\示例媒体' --metadata-types all --output 'E:\示例输出\已清理'
 ```
 
+`--workers`：同时处理文件数，默认 1。图片、元数据、缩略图范围 1–8；视频范围 1–3，建议先使用 1。并发数不改变画质参数，增大会增加内存、CPU 或显卡占用。
+
 ## pdf PDF 图册索引
 
 把每个直接子目录作为一个封面页，使用目录标题和首张可解码图片，合并成一份 PDF；不是把所有图片逐张转成 PDF。
@@ -199,6 +203,8 @@
 .\hamster-toolbox.exe cli image --root 'E:\示例图片' --image-formats jpg,jpeg,jpe,jfif,webp --quality 75
 ```
 
+`--workers`：同时处理文件数，默认 1。图片、元数据、缩略图范围 1–8；视频范围 1–3，建议先使用 1。并发数不改变画质参数，增大会增加内存、CPU 或显卡占用。
+
 ## video 压缩视频
 
 保持画面尺寸和帧率，以质量等级压缩，保留原件，输出 MP4。默认输出：`<输入目录>\toolbox-output\video`，保留相对目录结构；结果没有变小时跳过输出。
@@ -207,13 +213,14 @@
 
 | 参数 | JSON 字段 | 默认值 | 控制什么 |
 | --- | --- | --- | --- |
+| `--video-hdr` | `VideoHDR` | `preserve` | `preserve`：保留 HLG / HDR10，输出 H.265 10-bit；含静态母版/亮度元数据时使用 CPU。`sdr`：色调映射到 BT.709，改变 HDR 显示效果以适配普通设备。`skip`：跳过 HDR。`base`：对带 Dolby Vision 信息的 HLG 视频保留 HLG 基层、移除杜比动态信息（需接受动态效果变化）；其他动态 HDR 保留原片。 |
 | `--video-mode` | `VideoMode` | `efficient` | `compatible`：H.264，播放兼容更好；`efficient`：H.265，通常更省空间；`archive`：H.265 CPU 慢速，耗时较长，适合不急于完成的任务。 |
 | `--video-acceleration` | `VideoAcceleration` | `auto` | `auto` 依次尝试 NVIDIA、Intel、AMD 后回退 CPU；`nvidia`/`intel`/`amd` 优先所选设备、失败回退 CPU；`cpu` 只用 CPU。不是 GPU 解码开关。`archive` 始终使用 CPU。 |
 | `--crf` | `CRF` | `18` | 质量等级 `0–51`，越低通常越清晰、体积越大。建议先试 `18` 清晰优先、`23` 均衡、`28` 体积优先。不同编码器会换算，不能把不同设备的同值当作相同画质。`0` 使用 CPU 的特殊质量设置，不代表工具箱承诺无损。 |
 | `--min-mb` | `MinMB` | `100` | 文件至少多大才处理，整数，单位 MiB（`1024×1024` 字节）。`0` 不限制大小。 |
 | `--min-kbps` | `MinKbps` | `1000` | 视频码率至少多少才处理，整数，单位 kbps（`1000` bit/s）；读不到视频流码率时使用容器码率。`0` 不限制码率。与大小条件必须同时满足。 |
 
-CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面命令会带上页面实际值。HDR/Dolby Vision 暂不自动压缩。扩展名支持 MP4、MPG、MPE、MPEG、QT、MOV、M4V、WMV、AVI、WebM、FLV、MKV、TS，能否成功还取决于内部编码和文件完整性。更多模式比较见 [视频压缩说明](video-compression.md)。
+CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面命令会带上页面实际值。HDR 默认保留，可用 `--video-hdr sdr` 转为普通视频，或 `--video-hdr skip` 跳过。扩展名支持 MP4、MPG、MPE、MPEG、QT、MOV、M4V、WMV、AVI、WebM、FLV、MKV、TS，能否成功还取决于内部编码和文件完整性。更多模式比较见 [视频压缩说明](video-compression.md)。
 
 ```powershell
 # CPU 高效均衡，连小文件也处理
@@ -222,9 +229,13 @@ CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面�
 .\hamster-toolbox.exe cli video --root 'E:\示例视频' --video-mode compatible --video-acceleration intel --crf 23
 ```
 
+`--workers`：同时处理文件数，默认 1。图片、元数据、缩略图范围 1–8；视频范围 1–3，建议先使用 1。并发数不改变画质参数，增大会增加内存、CPU 或显卡占用。
+
 ## thumbnail 视频缩略图
 
 每个视频均匀取帧，生成一张带文件信息和画面时间的拼图。默认输出：`<输入目录>\视频预览图`；保留相对目录结构，名称会附加原视频扩展名，例如 `片段.mp4.jpg`。
+
+快速定位未输出画面时会自动重试兼容定位，截取时间保持不变；此过程无需额外参数，适用于部分缺少索引或扩展名与实际封装不符的视频。仍失败时保留源视频并报告错误。
 
 通用参数：`--root`、`--recursive`、`--output`。程序参数：`--ffmpeg`、`--ffprobe`、`--magick`、`--font`。
 
@@ -245,6 +256,8 @@ CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面�
 # 生成 3×3 PNG，无顶部信息，深色背景
 .\hamster-toolbox.exe cli thumbnail --root 'E:\示例视频' --thumbnail-columns 3 --thumbnail-rows 3 --thumbnail-format png --thumbnail-info=false --thumbnail-background '#202020'
 ```
+
+`--workers`：同时处理文件数，默认 1。图片、元数据、缩略图范围 1–8；视频范围 1–3，建议先使用 1。并发数不改变画质参数，增大会增加内存、CPU 或显卡占用。
 
 ## archive 打包资源
 
@@ -307,7 +320,7 @@ CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面�
 | `--extract-delete-source` | `ExtractDeleteSource` | `false` | 该包解压成功、校验完成后清理原包及其相关分卷；失败时保留。 |
 | `--extract-delete-mode` | `ExtractDeleteMode` | `recycle` | 开启原包清理时使用：`recycle` 移入 Windows 回收站；`permanent` 永久删除。回收站操作失败会报告，不自动改成永久删除。 |
 
-支持 7z/ZIP/RAR 及可识别分卷，例如 `.7z.001`、`.zip.001`、`.part1.rar`、RAR 的 `.rar + .r00`、ZIP 的 `.zip + .z01`。相关卷必须放在一起，程序只把入口卷作为一个任务；不是承诺支持 7-Zip 所有可读取格式。
+支持 7z/ZIP/RAR 及可识别分卷，例如 `.7z.001`、`.zip.001`、`.part1.rar`、RAR 的 `.rar + .r00`、ZIP 的 `.zip + .z01`。仅剩 `.001/.002` 的字节分卷会读取首卷文件头，按真实 7z/ZIP/RAR 类型处理，不必补回格式后缀。相关卷必须放在一起，程序只把入口卷作为一个任务；不是承诺支持 7-Zip 所有可读取格式。
 
 ```powershell
 # 默认自动重命名重复文件，保留原包

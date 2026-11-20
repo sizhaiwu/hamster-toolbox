@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,7 +45,11 @@ func TestCancelledPublishCleansPartialOutput(t *testing.T) {
 }
 
 func TestChineseNamesUseWindowsCharacterLimit(t *testing.T) {
-	if !validName(strings.Repeat("册", 100)) {
+	count := 100
+	if runtime.GOOS != "windows" {
+		count = 80
+	}
+	if !validName(strings.Repeat("册", count)) {
 		t.Fatal("valid long Chinese name rejected")
 	}
 	if validName(strings.Repeat("册", 256)) || validName(strings.Repeat("😀", 128)) {
@@ -52,6 +57,12 @@ func TestChineseNamesUseWindowsCharacterLimit(t *testing.T) {
 	}
 	root := t.TempDir()
 	source := strings.Repeat("册", 90)
+	if runtime.GOOS != "windows" {
+		source = strings.Repeat("册", 60)
+		if validName(strings.Repeat("册", 86)) {
+			t.Fatal("overlong UTF-8 byte name accepted")
+		}
+	}
 	file(t, filepath.Join(root, source, "image.jpg"), []byte("x"))
 	c := DefaultConfig()
 	c.Root = root

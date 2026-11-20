@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -30,6 +32,8 @@ func bundledDependency(base, key string) string {
 		candidates = []string{filepath.Join("ffmpeg", "bin", name), filepath.Join("ffmpeg", name), name}
 	case "Magick":
 		candidates = []string{filepath.Join("imagemagick", "magick.exe"), filepath.Join("imagemagick", "bin", "magick.exe"), "magick.exe"}
+	case "MPV":
+		candidates = []string{filepath.Join("mpv", "mpv.exe")}
 	case "Exiftool":
 		candidates = []string{filepath.Join("exiftool", "exiftool.exe"), "exiftool.exe"}
 	case "SevenZip":
@@ -37,6 +41,14 @@ func bundledDependency(base, key string) string {
 	case "Font":
 		for _, ext := range []string{".otf", ".ttf", ".ttc"} {
 			candidates = append(candidates, filepath.Join("fonts", "NotoSansCJKsc-Regular"+ext))
+		}
+	}
+	if runtime.GOOS != "windows" && key != "Font" {
+		for i := range candidates {
+			candidates[i] = strings.TrimSuffix(candidates[i], ".exe")
+		}
+		if key == "SevenZip" {
+			candidates = append([]string{filepath.Join("sevenzip", "7zz")}, candidates...)
 		}
 	}
 	for _, rel := range candidates {
@@ -156,6 +168,9 @@ func CheckPortableBundle(ctx context.Context) []Dependency {
 	deps := CheckDependencies(ctx, c, true)
 	deps = append(deps, CheckDependencies(ctx, Config{Tool: "exif", Exiftool: bundledDependency(base, "Exiftool")}, true)...)
 	deps = append(deps, CheckDependencies(ctx, Config{Tool: "archive", SevenZip: bundledDependency(base, "SevenZip")}, true)...)
+	if runtime.GOOS != "windows" {
+		return deps
+	}
 	runtimePath := filepath.Join(base, "tools", "imagemagick", "vcomp140.dll")
 	runtime := Dependency{Key: "OpenMP", Name: "ImageMagick OpenMP runtime", Purpose: "随包图片组件运行库", Path: runtimePath, Message: "缺少 x64 运行库，请使用完整版"}
 	if f, e := pe.Open(runtimePath); e == nil {
@@ -167,6 +182,18 @@ func CheckPortableBundle(ctx context.Context) []Dependency {
 		}
 	}
 	deps = append(deps, runtime)
+	player := Dependency{Key: "MPV", Name: "mpv", Purpose: "本机原生硬件解码播放", Path: bundledDependency(base, "MPV"), Message: "缺少原生播放器，请使用完整版"}
+	if player.Path != "" {
+		cmd := exec.CommandContext(ctx, player.Path, "--version")
+		hideWindow(cmd)
+		out, err := cmd.Output()
+		if err == nil && bytes.HasPrefix(out, []byte("mpv ")) {
+			player.Available = true
+			player.Verified = true
+			player.Message = strings.SplitN(string(out), "\n", 2)[0]
+		}
+	}
+	deps = append(deps, player)
 	return deps
 }
 

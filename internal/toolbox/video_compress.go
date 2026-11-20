@@ -11,12 +11,20 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
 
 func normalizeVideoOptions(c *Config) error {
+	if c.VideoHDR == "" {
+		c.VideoHDR = "preserve"
+	}
+	if c.VideoHDR != "preserve" && c.VideoHDR != "sdr" && c.VideoHDR != "skip" && c.VideoHDR != "base" {
+		return errors.New("请选择有效的 HDR 处理方式")
+	}
+
 	if c.VideoMode == "" {
 		c.VideoMode = "compatible"
 	}
@@ -50,6 +58,7 @@ type compressionStream struct {
 	Codec                   string `json:"codec_name"`
 	Width, Height, Channels int
 	PixelFormat             string `json:"pix_fmt"`
+	TimeBase                string `json:"time_base"`
 	Transfer                string `json:"color_transfer"`
 	Primaries               string `json:"color_primaries"`
 	Space                   string `json:"color_space"`
@@ -59,17 +68,15 @@ type compressionStream struct {
 	Disposition             struct {
 		AttachedPic int `json:"attached_pic"`
 	}
-	SideData []struct {
-		Type     string `json:"side_data_type"`
-		Rotation float64
-	} `json:"side_data_list"`
+	SideData []compressionSideData `json:"side_data_list"`
 }
 
 type compressionVideo struct {
-	Video    compressionStream
-	Audio    []compressionStream
-	Duration float64
-	Bitrate  int64
+	hdrScanned bool
+	Video      compressionStream
+	Audio      []compressionStream
+	Duration   float64
+	Bitrate    int64
 }
 
 func probeCompressionVideo(ctx context.Context, exe, source string) (compressionVideo, error) {
@@ -104,20 +111,12 @@ func probeCompressionVideo(ctx context.Context, exe, source string) (compression
 	if v.Video.Width <= 0 || v.Video.Height <= 0 {
 		return v, errors.New("没有可压缩的视频画面")
 	}
-	return v, nil
-}
-
-func (v compressionVideo) supported() error {
-	if v.Video.Transfer == "smpte2084" || v.Video.Transfer == "arib-std-b67" {
-		return errors.New("HDR 视频暂不自动压缩，避免亮度和颜色变化；保留原文件")
-	}
-	for _, side := range v.Video.SideData {
-		t := strings.ToLower(side.Type)
-		if strings.Contains(t, "dovi") || strings.Contains(t, "dolby") || strings.Contains(t, "mastering display") || strings.Contains(t, "content light") {
-			return errors.New("含 HDR / Dolby Vision 信息，暂不自动压缩；保留原文件")
+	if v.hdr() {
+		if err := probeHDRFrames(ctx, exe, source, &v); err != nil {
+			return v, err
 		}
 	}
-	return nil
+	return v, nil
 }
 
 func (v compressionVideo) tenBit() bool {
@@ -197,8 +196,29 @@ func videoAudioError(e error) bool {
 		return false
 	}
 	t := strings.ToLower(e.Error())
+	if videoAudioTimestampError(e) {
+		return true
+	}
 	for _, hint := range []string{"aac", "audio", "could not find tag for codec", "not currently supported in container"} {
 		if strings.Contains(t, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+var videoLegacyAudioOutput = regexp.MustCompile(`output stream 0:[1-9][0-9]*(?:[^0-9]|$)`)
+
+// The output maps one video stream first, followed only by audio streams.
+// New FFmpeg identifies audio outputs as aost; older muxers report 0:1, etc.
+// A generic DTS/muxing failure alone must not be mistaken for an audio error.
+func videoAudioTimestampError(e error) bool {
+	if e == nil || videoOptionError(e) {
+		return false
+	}
+	for _, line := range strings.Split(strings.ToLower(e.Error()), "\n") {
+		nonMonotonic := strings.Contains(line, "non-monotonic dts") || strings.Contains(line, "non-monotonous dts") || strings.Contains(line, "non monotonically increasing dts")
+		if nonMonotonic && (strings.Contains(line, "[aost#") || strings.Contains(line, "[aist#") || videoLegacyAudioOutput.MatchString(line)) {
 			return true
 		}
 	}
@@ -248,7 +268,19 @@ func (s *videoSession) quality(encoder string) int {
 
 func (s *videoSession) encoderArgs(a videoAttempt, v compressionVideo) []string {
 	q := s.quality(a.encoder)
+	toneSDR := v.hdr() && s.config.VideoHDR == "sdr"
+	colors := v.Video
+	if toneSDR {
+		colors.Transfer = "bt709"
+		colors.Primaries = "bt709"
+		colors.Space = "bt709"
+		colors.Range = "tv"
+	}
+
 	args := []string{"-c:v", a.encoder}
+	if s.config.Workers > 1 && strings.HasPrefix(a.encoder, "lib") {
+		args = append(args, "-threads", strconv.Itoa(max(1, runtime.NumCPU()/s.config.Workers)))
+	}
 	switch {
 	case strings.HasSuffix(a.encoder, "_nvenc"):
 		help, known := s.encoderHelp[a.encoder]
@@ -281,27 +313,44 @@ func (s *videoSession) encoderArgs(a videoAttempt, v compressionVideo) []string 
 		args = append(args, "-preset", preset, "-crf", strconv.Itoa(q))
 		if a.encoder == "libx265" {
 			params := "log-level=error"
-			for _, color := range []struct{ key, value string }{{"colorprim", v.Video.Primaries}, {"transfer", v.Video.Transfer}, {"colormatrix", v.Video.Space}} {
+			if s.config.Workers > 1 {
+				threads := max(1, runtime.NumCPU()/s.config.Workers)
+				params += fmt.Sprintf(":pools=%d:frame-threads=%d", threads, min(threads, 4))
+			}
+			for _, color := range []struct{ key, value string }{{"colorprim", colors.Primaries}, {"transfer", colors.Transfer}, {"colormatrix", colors.Space}} {
 				if color.value != "" && color.value != "unknown" && color.value != "unspecified" {
 					params += ":" + color.key + "=" + color.value
 				}
+			}
+			if v.hdr() && !toneSDR {
+				params += hdrX265Parameters(v)
+			}
+			if toneSDR {
+				params += ":cll=0"
 			}
 			args = append(args, "-x265-params", params)
 		}
 	}
 	pixel := "yuv420p"
-	if v.tenBit() && s.config.VideoMode != "compatible" {
+	if s.preserve10Bit(v) {
 		pixel = "yuv420p10le"
 		if !strings.HasPrefix(a.encoder, "lib") {
 			pixel = "p010le"
 		}
 	}
 	// Pad by at most one pixel, rather than resize odd-sized sources.
-	args = append(args, "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", pixel)
+	filter := "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+	if toneSDR {
+		filter = hdrToneMapFilter() + "," + filter
+	}
+	if s.config.VideoHDR == "base" && v.hlgDolbyBase() {
+		filter += ",sidedata=mode=delete:type=DOVI_RPU_BUFFER,sidedata=mode=delete:type=DOVI_METADATA"
+	}
+	args = append(args, "-vf", filter, "-pix_fmt", pixel)
 	if s.config.VideoMode != "compatible" {
 		args = append(args, "-tag:v", "hvc1")
 	}
-	for _, color := range []struct{ key, value string }{{"color_trc", v.Video.Transfer}, {"color_primaries", v.Video.Primaries}, {"colorspace", v.Video.Space}, {"color_range", v.Video.Range}} {
+	for _, color := range []struct{ key, value string }{{"color_trc", colors.Transfer}, {"color_primaries", colors.Primaries}, {"colorspace", colors.Space}, {"color_range", colors.Range}} {
 		if color.value != "" && color.value != "unknown" && color.value != "unspecified" {
 			args = append(args, "-"+color.key, color.value)
 		}
@@ -309,7 +358,7 @@ func (s *videoSession) encoderArgs(a videoAttempt, v compressionVideo) []string 
 	return args
 }
 
-func videoAudioArgs(v compressionVideo, forceAAC bool) []string {
+func videoAudioArgs(v compressionVideo, forceAAC bool, repairTimeline ...bool) []string {
 	args := []string{}
 	for i, stream := range v.Audio {
 		index := strconv.Itoa(i)
@@ -324,6 +373,11 @@ func videoAudioArgs(v compressionVideo, forceAAC bool) []string {
 				rate = "384k"
 			}
 			args = append(args, "-b:a:"+index, rate)
+			if len(repairTimeline) > 0 && repairTimeline[0] {
+				// Fill/trim discontinuities using the original audio timestamps.
+				// Do not reset first_pts: intentional delayed tracks keep their offset.
+				args = append(args, "-filter:a:"+index, "aresample=async=1")
+			}
 		}
 	}
 	return args
@@ -360,13 +414,16 @@ func (s *videoSession) available(ctx context.Context, a videoAttempt, v compress
 		}
 		s.encoderHelp[a.encoder] = string(out)
 	}
-	key := fmt.Sprintf("%s/%t", a.encoder, v.tenBit() && s.config.VideoMode != "compatible")
+	key := fmt.Sprintf("%s/%t", a.encoder, s.preserve10Bit(v))
 	if !s.checked[key] {
 		probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-frames:v", "8", "-an"}
 		// Device capability is independent of one source's color metadata.
-		probeVideo := compressionVideo{Video: compressionStream{PixelFormat: v.Video.PixelFormat, Bits: v.Video.Bits}}
+		probeVideo := compressionVideo{Video: compressionStream{PixelFormat: "yuv420p"}}
+		if s.preserve10Bit(v) {
+			probeVideo.Video.PixelFormat = "yuv420p10le"
+		}
 		args = append(args, s.encoderArgs(a, probeVideo)...)
 		args = append(args, "-f", "null", "-")
 		_, e := run(probeCtx, s.config.FFmpeg, args...)
@@ -386,16 +443,36 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 	if e != nil {
 		return e
 	}
-	if e = v.supported(); e != nil {
+	original := s.config
+	defer func() { s.config = original }()
+	s.config, e = effectiveHDRConfig(s.config, v)
+	if e != nil {
 		return e
 	}
+	if v.hdr() {
+		s.log(hdrPlanNote(original, v))
+		if s.config.VideoHDR == "base" && v.hlgDolbyBase() {
+			if e = checkHLGBaseFilters(ctx, s.config.FFmpeg); e != nil {
+				return e
+			}
+		}
+		if s.config.VideoHDR == "sdr" {
+			if e = checkHDRFilters(ctx, s.config.FFmpeg); e != nil {
+				return e
+			}
+		}
+	}
+
 	if e = s.loadCLI(ctx); e != nil {
 		return e
 	}
-	if v.tenBit() && s.config.VideoMode == "compatible" {
+	if v.tenBit() && !v.hdr() && s.config.VideoMode == "compatible" {
 		s.log("兼容模式：10-bit SDR 转为 8-bit H.264；需要保留位深时请选择高效或精细模式")
 	}
 	var lastError error
+	// 0: copy eligible audio, 1: AAC, 2: AAC with timestamp compensation.
+	// Retain a diagnosed audio fix if a later video encoder fallback is needed.
+	audioMode := 0
 	for _, a := range s.attempts() {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -403,7 +480,7 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 		if !s.available(ctx, a, v) {
 			continue
 		}
-		for audioTry := 0; audioTry < 2; audioTry++ {
+		for audioTry := audioMode; audioTry < 3; audioTry++ {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -415,10 +492,10 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 				label += "（CPU）"
 			}
 			s.log("正在压缩视频：" + source + " · " + label)
-			args := s.commandArgs(source, target, a, v, audioTry == 1)
+			args := s.commandArgs(source, target, a, v, audioTry >= 1, audioTry == 2)
 			e = s.encode(ctx, s.config.FFmpeg, args, v.Duration, s.log)
 			if e == nil {
-				e = validateCompressedVideo(ctx, s.config.FFprobe, target, v, s.config.VideoMode)
+				e = validateCompressedVideo(ctx, s.config.FFprobe, target, v, s.config.VideoMode, s.config.VideoHDR)
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -438,7 +515,14 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 					copying = true
 				}
 			}
+			if audioTry < 2 && len(v.Audio) > 0 && videoAudioTimestampError(e) {
+				audioMode = 2
+				audioTry = 1 // advance directly to the timeline-repair attempt
+				s.log("正在重试：音轨时间戳不连续，保留当前视频编码器，重编码 AAC 并修复音轨衔接（异常处可能补静音或裁去重叠音频）")
+				continue
+			}
 			if audioTry == 0 && copying && videoAudioError(e) {
+				audioMode = 1
 				s.log("正在重试：将音频转换为 AAC，排除直接复制音轨的兼容问题")
 				continue
 			}
@@ -452,14 +536,32 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 	return fmt.Errorf("所有编码方式均未成功，保留原视频：%w", lastError)
 }
 
-func (s *videoSession) commandArgs(source, target string, a videoAttempt, v compressionVideo, forceAAC bool) []string {
+func (s *videoSession) commandArgs(source, target string, a videoAttempt, v compressionVideo, forceAAC bool, repairTimeline ...bool) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-nostats", "-xerror", "-n", "-i", source, "-map", "0:" + strconv.Itoa(v.Video.Index), "-map", "0:a?", "-map_metadata", "0", "-map_chapters", "0"}
 	args = append(args, s.encoderArgs(a, v)...)
-	args = append(args, videoAudioArgs(v, forceAAC)...)
+	args = append(args, videoAudioArgs(v, forceAAC, repairTimeline...)...)
+	// Passthrough alone still rounds frames to the encoder's default time base.
+	// Preserve source precision so variable-rate frames do not acquire equal DTS.
+	if base := videoEncoderTimeBase(v.Video.TimeBase); base != "" {
+		args = append(args, "-enc_time_base:v", base)
+	}
 	return append(args, s.outputArgs(target)...)
 }
 
-func validateCompressedVideo(ctx context.Context, exe, target string, source compressionVideo, mode string) error {
+func videoEncoderTimeBase(value string) string {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return ""
+	}
+	n, ne := strconv.ParseInt(parts[0], 10, 32)
+	d, de := strconv.ParseInt(parts[1], 10, 32)
+	if ne != nil || de != nil || n <= 0 || d <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(n, 10) + ":" + strconv.FormatInt(d, 10)
+}
+
+func validateCompressedVideo(ctx context.Context, exe, target string, source compressionVideo, mode string, hdrModes ...string) error {
 	out, e := probeCompressionVideo(ctx, exe, target)
 	if e != nil {
 		return fmt.Errorf("输出验证失败：%w", e)
@@ -473,11 +575,18 @@ func validateCompressedVideo(ctx context.Context, exe, target string, source com
 	if out.Video.Codec != codec || out.Video.Width != w || out.Video.Height != h || len(out.Audio) != len(source.Audio) {
 		return errors.New("输出编码、分辨率或音轨数量不符合预期")
 	}
-	if source.tenBit() && mode != "compatible" && !out.tenBit() {
+	hdrMode := "preserve"
+	if len(hdrModes) > 0 {
+		hdrMode = hdrModes[0]
+	}
+	if source.tenBit() && mode != "compatible" && !(source.hdr() && hdrMode == "sdr") && !out.tenBit() {
 		return errors.New("输出未保留 10-bit 位深")
 	}
 	if source.Duration > 0 && (out.Duration <= 0 || math.Abs(out.Duration-source.Duration) > math.Max(1, source.Duration*0.005)) {
 		return errors.New("输出时长不符合预期，可能不完整")
+	}
+	if err := validateHDRResult(ctx, exe, target, source, out, hdrMode); err != nil {
+		return err
 	}
 	return nil
 }

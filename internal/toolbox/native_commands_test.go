@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,7 @@ func TestNativeImageArgsAndPasswordSafety(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if !strings.Contains(commands[0].PowerShell, "WEBP:") || !strings.Contains(commands[0].PowerShell, "Test-Path -LiteralPath") {
+	if !strings.Contains(commands[0].PowerShell, "WEBP:") || !(strings.Contains(commands[0].PowerShell, "Test-Path -LiteralPath") || runtime.GOOS != "windows" && strings.Contains(commands[0].PowerShell, "mkdir -p")) {
 		t.Fatal(commands)
 	}
 	c.Tool, c.ArchiveMode, c.ArchivePassword = "archive", "pure", "private-password"

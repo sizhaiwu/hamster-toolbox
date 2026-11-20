@@ -113,30 +113,40 @@ func compressImage(ctx context.Context, c Config, source, target string) error {
 	if reason != "" {
 		return fmt.Errorf("%w：%s", errImageSkipped, reason)
 	}
-	if !strings.EqualFold(filepath.Ext(source), ".png") {
-		_, e := run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
-		return e
-	}
-	if c.PngMode == "" || c.PngMode == "lossless" {
-		_, e = run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
-		return e
-	}
+
 	original, e := inspectImage(ctx, c.Magick, source)
 	if e != nil {
-		return e
+		return fmt.Errorf("输入图片校验失败：%w", e)
 	}
-	// Format prefix is essential when the destination deliberately still ends in .png.
-	// No resize, crop or auto-orient is applied, so stored pixel dimensions stay fixed.
-	_, e = run(ctx, c.Magick, imageCompressionArgs(c, source, target)...)
-	if e != nil {
-		return fmt.Errorf("WebP 编码失败，请确认 ImageMagick 支持 WebP：%w", e)
+	if _, e = run(ctx, c.Magick, imageCompressionArgs(c, source, target)...); e != nil {
+		return e
 	}
 	output, e := inspectImage(ctx, c.Magick, target)
 	if e != nil {
-		return e
+		return fmt.Errorf("输出图片校验失败：%w", e)
 	}
-	if output.format != "WEBP" || output.width != original.width || output.height != original.height {
-		return fmt.Errorf("输出校验失败：格式或分辨率不符合预期")
+	return validateCompressedImage(c, source, original, output)
+}
+
+func validateCompressedImage(c Config, source string, original, output imageInfo) error {
+	expected := "JPEG"
+	ext := strings.ToLower(filepath.Ext(source))
+	if ext == ".webp" {
+		expected = "WEBP"
+	}
+	if ext == ".png" {
+		expected = "PNG"
+		if c.PngMode == "webp" || c.PngMode == "webp-png" {
+			expected = "WEBP"
+		}
+	}
+	dimensions := original.width == output.width && original.height == output.height
+	// JPEG/WebP apply auto-orient; a 90-degree orientation swaps stored axes.
+	if ext != ".png" {
+		dimensions = dimensions || original.width == output.height && original.height == output.width
+	}
+	if output.format != expected || !dimensions {
+		return fmt.Errorf("输出图片校验失败：编码格式或分辨率不符合预期，保留原图")
 	}
 	return nil
 }

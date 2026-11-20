@@ -1,44 +1,147 @@
 const $ = id => document.getElementById(id);
 const tools = [
-  ['format', '目录统计命名', '按图片、视频、音频数量与总大小，统一目录名称。', '▤'],
-  ['rename', '批量重命名', '批量替换名称、添加前后缀，支持正则表达式。', 'Aa'],
-  ['number', '目录批量编号', '给新增资源目录连续编号，可指定起始值或接着已有编号继续。', '#'],
-  ['describe', '媒体信息命名', '把音视频的分辨率、时长和体积添加到文件名。', '▷'],
-  ['exif', '清理元数据', '清理图片和视频中的标题、注释、作者等元数据，保留原文件。', '◇'],
-  ['pdf', 'PDF 图册索引', '每个直接子目录生成一页：中文目录名称 + 首张可读取的图片。', '▧'],
-  ['image', '压缩图片', '缩小图片体积，保留原图与目录结构。', '▨'],
-  ['video', '压缩视频', '按清晰度压缩视频，可选 H.264 / H.265，自动尝试显卡加速并保留原视频。', '▸'],
-  ['thumbnail', '视频缩略图', '均匀截取视频画面，生成带文件信息和时间的预览拼图。', '▦'],
-  ['archive', '打包资源', '使用 7-Zip 将目录与文件独立打包为 7z，支持分卷、加密、附加文件与自动校验。', '▣'],
-  ['extract', '解压资源', '使用 7-Zip 批量解压 7z、ZIP、RAR 和分卷包，默认自动改名并保留原包。', '⇲'],
-  ['dedupe', '文件去重', '使用 Video Duplicate Finder 查找重复或相似的视频和图片，支持打开本地软件与下载指引。', '≋']
+  ['format', '目录统计命名', '按图片、视频、音频数量与总大小，统一目录名称。'],
+  ['rename', '批量重命名', '批量替换名称、添加前后缀，支持正则表达式。'],
+  ['number', '目录批量编号', '给新增资源目录连续编号，可指定起始值或接着已有编号继续。'],
+  ['describe', '媒体信息命名', '把音视频的分辨率、时长和体积添加到文件名。'],
+  ['exif', '清理元数据', '清理图片和视频中的标题、注释、作者等元数据，保留原文件。'],
+  ['pdf', 'PDF 图册索引', '每个直接子目录生成一页：中文目录名称 + 首张可读取的图片。'],
+  ['image', '压缩图片', '缩小图片体积，保留原图与目录结构。'],
+  ['video', '压缩视频', '按清晰度压缩视频，可选 H.264 / H.265，自动尝试显卡加速并保留原视频。'],
+  ['thumbnail', '视频缩略图', '均匀截取视频画面，生成带文件信息和时间的预览拼图。'],
+  ['archive', '打包资源', '使用 7-Zip 将目录与文件独立打包为 7z，支持分卷、加密、附加文件与自动校验。'],
+  ['extract', '解压资源', '使用 7-Zip 批量解压 7z、ZIP、RAR 和分卷包，默认自动改名并保留原包。'],
+  ['dedupe', '文件去重', '使用 Video Duplicate Finder 查找重复或相似的视频和图片，支持打开本地软件与下载指引。']
 ];
+const toolIconPaths={
+  files:['M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11H3Z','M7 10h3v3H7Zm7 0h3v3h-3ZM7 16h10'],
+  format:['M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11H3Z','M7 17v-3m5 3v-6m5 6v-4'],
+  rename:['M4 5h7M4 9h4M4 19h16','m10 13 8-8 3 3-8 8-4 1Zm6-6 3 3'],
+  number:['M4 4h1v6M3 10h4M3 15a2 2 0 0 1 4 0c0 2-4 2-4 5h4','M11 7h10M11 17h10'],
+  describe:['M5 3h9l5 5v13H5Z','M14 3v5h5M9 12h6M9 16h6M9 19h3'],
+  exif:['M4 5h8l8 8-8 8-8-8Z','M8 9h.01m4 3 5 5m0-5-5 5'],
+  pdf:['M5 3h10l4 4v14H5Z','M15 3v5h4'],
+  image:['M3 3h18v18H3Z','m3 17 6-6 4 4 3-3 5 5M7 7h.01M15 4v4h4m-4 0 5-5'],
+  video:['M3 5h18v14H3Z','m10 9 5 3-5 3ZM7 5v14M17 5v14M3 9h4m-4 6h4m10-6h4m-4 6h4'],
+  thumbnail:['M3 4h18v16H3Z','M3 9h18M3 15h18M9 4v16M15 4v16'],
+  archive:['M3 8h18v13H3ZM3 8l3-5h12l3 5','M12 10v7m-3-3 3 3 3-3'],
+  extract:['M3 11v10h18V11M3 11h5m8 0h5','M12 16V3m-4 4 4-4 4 4'],
+  dedupe:['M8 3h12v15M4 7h12v14H4Z','M7 12h6M7 16h6']
+};
+function toolNavIcon(kind){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');svg.dataset.icon=kind;
+  for(const d of toolIconPaths[kind]){const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',d);svg.append(path)}
+  if(kind==='pdf'){const text=document.createElementNS(svg.namespaceURI,'text');text.setAttribute('x','12');text.setAttribute('y','17');text.setAttribute('text-anchor','middle');text.setAttribute('fill','currentColor');text.setAttribute('stroke','none');text.setAttribute('font-size','5.4');text.setAttribute('font-family','Segoe UI, sans-serif');text.setAttribute('font-weight','700');text.textContent='PDF';svg.append(text)}return svg;
+}
 const optionKeys = {
   dedupe: ['DedupeProgram'],
   extract: ['Recursive','Output','ExtractConflict','ExtractLayout','ExtractPassword','ExtractDeleteSource','ExtractDeleteMode'],
   archive: ['Output','Files','Dirs','ArchiveMode','ArchivePassword','ArchiveExtras','ArchiveMarker','ArchiveSplit','ArchiveFirstVolume','ArchiveVolume','ArchiveDirPrefix','ArchiveFilePrefix','ArchiveStart','ArchiveDigits','ArchiveLevel'],
   format: ['Recursive','FormatCleanOther','FormatDeleteMode'], rename: ['Recursive', 'Files', 'Dirs', 'Find', 'Replace', 'Regex', 'Prefix', 'Suffix', 'RenameMode', 'ExampleNumber', 'ExampleAtStart'],
   number: ['NumberName', 'StartNumber', 'NumberDigits', 'NumberStyle', 'NumberOrder', 'NumberFilter', 'NumberKeepOriginal'],
-  describe: ['Recursive'], exif: ['Recursive', 'Output', 'MetadataTypes'], pdf: ['Output'],
-  image: ['Recursive', 'Output', 'Quality', 'PngMode', 'PngQuality'], video: ['Recursive', 'Output', 'VideoMode', 'VideoAcceleration', 'CRF', 'MinMB', 'MinKbps'],
-  thumbnail: ['Recursive', 'Output', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality', 'ThumbnailFormat', 'ThumbnailBackground', 'ThumbnailInfo', 'ThumbnailTime']
+  describe: ['Recursive'], exif: ['Workers','Recursive', 'Output', 'MetadataTypes'], pdf: ['Output'],
+  image: ['Workers','Recursive', 'Output', 'Quality', 'PngMode', 'PngQuality'], video: ['Workers','Recursive', 'Output', 'VideoMode', 'VideoAcceleration', 'VideoHDR', 'CRF', 'MinMB', 'MinKbps'],
+  thumbnail: ['Workers','Recursive', 'Output', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality', 'ThumbnailFormat', 'ThumbnailBackground', 'ThumbnailInfo', 'ThumbnailTime']
 };
-const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recursive', 'Files', 'Dirs', 'Regex', 'NumberKeepOriginal', 'ExampleNumber', 'ExampleAtStart', 'ThumbnailInfo', 'ThumbnailTime'], numericKeys = ['ArchiveStart','ArchiveDigits','ArchiveLevel','Quality', 'CRF', 'MinMB', 'MinKbps', 'StartNumber', 'NumberDigits', 'PngQuality', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality'];
+const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recursive', 'Files', 'Dirs', 'Regex', 'NumberKeepOriginal', 'ExampleNumber', 'ExampleAtStart', 'ThumbnailInfo', 'ThumbnailTime'], numericKeys = ['Workers','ArchiveStart','ArchiveDigits','ArchiveLevel','Quality', 'CRF', 'MinMB', 'MinKbps', 'StartNumber', 'NumberDigits', 'PngQuality', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality'];
 const imageFormatExtensions = '.jpg .jpeg .jpe .jfif .png .webp'.split(' ');
 const jpegFormats = ['.jpg', '.jpeg', '.jpe', '.jfif'];
 const token = new URLSearchParams(location.search).get('session');
+$('openFiles').href='/files/?session='+encodeURIComponent(token||'');
 const statuses = { idle: '等待开始', scanning: '正在扫描', ready: '预览就绪', running: '正在执行', finished: '处理完成', cancelled: '已取消', error: '任务失败' };
 let tool = 'format', defaults = {}, workspaces = {}, dependencyMetadata = [];
 let busy = false, switching = true, dependenciesReady = true, checking = false, submitting = false;
 let planID = '', lastConfig = '', lastLogs = '', lastItems = '', displayTool = '';
-let currentPath = '', parentPath = '', browseTarget = 'Root', browseKind = '';
+let currentPath = '', parentPath = '', browseTarget = 'Root', browseKind = '', browseRevision=0, browseConfirmed=false;
 let saveTimer, checkTimer, saveRevision = 0, saveQueue = Promise.resolve(), pollPending = false, dependencyRequest = 0;
 let detectingNumbering = false;
 let dedupeAvailable=false, dedupeChecking=false, dedupeLaunching=false, dedupeRequest=0, dedupeTimer;
 let savedPasswords = [], passwordTarget = 'ArchivePassword', passwordEditID = '', passwordLoading = false, passwordVaultBusy = false;
 let previewPlan = '', previewOffset = 0, previewTotal = 0, previewRows = [], previewRequest = 0, previewLoading = false;
 let lastActionError = '';
+let taskHistory = null;
 let followLogs = true;
+let expandedTerminal = null;
+function terminalScrollState(panel) {
+  return [...panel.querySelectorAll('.table-wrap,#logs')].map(el => ({el,top:el.scrollTop,left:el.scrollLeft}));
+}
+function restoreTerminalScroll(positions, keepFollowing) {
+  for (const {el,top,left} of positions) {
+    el.scrollLeft = left;
+    el.scrollTop = keepFollowing && el.id === 'logs' && followLogs ? el.scrollHeight : top;
+  }
+}
+function exitTerminalFullscreen(restoreFocus = true) {
+  if (!expandedTerminal) return;
+  const state = expandedTerminal;
+  const positions = state.touched ? terminalScrollState(state.panel) : state.positions;
+  expandedTerminal = null;
+  state.panel.classList.remove('terminal-panel-expanded');
+  for (const [name,value] of state.attributes) {
+    if (value === null) state.panel.removeAttribute(name); else state.panel.setAttribute(name,value);
+  }
+  state.placeholder.remove();
+  for (const el of state.inert) el.removeAttribute('inert');
+  document.body.classList.remove('terminal-view-open');
+  setToolboxSidebar(toolboxSidebarCollapsed);
+  state.button.textContent = '全屏';
+  state.button.setAttribute('aria-pressed','false');
+  state.button.setAttribute('aria-label','全屏查看'+state.name);
+  state.button.title = '全屏查看'+state.name+'（Esc 退出）';
+  restoreTerminalScroll(positions,true);
+  window.scrollTo({left:state.x,top:state.y,behavior:'auto'});
+  if (restoreFocus && !document.querySelector('dialog[open]')) state.button.focus({preventScroll:true});
+}
+function toggleTerminalFullscreen(panel,button,name) {
+  if (expandedTerminal?.panel === panel) { exitTerminalFullscreen(); return; }
+  exitTerminalFullscreen(false);
+  const positions = terminalScrollState(panel);
+  const x=window.scrollX,y=window.scrollY;
+  const placeholder = document.createElement('div');
+  placeholder.className = 'terminal-panel-placeholder';
+  placeholder.style.height = panel.getBoundingClientRect().height+'px';
+  placeholder.setAttribute('aria-hidden','true');
+  panel.before(placeholder);
+  const inert = [];
+  // Preserve the original DOM and live updates. Only sibling branches become
+  // inert; completion dialogs may still open above the enlarged panel.
+  for (let branch=panel;branch.parentElement;branch=branch.parentElement) {
+    for (const sibling of branch.parentElement.children) {
+      if (sibling===branch || sibling===placeholder || /^(DIALOG|SCRIPT|STYLE|LINK)$/.test(sibling.tagName) || sibling.hasAttribute('inert')) continue;
+      sibling.setAttribute('inert',''); inert.push(sibling);
+    }
+    if (branch.parentElement===document.body) break;
+  }
+  expandedTerminal = {panel,button,name,placeholder,inert,x,y,positions,touched:false,
+    attributes:['role','aria-modal','aria-label'].map(key=>[key,panel.getAttribute(key)])};
+  panel.classList.add('terminal-panel-expanded');
+  panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',name+' · 全屏查看');
+  document.body.classList.add('terminal-view-open');
+  button.textContent='退出全屏';button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','退出'+name+'全屏');button.title='退出全屏（Esc）';
+  restoreTerminalScroll(positions,true);
+  button.focus({preventScroll:true});
+}
+for (const [panel,button,name] of [['previewSection','previewFullscreen','处理预览'],['logsSection','logsFullscreen','运行日志']]) {
+  $(button).onclick=()=>toggleTerminalFullscreen($(panel),$(button),name);
+}
+for (const type of ['wheel','touchmove','pointerdown','change','keydown']) document.addEventListener(type,event=>{
+  if (!expandedTerminal || !expandedTerminal.panel.contains(event.target) || expandedTerminal.button.contains(event.target)) return;
+  if (type==='keydown' && ['Escape','Tab'].includes(event.key)) return;
+  expandedTerminal.touched=true;
+},{capture:true,passive:true});
+document.addEventListener('keydown',event=>{
+  if (!expandedTerminal || document.querySelector('dialog[open]')) return;
+  if (event.key==='Escape') {event.preventDefault();event.stopPropagation();exitTerminalFullscreen();return;}
+  if (event.key!=='Tab') return;
+  const {panel,button}=expandedTerminal;
+  const controls=[...panel.querySelectorAll('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')]
+    .filter(el=>!el.closest('[hidden],[inert]') && (typeof el.checkVisibility!=='function'||el.checkVisibility()));
+  const target=event.shiftKey?controls.at(-1):controls[0];
+  if (!panel.contains(document.activeElement) || (event.shiftKey && document.activeElement===controls[0]) || (!event.shiftKey && document.activeElement===controls.at(-1))) {
+    event.preventDefault();(target||button).focus({preventScroll:true});
+  }
+},true);
+
 async function api(path, data = {}) {
   const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Toolbox-Token': token }, body: JSON.stringify(data) });
   if (!response.ok) throw Error((await response.text()).trim());
@@ -56,6 +159,7 @@ function config() {
 function putValue(id, value) { const el = $(id); if (!el) return; if (el.type === 'checkbox') el.checked = Boolean(value); else el.value = value ?? ''; }
 function updateActions() {
   const locked = busy || switching || submitting || detectingNumbering || passwordLoading || dedupeLaunching;
+  taskHistory?.syncUI(locked,tool,$('Root').value);
   const activeInputs = new Set(['Root', ...optionKeys[tool], ...dependencyMetadata.map(d => d.Key)]);
   if (tool === 'archive') {
     if ($('ArchiveMode').value !== 'extras') { activeInputs.delete('ArchiveExtras'); activeInputs.delete('ArchiveMarker'); }
@@ -96,7 +200,7 @@ function updateActions() {
   $('preview').disabled = locked || checking || !dependenciesReady || (tool === 'image' && !selectedImageFormats().length);
   $('preview').textContent = submitting ? '正在提交…' : busy ? '任务处理中…' : '扫描并预览 →';
   $('execute').disabled = locked || !planID; $('cancel').hidden = !busy;
-  for (const b of $('nav').children) b.disabled = locked;
+  for (const b of $('nav').querySelectorAll('button[data-tool]')) b.disabled = locked;
   // CSS-hidden inputs still participate in native HTML form validation unless disabled.
   for (const el of $('form').querySelectorAll('input, select, textarea')) el.disabled = locked || !activeInputs.has(el.id);
   for (const el of $('form').querySelectorAll('button[data-file-key]')) el.disabled = locked;
@@ -118,7 +222,7 @@ $('showCLI').onclick = async () => {
 };
 $('cliAction').onchange=()=>{if(cliCommandSet)$('cliCode').value=cliCommandSet[$('cliAction').value];$('cliMessage').textContent='';};
 $('closeCLI').onclick=()=>{$('cliDialog').close();$('cliCode').value='';cliCommandSet=null;};
-$('copyCLI').onclick=async()=>{try{await navigator.clipboard.writeText($('cliCode').value);$('cliMessage').textContent='已复制，请粘贴到 PowerShell 执行。';}catch(e){$('cliCode').select();$('cliMessage').textContent='请按 Ctrl+C 复制选中的命令。';}};
+$('copyCLI').onclick=async()=>{try{await navigator.clipboard.writeText($('cliCode').value);$('cliMessage').textContent='已复制，请粘贴到本机终端执行。';}catch(e){$('cliCode').select();$('cliMessage').textContent='请按 Ctrl+C 复制选中的命令。';}};
 function invalidate() { planID = ''; lastActionError = ''; showMessage(''); updateActions(); }
 function setSettingsStatus(text,bad=false) { for (const id of ['settingsStatus','dedupeSettingsStatus']) {$(id).textContent=text;$(id).classList.toggle('bad',bad);} }
 function queueSave(snapshot) {
@@ -176,7 +280,7 @@ function renderDependencies(deps) {
     const label = document.createElement('label'); label.textContent = d.Key === 'Font' ? '字体文件' : '程序文件';
     const row = document.createElement('div'); row.className = 'input-row';
     const input = document.createElement('input'); input.id = d.Key; input.value = d.Path;
-    input.placeholder = d.Key === 'Font' ? '选择本机的字体文件' : '选择 ' + ({ FFmpeg: 'ffmpeg.exe', FFprobe: 'ffprobe.exe', Magick: 'magick.exe', Exiftool: 'exiftool.exe', SevenZip: '7z.exe' })[d.Key];
+    input.placeholder = d.Key === 'Font' ? '选择本机的字体文件' : '选择 ' + ({ FFmpeg: 'ffmpeg', FFprobe: 'ffprobe', Magick: 'magick', Exiftool: 'exiftool', SevenZip: '7z / 7zz' })[d.Key];
     input.addEventListener('input', () => changed(true));
     const button = document.createElement('button'); button.type = 'button'; button.textContent = '选择文件'; button.dataset.fileKey = d.Key; button.onclick = () => openPicker(d.Key);
     row.append(input, button); label.append(row); detail.append(summary, instructions, links, label); card.append(heading, purpose, detail); $('dependencyList').append(card);
@@ -205,6 +309,8 @@ const videoAccelerationAdvice = {
   cpu: 'CPU：无需显卡编码支持，通常耗时更长、占用更高。'
 };
 function updateVideoOptions() {
+  $('videoHDRHint').textContent = ({base:'用于带杜比信息的 HLG 视频：保留 HLG HDR，移除杜比动态效果。其他动态 HDR 仍跳过。',preserve:'HLG / HDR10 保持 HDR，使用 H.265 10-bit；含母版亮度信息时使用 CPU。',sdr:'转换亮度和色彩以适配普通屏幕；滤镜占用 CPU，建议先试压一段。',skip:'HDR 原片保留，仅压缩普通 SDR 视频。'})[$('VideoHDR').value] || '';
+
   if (tool !== 'video') return;
   const mode = $('VideoMode').value, cpuOverride = mode === 'archive' || Number($('CRF').value) === 0;
   const acceleration = cpuOverride ? 'cpu' : $('VideoAcceleration').value;
@@ -323,6 +429,7 @@ async function detectNumbering(save = true) {
   finally { detectingNumbering = false; updateActions(); }
 }
 async function selectTool(id, initial = false) {
+  exitTerminalFullscreen(false);
   if ((busy || switching) && !initial) return; switching = true; updateActions();
   try {
     if (!initial) await saveNow(); dependencyRequest++; clearTimeout(checkTimer); dedupeRequest++; clearTimeout(dedupeTimer); dedupeChecking=false;
@@ -330,7 +437,9 @@ async function selectTool(id, initial = false) {
     resetPreview();
     const t = tools.find(t => t[0] === id);
     $('title').textContent = $('crumb').textContent = t[1]; $('description').textContent = t[2]; $('tool-number').textContent = String(tools.indexOf(t) + 1).padStart(2, '0');
-    for (const b of $('nav').children) b.classList.toggle('active', b.dataset.tool === id);
+    for (const b of $('nav').querySelectorAll('button[data-tool]')) {const current=b.dataset.tool===id;b.classList.toggle('active',current);if(current)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
+    closeToolboxNav();
+    if(!initial)window.scrollTo({top:0,behavior:'auto'});
     $('dedupePanel').hidden = id !== 'dedupe';
     for (const key of ['batchWorkspace','previewSection','logsSection']) $(key).hidden = id === 'dedupe';
     if (id === 'dedupe') {
@@ -356,6 +465,8 @@ async function selectTool(id, initial = false) {
     if (id === 'archive') $('outputHint').textContent = '留空保存到输入目录下的 0utput_7z（首字符是数字 0），与原脚本一致。名称对照追加到目录.txt，同名包或分卷会提示冲突。';
     if (id === 'extract') { $('Output').placeholder = '留空保存到输入目录下的 解压资源'; $('outputHint').textContent = '默认输出到输入目录下的“解压资源”。可按包名建文件夹，也可全部解压到同一目录。'; }
     $('videoAdvanced').open = false;
+    $('workerOptions').hidden=!['image','video','exif','thumbnail'].includes(id);$('Workers').max=id==='video'?'3':'8';
+    putValue('Workers',workspaces[id]?.Workers|| (id==='video'?1:defaults.Workers||2));
     const active = { ...defaults, ...(workspaces[id] || {}), Tool: id };
     if (!workspaces[id] && !initial) active.Root = $('Root').value;
     for (const [key, value] of Object.entries(active)) putValue(key, value);
@@ -370,6 +481,7 @@ async function selectTool(id, initial = false) {
     if (id === 'video') {
       putValue('VideoMode', active.VideoMode || (workspaces[id] ? 'compatible' : 'efficient'));
       putValue('VideoAcceleration', active.VideoAcceleration || 'auto');
+      putValue('VideoHDR', active.VideoHDR || 'preserve');
       updateVideoOptions();
     }
     // Blank outputs on a new tool; they must not leak from another workspace.
@@ -391,8 +503,9 @@ async function selectTool(id, initial = false) {
 }
 for (const t of tools) {
   const b = document.createElement('button'); b.type = 'button'; b.dataset.tool = t[0];
-  const icon = document.createElement('span'); icon.textContent = t[3]; b.append(icon, document.createTextNode(t[1])); b.onclick = () => selectTool(t[0]); $('nav').append(b);
+  const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2]; b.append(icon, document.createTextNode(t[1])); b.onclick = () => selectTool(t[0]); $('nav').append(b);
 }
+$('openFiles').firstElementChild.replaceChildren(toolNavIcon('files'));
 for (const [index, ext] of imageFormatExtensions.entries()) {
   const label = document.createElement('label'); label.className = 'check';
   const input = document.createElement('input'); input.type = 'checkbox'; input.id = 'image-format-' + index; input.value = ext;
@@ -403,7 +516,7 @@ for (const el of $('form').querySelectorAll('input, textarea')) el.addEventListe
   $('qualityValue').textContent = $('Quality').value; if (el.id === 'CRF') updateVideoPreset(); changed();
 });
 for (const id of ['NumberStyle', 'NumberOrder']) $(id).addEventListener('change', () => changed());
-for (const id of ['VideoMode', 'VideoAcceleration']) $(id).addEventListener('change', () => changed());
+for (const id of ['VideoMode', 'VideoAcceleration', 'VideoHDR']) $(id).addEventListener('change', () => changed());
 for (const id of ['ArchiveMode','ArchiveSplit','ArchiveLevel','ExtractConflict','ExtractLayout','ExtractDeleteMode','FormatDeleteMode']) $(id).addEventListener('change', () => changed());
 $('addArchiveExtra').onclick = () => openPicker('ArchiveExtras');
 // Archive secrets are not website credentials. Native password controls make
@@ -498,7 +611,7 @@ $('autoDetect').onclick = async () => {
   catch (e) { $('message').textContent = e.message; } finally { checking = false; updateActions(); }
 };
 $('checkDependencies').onclick = () => inspectDependencies(true);
-$('preview').onclick = async () => {
+async function startPreview(retryTaskID='') {
   if (tool === 'dedupe') return;
   if (busy || switching || submitting || checking || detectingNumbering) { showMessage('任务或设置正在处理中，请稍候。'); return; }
   if (!dependenciesReady) { showMessage('请先完成本工具需要的程序设置。', true); return; }
@@ -508,11 +621,12 @@ $('preview').onclick = async () => {
   submitting = true; planID = ''; lastActionError = ''; showMessage('正在扫描目录，请稍候…'); updateActions();
   try {
     const snapshot = config(); await saveNow(); lastConfig = JSON.stringify(snapshot);
-    await api('plan', snapshot); busy = true;
+    await api('plan', retryTaskID?{...snapshot,RetryTaskID:retryTaskID}:snapshot); busy = true;
   } catch (e) { busy = false; lastConfig = ''; showMessage('无法开始扫描：' + e.message, true); }
   finally { submitting = false; updateActions(); }
   await poll();
 };
+$('preview').onclick=()=>startPreview();
 $('form').onsubmit = event => { event.preventDefault(); $('preview').click(); };
 $('execute').onclick = async () => {
   if (busy || submitting || !planID) return;
@@ -558,7 +672,7 @@ function renderLogs(text) {
     const tone = /^(失败|当前编码失败|日志保存失败|扫描失败|所有编码方式)/.test(message) ? 'error'
       : /^(跳过|加速不可用|正在回退|正在重试|兼容模式|检测到旧版)/.test(message) ? 'warning'
       : /^(完成|视频编码完成|扫描完成|PDF 已生成)/.test(message) ? 'success'
-      : /^(正在|视频进度)/.test(message) ? 'progress' : 'info';
+      : /^(正在|视频进度|解压进度)/.test(message) ? 'progress' : 'info';
     line.className = 'terminal-log-line log-' + tone;
     stamp.className = 'log-time'; stamp.textContent = match[1] ? match[1] + ' ' : '';
     body.className = 'log-message'; body.textContent = message;
@@ -616,10 +730,10 @@ function videoCommandDetails(item, id) {
   const summary = document.createElement('summary'); summary.textContent = tool==='video' ? '查看 / 复制压缩命令' : '查看 / 复制原生命令（高级）';
   const message = document.createElement('p'); message.className = 'hint'; message.setAttribute('role', 'status');
   const selector = document.createElement('select'); selector.setAttribute('aria-label', '选择压缩命令'); selector.hidden = true;
-  const code = document.createElement('textarea'); code.readOnly = true; code.rows = 5; code.hidden = true; code.setAttribute('aria-label', 'PowerShell 压缩命令'); code.spellcheck = false;
-  const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制 PowerShell 命令'; copy.hidden = true;
+  const code = document.createElement('textarea'); code.readOnly = true; code.rows = 5; code.hidden = true; code.setAttribute('aria-label', '压缩命令'); code.spellcheck = false;
+  const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制压缩命令'; copy.hidden = true;
   const note = document.createElement('p'); note.className = 'hint'; note.hidden = true;
-  note.textContent = '粘贴到 Windows PowerShell 执行。自动创建输出目录，不覆盖已有文件。独立命令不含工具箱的自动回退、结果校验和“未变小就丢弃”；完成后请自行检查输出。';
+  note.textContent = '粘贴到本机终端执行（Windows 使用 PowerShell）。自动创建输出目录，不覆盖已有文件。独立命令不含工具箱的自动回退、结果校验和“未变小就丢弃”；完成后请自行检查输出。';
   if(tool!=='video')note.textContent='原生命令直接调用外部程序，不包含完整安全校验、回退、清理原包或“未变小就跳过”；解压按所选重名规则处理，覆盖模式会覆盖文件。多步流程请使用页面顶部的工具箱 CLI。加密包需先设置指定密码环境变量。';
   details.append(summary, message, selector, code, copy, note);
   let loaded = false, loading = false, commands = [];
@@ -636,7 +750,7 @@ function videoCommandDetails(item, id) {
     } catch (e) { message.textContent = '生成失败：' + e.message + '。关闭后重新展开可重试。'; }
     finally { loading = false; }
   });
-  selector.addEventListener('change', () => { code.value = commands[selector.selectedIndex].PowerShell; copy.textContent = '复制 PowerShell 命令'; });
+  selector.addEventListener('change', () => { code.value = commands[selector.selectedIndex].PowerShell; copy.textContent = '复制压缩命令'; });
   copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(code.value); copy.textContent = '已复制'; }
     catch { code.focus(); code.select(); message.textContent = '无法自动复制，已选中命令，请按 Ctrl+C。'; }
@@ -667,13 +781,36 @@ async function loadPreview(id, offset = 0) {
 $('previewFilter').onchange = () => { if (previewPlan) loadPreview(previewPlan, 0); };
 $('previewPrevious').onclick = () => loadPreview(previewPlan, Math.max(0, previewOffset - 100));
 $('previewNext').onclick = () => loadPreview(previewPlan, previewOffset + 100);
+function renderExtractProgress(state,sameTool){
+  const p=state.Operation,active=sameTool&&tool==='extract'&&state.Status==='running'&&p?.Tool==='extract';
+  $('extractProgressPanel').hidden=!active;if(!active)return;
+  const labels={extract:'正在解压',validate:'检查解压结果',publish:'写入输出文件',cleanup:'清理原压缩包',complete:'本包处理完成'};
+  const percent=Number(p.Percent),known=p.PercentKnown&&Number.isFinite(percent),phase=labels[p.Phase]||'正在处理';
+  $('extractProgressLabel').textContent='当前压缩包'+(p.ItemNumber>0&&p.ItemTotal>0?' · '+p.ItemNumber+' / '+p.ItemTotal:'');
+  const source=String(p.Source||'');$('extractProgressSource').textContent=source.split(/[\\/]/).pop();$('extractProgressSource').title=source;
+  $('extractProgressPhase').textContent=phase;$('extractProgressPercent').textContent=known?Math.max(0,Math.min(100,percent)).toFixed(1)+'%':'进行中';
+  if(known)$('extractProgressBar').value=Math.max(0,Math.min(100,percent));else $('extractProgressBar').removeAttribute('value');
+  $('extractProgressBar').setAttribute('aria-valuetext',phase+(known?' '+percent.toFixed(1)+'%':'，进度暂不可计算'));
+  const seconds=value=>{const n=Math.max(0,Math.round(value));return n>=3600?Math.floor(n/3600)+'小时'+Math.floor(n%3600/60)+'分':n>=60?Math.floor(n/60)+'分'+n%60+'秒':n+'秒'};
+  const age=value=>{const t=Date.parse(value);return Number.isFinite(t)?Math.max(0,(Date.now()-t)/1000):0};
+  const details=['已用 '+seconds(age(p.Started))];
+  if(p.Phase==='validate'&&p.FilesDone>0)details.push('已检查 '+p.FilesDone+' 个文件');
+  if(p.Phase==='publish')details.push('已处理 '+(p.FilesDone||0)+' / '+(p.FilesTotal||0)+' 个文件');
+  const elapsed=age(p.PhaseStarted);if(known&&percent>=1&&percent<99.9&&elapsed>=3){const eta=elapsed*(100-percent)/percent;if(eta>0&&eta<7*24*3600)details.push('预计本阶段剩余约 '+seconds(eta))}
+  $('extractProgressDetail').textContent=details.join(' · ');
+}
 async function poll() {
   if (pollPending) return; pollPending = true;
   try {
     const state = await api('state', { Summary: true }); if (submitting) return;
+    window.toolboxFeedback?.observe(state);
+    taskHistory?.observe(state);
     busy = ['scanning', 'running'].includes(state.Status); const sameTool = state.Tool === tool;
     $('statusBadge').textContent = sameTool ? statuses[state.Status] : '等待开始'; $('count').firstChild.textContent = (sameTool ? state.Total || 0 : 0) + ' ';
+    $('statusBadge').dataset.status=sameTool?state.Status:'idle';
     $('progress').max = sameTool ? state.Total || 1 : 1; $('progress').value = sameTool ? state.Done || 0 : 0;
+    $('progress').setAttribute('aria-label',tool==='extract'?'整个任务已完成的压缩包数量':'任务已完成项目数量');
+    renderExtractProgress(state,sameTool);
     if (sameTool && state.Status === 'ready' && JSON.stringify(config()) === lastConfig && state.Actionable > 0) planID = state.PlanID;
     else if (!sameTool || state.Status !== 'ready') planID = '';
     $('statusText').textContent = !sameTool ? '选择目录后，点击“扫描并预览”。' :
@@ -704,21 +841,23 @@ async function poll() {
   finally { pollPending = false; }
 }
 function choosePath(path) {
+  if(!browseConfirmed){$('browseError').textContent='请先点击前往，确认当前目录。';return}
   if (browseTarget === 'ArchiveExtras') { const lines = $('ArchiveExtras').value.split(/\r?\n/).filter(Boolean); if (!lines.includes(path)) lines.push(path); putValue(browseTarget, lines.join('\n')); } else putValue(browseTarget, path);
   if (browseTarget === 'DedupeProgram') { changed(); inspectDedupeProgram(); $('folderDialog').close(); return; }
-  if (browseTarget === 'FFmpeg' && $('FFprobe') && !$('FFprobe').value) putValue('FFprobe', path.replace(/ffmpeg\.exe$/i, 'ffprobe.exe'));
-  if (browseTarget === 'FFprobe' && $('FFmpeg') && !$('FFmpeg').value) putValue('FFmpeg', path.replace(/ffprobe\.exe$/i, 'ffmpeg.exe'));
+  if (browseTarget === 'FFmpeg' && $('FFprobe') && !$('FFprobe').value) putValue('FFprobe', path.replace(/ffmpeg(\.exe)?$/i, defaults.Platform&&defaults.Platform!=='windows'?'ffprobe':'ffprobe.exe'));
+  if (browseTarget === 'FFprobe' && $('FFmpeg') && !$('FFmpeg').value) putValue('FFmpeg', path.replace(/ffprobe(\.exe)?$/i, defaults.Platform&&defaults.Platform!=='windows'?'ffmpeg':'ffmpeg.exe'));
   changed(!['Root','ArchiveExtras'].includes(browseTarget)); $('folderDialog').close();
 }
 async function browse(path) {
+  const revision=++browseRevision,target=browseTarget;browseConfirmed=false;$('selectFolder').disabled=true;
   try {
-    const data = await api('browse', { Path: path, Kind: browseKind }); currentPath = data.Path; parentPath = data.Parent;
+    const data = await api('browse', { Path: path, Kind: browseKind });if(revision!==browseRevision||target!==browseTarget||!$('folderDialog').open)return;browseConfirmed=true;currentPath = data.Path; parentPath = data.Parent;
     $('browsePath').value = data.Path; $('folderList').replaceChildren(); $('browseError').textContent = '';
     $('selectFolder').hidden = browseKind !== ''; $('selectFolder').disabled = !data.Path;
     for (const p of data.Dirs) { const b = document.createElement('button'); b.textContent = '▸ ' + p; b.onclick = () => browse(p); $('folderList').append(b); }
     for (const p of data.Files || []) { const b = document.createElement('button'); b.textContent = '选择文件 · ' + p; b.className = 'file-choice'; b.onclick = () => choosePath(p); $('folderList').append(b); }
     if (!data.Dirs.length && !(data.Files || []).length) $('browseError').textContent = browseKind ? '此目录没有可选择的文件。可返回上一级继续查找。' : '此目录没有子目录，可以直接选择当前目录。';
-  } catch (e) { $('browseError').textContent = e.message; }
+  } catch (e) { if(revision===browseRevision)$('browseError').textContent = e.message; }
 }
 function openPicker(key) {
   browseTarget = key; browseKind = key === 'Root' ? '' : key === 'ArchiveExtras' ? 'file' : key === 'Font' ? 'font' : 'program';
@@ -751,16 +890,75 @@ $('launchDedupe').onclick=async()=>{
 };
 $('browse').onclick = () => openPicker('Root'); $('closeDialog').onclick = () => $('folderDialog').close();
 $('goto').onclick = () => browse($('browsePath').value);
+$('browsePath').oninput=()=>{browseRevision++;browseConfirmed=false;$('selectFolder').disabled=true;$('browseError').textContent='请点击前往或按 Enter，确认目录。'};
+$('folderDialog').addEventListener('close',()=>{browseRevision++;browseConfirmed=false});
 $('browsePath').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); browse($('browsePath').value); } };
 $('drives').onclick = () => browse(''); $('up').onclick = () => browse(parentPath); $('selectFolder').onclick = () => choosePath(currentPath);
 (async () => {
   try {
     const [detected, preferences, info] = await Promise.all([api('defaults'), api('settings'), api('info')]); defaults = detected; workspaces = preferences.Workspaces || {};
-    $('appVersion').textContent = info.Version === 'dev' ? '开发版' : 'v' + info.Version;
+    setToolboxSidebar(preferences.SidebarCollapsed===true);
+    restoreArchiveDisclosure(preferences.ArchiveAdvancedOpen===true);
+    window.toolboxFeedback?.init(preferences, changes => api('ui-settings', changes), id => tools.find(t => t[0] === id)?.[1] || '工具箱任务', api);
+    window.toolboxVersion?.init(info,api);
+    $('appVersion').textContent = window.toolboxVersion?.label(info.Version)||(info.Version === 'dev' ? '开发版' : 'v' + info.Version);
     $('bundleNotice').hidden = !info.BundleWarning; $('bundleNotice').textContent = info.BundleWarning || '';
+    if(defaults.Platform&&defaults.Platform!=='windows'){for(const row of document.querySelectorAll('.password-tools'))row.hidden=true;$('DedupeProgram').placeholder='选择当前系统的 VDF.GUI 图形程序';$('dedupeDownloadHelp').querySelector('ol').textContent='下载适合当前系统和架构的图形界面版本，完整解压后选择 VDF.GUI 可执行文件。需要桌面环境，具体平台支持以软件发布页为准。'}
     if (!Object.keys(workspaces).length) {
       try { const old = JSON.parse(localStorage.getItem('media-toolbox-settings') || '{}'); if (tools.some(t => t[0] === old.Tool)) { workspaces[old.Tool] = old; preferences.LastTool = old.Tool; } } catch {}
     }
-    await selectTool(tools.some(t => t[0] === preferences.LastTool) ? preferences.LastTool : 'format', true); await refreshSavedPasswords().catch(() => {}); setInterval(poll, 1200);
+    const incoming=new URLSearchParams(location.search),requestedTool=incoming.get('tool');
+    await selectTool(tools.some(t=>t[0]===requestedTool)?requestedTool:tools.some(t => t[0] === preferences.LastTool) ? preferences.LastTool : 'format', true);
+    if(incoming.has('root')&&tools.some(t=>t[0]===requestedTool)){putValue('Root',incoming.get('root'));changed();}
+ await refreshSavedPasswords().catch(() => {}); setInterval(poll, 1200);
   } catch (e) { $('message').textContent = '初始化失败：' + e.message; switching = false; updateActions(); }
 })();
+
+let sidebarWrites=Promise.resolve(),toolboxSidebarCollapsed=false;
+let archiveDisclosureWrites=Promise.resolve(),archiveDisclosureOpen=false,archiveDisclosureSaved=false,archiveDisclosureRevision=0;
+function restoreArchiveDisclosure(open){
+  archiveDisclosureOpen=archiveDisclosureSaved=open;
+  $('archiveAdvanced').open=open;
+}
+$('archiveAdvanced').addEventListener('toggle',()=>{
+  const open=$('archiveAdvanced').open;
+  if(open===archiveDisclosureOpen)return;
+  archiveDisclosureOpen=open;
+  const revision=++archiveDisclosureRevision;
+  archiveDisclosureWrites=archiveDisclosureWrites.catch(()=>{}).then(async()=>{
+    try{await api('ui-settings',{ArchiveAdvancedOpen:open});archiveDisclosureSaved=open;}
+    catch(e){
+      if(revision===archiveDisclosureRevision){archiveDisclosureOpen=archiveDisclosureSaved;$('archiveAdvanced').open=archiveDisclosureSaved;}
+      setSettingsStatus('展开状态保存失败：'+e.message,true);
+    }
+  });
+});
+function setToolboxSidebar(collapsed){
+  toolboxSidebarCollapsed=collapsed;
+  const mobile=window.innerWidth<=760,expanded=mobile?document.body.classList.contains('nav-open'):!collapsed;
+  document.body.classList.toggle('sidebar-collapsed',collapsed);
+  $('toolboxSidebar').inert=!expanded;$('toolboxNavBackdrop').hidden=!mobile||!expanded;
+  const label=expanded?'收起左侧导航':'展开左侧导航';
+  $('toggleSidebar').title=label;$('toggleSidebar').setAttribute('aria-label',label);$('toggleSidebar').setAttribute('aria-expanded',String(expanded));
+}
+function closeToolboxNav(restoreFocus=false){
+  document.body.classList.remove('nav-open');setToolboxSidebar(toolboxSidebarCollapsed);
+  if(restoreFocus)$('toggleSidebar').focus();
+}
+$('toggleSidebar').onclick=()=>{
+  if(window.innerWidth<=760){document.body.classList.toggle('nav-open');setToolboxSidebar(toolboxSidebarCollapsed);return}
+  const collapsed=!toolboxSidebarCollapsed;setToolboxSidebar(collapsed);
+  sidebarWrites=sidebarWrites.catch(()=>{}).then(()=>api('ui-settings',{SidebarCollapsed:collapsed})).catch(e=>showMessage('导航设置保存失败：'+e.message));
+};
+$('closeToolboxNav').onclick=$('toolboxNavBackdrop').onclick=()=>closeToolboxNav(true);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open')&&!document.querySelector('dialog[open]')){event.preventDefault();closeToolboxNav(true)}});
+window.addEventListener('resize',()=>{if(window.innerWidth>760)document.body.classList.remove('nav-open');setToolboxSidebar(toolboxSidebarCollapsed)});
+
+// History restores parameters only; every execution still requires a fresh preview.
+taskHistory=window.setupTaskHistory?.({api,$,toolName:id=>tools.find(t=>t[0]===id)?.[1]||id,
+  canChange:()=>!busy&&!switching&&!submitting,
+  beforeOpen:()=>exitTerminalFullscreen(false),
+  restore:async c=>{if(busy||switching||submitting)throw Error('当前任务尚未结束');await saveNow();workspaces[c.Tool]={...c,ArchivePassword:'',ExtractPassword:''};await selectTool(c.Tool,true);lastConfig='';planID='';updateActions();},
+  scan:id=>startPreview(id),
+  message:(text,error=false)=>showMessage(text,error)
+});

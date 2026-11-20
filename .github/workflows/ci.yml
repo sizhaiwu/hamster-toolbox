@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,3 +46,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: UI tests
         run: npm run test:ui
+      - name: Packaging safety checks
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/package-check.ps1

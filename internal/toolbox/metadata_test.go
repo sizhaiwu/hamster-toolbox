@@ -19,6 +19,7 @@ func TestMetadataFileSelection(t *testing.T) {
 	c.Tool, c.Root = "exif", root
 	c.Exiftool = filepath.Join(t.TempDir(), "exiftool.exe")
 	file(t, c.Exiftool, []byte("test"))
+	os.Chmod(c.Exiftool, 0700)
 	c.FFmpeg, c.FFprobe = c.Exiftool, c.Exiftool
 	for _, tc := range []struct {
 		mode             string

@@ -10,12 +10,11 @@ import (
 	"fmt"
 	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +25,7 @@ var assets embed.FS
 
 type state struct {
 	Status                string
+	HistoryID, RetryOf    string
 	Error                 string
 	Total, Done           int
 	Logs                  []string
@@ -34,16 +34,24 @@ type state struct {
 	PlanID                string
 	Tool                  string
 	Actionable, Conflicts int
+	Operation             *toolbox.OperationProgress `json:",omitempty"`
 }
 type server struct {
-	mu          sync.Mutex
-	state       state
-	plan        *toolbox.Plan
-	cancel      context.CancelFunc
-	token       string
-	dataDir     string
-	settingsMu  sync.Mutex
-	passwordsMu sync.Mutex
+	browser        *fileBrowser
+	mu             sync.Mutex
+	state          state
+	plan           *toolbox.Plan
+	cancel         context.CancelFunc
+	token          string
+	dataDir        string
+	settingsMu     sync.Mutex
+	passwordsMu    sync.Mutex
+	historyMu      sync.Mutex
+	desktopClosing bool
+	taskWait       sync.WaitGroup
+	autostartMu    sync.Mutex
+	autostart      *autostartManager
+	updates        *releaseChecker
 }
 
 func (s *server) line(m string) {
@@ -59,6 +67,15 @@ func (s *server) progress(n, total int) {
 	defer s.mu.Unlock()
 	s.state.Done = n
 	s.state.Total = total
+	s.state.Operation = nil
+}
+func (s *server) operationProgress(p toolbox.OperationProgress) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state.Status != "running" || s.state.Tool != p.Tool {
+		return
+	}
+	s.state.Operation = &p
 }
 func (s *server) busy() bool { return s.state.Status == "scanning" || s.state.Status == "running" }
 func send(w http.ResponseWriter, v interface{}) {
@@ -83,6 +100,10 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
+	case "/api/autostart":
+		s.autostartAPI(w, r)
+	case "/api/task-history", "/api/task-history-detail", "/api/task-history-clear":
+		s.taskHistoryAPI(w, r)
 	case "/api/cli-commands":
 		s.cliCommandsAPI(w, r)
 	case "/api/dedupe-info", "/api/dedupe-open":
@@ -93,8 +114,14 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		s.videoCommands(w, r)
 	case "/api/info":
 		send(w, appInfo())
+	case "/api/version-update":
+		s.versionUpdateAPI(w, r)
 	case "/api/defaults":
-		send(w, toolbox.DefaultConfig())
+		send(w, struct {
+			toolbox.Config
+			Platform               string
+			PasswordVaultSupported bool
+		}{toolbox.DefaultConfig(), runtime.GOOS, runtime.GOOS == "windows"})
 	case "/api/number-info":
 		var c toolbox.Config
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
@@ -108,6 +135,16 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(w, info)
+	case "/api/cache-clear":
+		if s.browser == nil {
+			fail(w, fmt.Errorf("资源管理器尚未就绪"))
+			return
+		}
+		if err := s.browser.clearDiskThumbnails(); err != nil {
+			fail(w, err)
+			return
+		}
+		send(w, map[string]bool{"OK": true})
 	case "/api/settings":
 		s.settingsMu.Lock()
 		p, e := s.loadPreferences()
@@ -125,6 +162,83 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p, e := s.saveWorkspace(c)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		send(w, p)
+	case "/api/ui-settings":
+		var change struct {
+			BrowserAutoPlay     *bool
+			BrowserMuted        *bool
+			RememberPlayback    *bool
+			RestoreTabs         *bool
+			DefaultPlayer       *string
+			FontScale           *int
+			ThumbnailCacheMB    *int
+			SidebarCollapsed    *bool
+			ArchiveAdvancedOpen *bool
+			TaskPopup           *bool
+			TaskSound           *bool
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1024)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if e := decoder.Decode(&change); e != nil {
+			fail(w, e)
+			return
+		}
+		if change.DefaultPlayer != nil && *change.DefaultPlayer != "browser" && *change.DefaultPlayer != "mpv" {
+			fail(w, fmt.Errorf("默认播放器无效"))
+			return
+		}
+		if change.FontScale != nil && *change.FontScale != 100 && *change.FontScale != 110 && *change.FontScale != 125 {
+			fail(w, fmt.Errorf("字号无效"))
+			return
+		}
+		if change.ThumbnailCacheMB != nil && (*change.ThumbnailCacheMB < 0 || *change.ThumbnailCacheMB > 4096) {
+			fail(w, fmt.Errorf("缩略图缓存须为 0–4096 MB"))
+			return
+		}
+		s.settingsMu.Lock()
+		p, e := s.loadPreferences()
+		if e == nil {
+			if change.SidebarCollapsed != nil {
+				p.SidebarCollapsed = *change.SidebarCollapsed
+			}
+			if change.ArchiveAdvancedOpen != nil {
+				p.ArchiveAdvancedOpen = *change.ArchiveAdvancedOpen
+			}
+			if change.TaskPopup != nil {
+				p.TaskPopup = change.TaskPopup
+			}
+			if change.TaskSound != nil {
+				p.TaskSound = change.TaskSound
+			}
+			if change.BrowserAutoPlay != nil {
+				p.BrowserAutoPlay = change.BrowserAutoPlay
+			}
+			if change.BrowserMuted != nil {
+				p.BrowserMuted = change.BrowserMuted
+			}
+			if change.RememberPlayback != nil {
+				p.RememberPlayback = change.RememberPlayback
+			}
+			if change.RestoreTabs != nil {
+				p.RestoreTabs = change.RestoreTabs
+			}
+			if change.DefaultPlayer != nil {
+				p.DefaultPlayer = *change.DefaultPlayer
+			}
+			if change.FontScale != nil {
+				p.FontScale = *change.FontScale
+			}
+			if change.ThumbnailCacheMB != nil {
+				p.ThumbnailCacheMB = change.ThumbnailCacheMB
+			}
+			e = s.writePreferences(p)
+		}
+		s.settingsMu.Unlock()
 		if e != nil {
 			fail(w, e)
 			return
@@ -168,13 +282,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.Path == "" {
-			drives := []string{}
-			for c := 'C'; c <= 'Z'; c++ {
-				p := fmt.Sprintf("%c:\\", c)
-				if st, e := os.Stat(p); e == nil && st.IsDir() {
-					drives = append(drives, p)
-				}
-			}
+			drives := browserLocations()
 			send(w, map[string]interface{}{"Path": "", "Parent": "", "Dirs": drives, "Files": []string{}})
 			return
 		}
@@ -195,7 +303,8 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 				dirs = append(dirs, filepath.Join(p, d.Name()))
 			} else if d.Type()&os.ModeSymlink == 0 {
 				ext := strings.ToLower(filepath.Ext(d.Name()))
-				if req.Kind == "file" || req.Kind == "program" && ext == ".exe" || req.Kind == "font" && (ext == ".ttf" || ext == ".ttc" || ext == ".otf") {
+				info, _ := d.Info()
+				if req.Kind == "file" || req.Kind == "program" && info != nil && selectableProgram(d.Name(), info) || req.Kind == "font" && (ext == ".ttf" || ext == ".ttc" || ext == ".otf") {
 					files = append(files, filepath.Join(p, d.Name()))
 				}
 			}
@@ -206,14 +315,18 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		send(w, map[string]interface{}{"Path": p, "Parent": parent, "Dirs": dirs, "Files": files})
 	case "/api/plan":
-		var c toolbox.Config
+		var req struct {
+			toolbox.Config
+			RetryTaskID string
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-		if e := json.NewDecoder(r.Body).Decode(&c); e != nil {
+		if e := json.NewDecoder(r.Body).Decode(&req); e != nil {
 			fail(w, e)
 			return
 		}
+		c := req.Config
 		s.mu.Lock()
-		if s.busy() {
+		if s.busy() || s.desktopClosing {
 			s.mu.Unlock()
 			fail(w, fmt.Errorf("已有任务正在运行"))
 			return
@@ -221,11 +334,21 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.plan = nil
-		s.state = state{Status: "scanning", Tool: c.Tool, Logs: []string{}, Items: []toolbox.Item{}}
+		s.state = state{Status: "scanning", Tool: c.Tool, RetryOf: req.RetryTaskID, Logs: []string{}, Items: []toolbox.Item{}}
 		s.mu.Unlock()
 		go func() {
 			defer cancel()
-			p, e := toolbox.BuildPlan(ctx, c, s.line)
+			var p *toolbox.Plan
+			var e error
+			if req.RetryTaskID != "" {
+				var sources []string
+				sources, e = s.remainingHistorySources(ctx, req.RetryTaskID, c)
+				if e == nil {
+					p, e = toolbox.BuildRemainingPlan(ctx, c, sources, s.line)
+				}
+			} else {
+				p, e = toolbox.BuildPlan(ctx, c, s.line)
+			}
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			if e != nil {
@@ -260,7 +383,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		if s.busy() || s.state.Status != "ready" || req.PlanID == "" || req.PlanID != s.state.PlanID {
+		if s.busy() || s.desktopClosing || s.state.Status != "ready" || req.PlanID == "" || req.PlanID != s.state.PlanID {
 			s.mu.Unlock()
 			fail(w, fmt.Errorf("请先重新预览"))
 			return
@@ -271,32 +394,42 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			fail(w, e)
 			return
 		}
+		journal, historyErr := s.newTaskJournal(p, s.state.PlanID, s.state.RetryOf)
+		if historyErr != nil {
+			s.mu.Unlock()
+			fail(w, fmt.Errorf("无法保存任务记录，请检查数据目录：%w", historyErr))
+			return
+		}
+		if journal != nil {
+			s.state.HistoryID = journal.meta.ID
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.state.Status = "running"
 		s.state.Done = 0
+		s.state.Operation = nil
+		s.taskWait.Add(1)
 		s.mu.Unlock()
 		go func() {
+			defer s.taskWait.Done()
 			defer cancel()
-			res := toolbox.Execute(ctx, p, s.line, s.progress)
+			runCtx := toolbox.WithOperationProgress(ctx, s.operationProgress)
+			res := toolbox.ExecuteObserved(runCtx, p, s.line, s.progress, journal.observe)
 			s.mu.Lock()
 			s.state.Result = res
+			s.state.Operation = nil
 			s.state.Status = "finished"
 			if ctx.Err() != nil {
 				s.state.Status = "cancelled"
 			}
 			snapshot := s.state
+			snapshot.Logs = append([]string{}, s.state.Logs...)
 			s.mu.Unlock()
-			os.MkdirAll(s.dataDir, 0755)
-			recordPlan := *p
-			recordPlan.Config.ArchivePassword = ""
-			recordPlan.Config.ExtractPassword = ""
-			data, _ := json.MarshalIndent(struct {
-				State state
-				Plan  *toolbox.Plan
-			}{snapshot, &recordPlan}, "", "  ")
-			if e := os.WriteFile(filepath.Join(s.dataDir, time.Now().Format("20060102-150405")+"-"+randomID()[:6]+".json"), data, 0644); e != nil {
-				s.line("日志保存失败：" + e.Error())
+			if e := journal.finish(snapshot); e != nil {
+				s.line("任务历史保存失败：" + e.Error())
+			}
+			if e := s.pruneTaskHistory(false); e != nil {
+				s.line("历史记录清理失败：" + e.Error())
 			}
 		}()
 		send(w, map[string]bool{"ok": true})
@@ -325,10 +458,18 @@ func randomID() string {
 }
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cli" {
-		os.Exit(cliMain(os.Args[2:]))
+		release, _, err := prepareDesktop("", false, true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		code := cliMain(os.Args[2:])
+		release()
+		os.Exit(code)
 	}
 	port := flag.Int("port", 0, "本地监听端口，0 为自动分配")
 	noOpen := flag.Bool("no-open", false, "不自动打开浏览器")
+	tray := flag.Bool("tray", desktopMode == "true", "在系统托盘运行（Windows）")
 	dataDir := flag.String("data", "", "任务日志目录")
 	showVersion := flag.Bool("version", false, "显示版本并退出")
 	checkTools := flag.Bool("check-tools", false, "检查随包依赖并输出 JSON")
@@ -385,11 +526,32 @@ func main() {
 			*dataDir = filepath.Join(filepath.Dir(exe), "data")
 		}
 	}
+	releaseDesktop, existingDesktop, desktopErr := prepareDesktop(*dataDir, *tray, *noOpen)
+	if desktopErr != nil {
+		desktopError(desktopErr.Error())
+		return
+	}
+	if existingDesktop {
+		return
+	}
+	defer releaseDesktop()
 	toolbox.ProtectDataDirectory(*dataDir)
+	color, restoreConsole := enableConsoleColor()
+	defer restoreConsole()
+	console := startupConsole{out: os.Stdout, color: color}
 	s := &server{token: randomID(), dataDir: *dataDir, state: state{Status: "idle", Logs: []string{}, Items: []toolbox.Item{}}}
+	browser, e := newFileBrowser(*dataDir, s.token)
+	s.browser = browser
+	sharingErr := e
+	if sharingErr == nil {
+		sharingErr = browser.startSavedSharing()
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/files/", browser.local)
 	mux.HandleFunc("/api/", s.guard(s.api))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
 		p := r.URL.Path
 		if p == "/" {
@@ -399,7 +561,8 @@ func main() {
 			}
 			p = "/index.html"
 		}
-		if p != "/index.html" && p != "/app.js" && p != "/style.css" {
+		brandType := brandContentType(strings.TrimPrefix(p, "/"))
+		if p != "/index.html" && p != "/app.js" && p != "/version-info.js" && p != "/task-feedback.js" && p != "/task-history.js" && p != "/general-settings.css" && p != "/style.css" && p != "/theme.css" && p != "/toolbox-layout.css" && brandType == "" {
 			http.NotFound(w, r)
 			return
 		}
@@ -414,8 +577,10 @@ func main() {
 		}
 		if p == "/index.html" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		} else if p == "/app.js" {
+		} else if strings.HasSuffix(p, ".js") {
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		} else if brandType != "" {
+			w.Header().Set("Content-Type", brandType)
 		} else {
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		}
@@ -423,18 +588,47 @@ func main() {
 	})
 	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if e != nil {
-		log.Fatal(e)
+		if *tray {
+			desktopError(fmt.Sprintf("无法开启本机端口 %d：%v", *port, e))
+			return
+		}
+		failure := startupConsole{out: os.Stderr}
+		failure.listenFailure(*port, e)
+		os.Exit(1)
 	}
 	url := "http://" + listener.Addr().String() + "/?session=" + s.token
-	fmt.Println("仓鼠工具箱 " + appVersion + " 已启动：" + url + "\n关闭此窗口即可退出。任务日志：" + s.dataDir)
+	browserMessage := "已跳过自动打开 · 请使用下方链接"
+	var browserErr error
 	if !*noOpen {
-		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		if e = cmd.Start(); e != nil {
-			fmt.Println("请手动打开链接：", e)
-		} else {
+		cmd := openBrowserCommand(url)
+		browserErr = cmd.Start()
+		if browserErr == nil {
+			browserMessage = "已请求打开默认浏览器 · 未弹出时可使用下方链接"
 			go cmd.Wait()
 		}
 	}
+	console.ready(url, s.dataDir, browserMessage, browserErr, sharingErr, browser)
 	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	log.Fatal(httpServer.Serve(listener))
+	if *tray {
+		if e := runDesktopTray(url, s, httpServer, listener); e != nil {
+			desktopError(e.Error())
+		}
+		listener.Close()
+		browser.mu.Lock()
+		sharedServer := browser.server
+		browser.mu.Unlock()
+		if sharedServer != nil {
+			sharedServer.Close()
+		}
+		// Let completed-task journaling and cancelled file transfers finish
+		// their cleanup before a normal tray exit terminates the process.
+		s.taskWait.Wait()
+		browser.operations.Lock()
+		browser.operations.Unlock()
+		return
+	}
+	if e := httpServer.Serve(listener); e != nil && e != http.ErrServerClosed {
+		console.status("31", "服务停止", e.Error())
+		os.Exit(1)
+	}
 }

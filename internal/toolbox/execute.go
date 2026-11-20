@@ -16,6 +16,9 @@ var errNotSmaller = errors.New("压缩结果未变小")
 var errImageSkipped = errors.New("图片已跳过")
 
 func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, int)) Result {
+	return executeFiles(ctx, p, log, progress, true, nil)
+}
+func executeFiles(ctx context.Context, p *Plan, log func(string), progress func(int, int), allowParallel bool, video *videoSession) Result {
 	if e := checkPlanSafety(p); e != nil {
 		log("安全检查未通过：" + e.Error())
 		return Result{Failed: max(1, len(p.Items))}
@@ -28,6 +31,16 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 			}
 		}
 	}
+	if p.Config.Tool == "format" && !p.Config.FormatCleanOther && p.formatStats != nil {
+		if e := validateFormatSnapshot(ctx, p); e != nil {
+			if ctx.Err() != nil {
+				log("任务已取消")
+				return Result{}
+			}
+			log("未执行目录改名：" + e.Error() + "，请重新扫描预览")
+			return Result{Failed: max(1, len(p.Items))}
+		}
+	}
 	if p.Config.Tool == "extract" {
 		return executeExtract(ctx, p, log, progress)
 	}
@@ -37,8 +50,13 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 	if p.Config.Tool == "format" && p.Config.FormatCleanOther {
 		return executeFormat(ctx, p, log, progress)
 	}
+	if allowParallel && p.Config.Workers > 1 && (p.Config.Tool == "image" || p.Config.Tool == "exif" || p.Config.Tool == "thumbnail" || p.Config.Tool == "video") {
+		return executeParallelFiles(ctx, p, log, progress)
+	}
 	r := Result{}
-	video := newVideoSession(p.Config, log)
+	if video == nil {
+		video = newVideoSession(p.Config, log)
+	}
 	total := len(p.Items)
 	if p.Config.Tool == "pdf" {
 		if e := makePDF(ctx, p, log, progress); e != nil {
@@ -61,6 +79,7 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 		}
 		if it.Conflict != "" {
 			r.Skipped++
+			observeFile(ctx, it, "skipped", it.Conflict)
 			log("跳过：" + it.Source + " · " + it.Conflict)
 			progress(i+1, total)
 			continue
@@ -81,7 +100,7 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 		}
 		if e == nil {
 			if p.Config.Tool == "rename" || p.Config.Tool == "format" || p.Config.Tool == "describe" || p.Config.Tool == "number" {
-				e = os.Rename(it.Source, it.Target)
+				e = browserMoveNoReplace(it.Source, it.Target)
 			} else {
 				if p.Config.Tool == "thumbnail" {
 					log("正在生成缩略图：" + it.Source)
@@ -92,17 +111,21 @@ func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, 
 		if e != nil {
 			if ctx.Err() != nil {
 				log("当前处理已取消：" + it.Source)
+				observeFile(ctx, it, "pending", "处理中断，原文件保留")
 				break
 			}
 			if errors.Is(e, errNotSmaller) || errors.Is(e, errImageSkipped) {
 				r.Skipped++
+				observeFile(ctx, it, "skipped", e.Error())
 				log("跳过：" + it.Source + " · " + e.Error())
 			} else {
 				r.Failed++
+				observeFile(ctx, it, "failed", e.Error())
 				log("失败：" + it.Source + " · " + e.Error())
 			}
 		} else {
 			r.Success++
+			observeFile(ctx, it, "success", "")
 			message := "完成：" + it.Target
 			if (p.Config.Tool == "image" || p.Config.Tool == "video") && it.Size > 0 {
 				if out, e := os.Stat(it.Target); e == nil {
@@ -130,7 +153,13 @@ func (r contextReader) Read(p []byte) (int, error) {
 	if e := r.ctx.Err(); e != nil {
 		return 0, e
 	}
-	return r.reader.Read(p)
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		if notify, ok := r.ctx.Value(copyProgressKey{}).(func(int64)); ok && notify != nil {
+			notify(int64(n))
+		}
+	}
+	return n, err
 }
 
 func publishContext(ctx context.Context, tmp, target string) error {
@@ -185,7 +214,7 @@ func convertWithVideo(ctx context.Context, c Config, it Item, video *videoSessio
 	tmp := filepath.Join(dir, "result"+filepath.Ext(it.Target))
 	switch c.Tool {
 	case "thumbnail":
-		e = makeThumbnail(ctx, c, it, tmp)
+		e = makeThumbnailWithLog(ctx, c, it, tmp, video.log)
 	case "image":
 		e = compressImage(ctx, c, it.Source, tmp)
 	case "exif":

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 常见问题与使用说明
+    url: https://github.com/sizhaiwu/hamster-toolbox/blob/main/docs/faq.md
+    about: 启动、组件、压缩、播放和共享问题可先查看这里。

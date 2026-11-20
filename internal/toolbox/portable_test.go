@@ -58,13 +58,14 @@ func TestPortableBundleVersionChecks(t *testing.T) {
 
 func TestPortableDependenciesSurviveMovingAndDoNotRelocateUserFiles(t *testing.T) {
 	oldBase, newBase := t.TempDir(), t.TempDir()
-	rel := filepath.Join("tools", "imagemagick", "magick.exe")
+	rel := filepath.Join("tools", "imagemagick", programName("magick"))
 	for _, base := range []string{oldBase, newBase} {
 		file(t, filepath.Join(base, rel), []byte("program"))
+		os.Chmod(filepath.Join(base, rel), 0700)
 	}
 	c := Config{Tool: "image", Root: "D:/photos", Output: "D:/results", Magick: filepath.Join(oldBase, rel), Quality: 70}
 	stored := portableConfigAt(c, oldBase)
-	if stored.Magick != "tools/imagemagick/magick.exe" {
+	if stored.Magick != filepath.ToSlash(rel) {
 		t.Fatal(stored)
 	}
 	restored := dependencyPathsAt(stored, newBase, true)
@@ -77,6 +78,7 @@ func TestPortableDependenciesSurviveMovingAndDoNotRelocateUserFiles(t *testing.T
 	}
 	custom := filepath.Join(t.TempDir(), "custom-magick.exe")
 	file(t, custom, []byte("custom"))
+	os.Chmod(custom, 0700)
 	c.Magick = custom
 	if got := dependencyPathsAt(c, newBase, true); got.Magick != custom {
 		t.Fatal("valid custom choice replaced", got)
@@ -99,7 +101,7 @@ func TestPortableDependenciesSurviveMovingAndDoNotRelocateUserFiles(t *testing.T
 func TestPortablePathTraversalIsNotRebound(t *testing.T) {
 	base := t.TempDir()
 	file(t, filepath.Join(base, "outside.exe"), []byte("file"))
-	c := Config{Tool: "image", Magick: "Z:/old/tools/../outside.exe"}
+	c := Config{Tool: "image", Magick: filepath.Join(t.TempDir(), "old") + string(filepath.Separator) + "tools" + string(filepath.Separator) + ".." + string(filepath.Separator) + "outside.exe"}
 	if got := dependencyPathsAt(c, base, true); got.Magick != c.Magick {
 		t.Fatal(got)
 	}

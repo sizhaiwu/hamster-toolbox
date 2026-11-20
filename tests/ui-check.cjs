@@ -9,7 +9,7 @@ Object.assign(defaults,{SevenZip:'C:/tools/sevenzip/7za.exe',ArchiveMode:'pure',
 Object.assign(defaults,{ThumbnailColumns:5,ThumbnailRows:5,ThumbnailWidth:1024,ThumbnailGap:5,ThumbnailQuality:90,ThumbnailFormat:'jpg',ThumbnailBackground:'#ffffff',ThumbnailInfo:true,ThumbnailTime:true});
 Object.assign(defaults,{ExtractConflict:'rename',ExtractLayout:'separate',ExtractPassword:'',ExtractDeleteSource:false,ExtractDeleteMode:'recycle'});
 Object.assign(defaults,{FormatCleanOther:false,FormatDeleteMode:'recycle'});
-Object.assign(defaults,{VideoMode:'efficient',VideoAcceleration:'auto',MetadataTypes:'images'});
+Object.assign(defaults,{VideoHDR:'preserve',VideoMode:'efficient',VideoAcceleration:'auto',MetadataTypes:'images'});
 const requirements = { dedupe:[], extract:['SevenZip'], archive:['SevenZip'], format: [], rename: [], number:[], describe: ['FFprobe'], image: ['Magick'], exif: ['Exiftool'], pdf: ['Magick', 'Font'], video: ['FFmpeg', 'FFprobe'], thumbnail:['FFmpeg','FFprobe','Magick','Font'] };
 const storage = { Version: 1, LastTool: 'format', Workspaces: {
   // Old/stale values from an unrelated workspace must not block native clicks.
@@ -18,23 +18,27 @@ const storage = { Version: 1, LastTool: 'format', Workspaces: {
 } };
 let planMode = 'conflicts';
 let dependencyFailure = false;
+let browseHook=null;
 let state = { Status: 'idle', Tool: '', Items: [], Logs: [], Result: {}, Total: 0 };
 const saved = [], requests = [], failures = [], passwordVault = [];
 let copiedCommand = "";
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test, label) { for (let i=0;i<120;i++) { if (test()) return; await delay(25); } throw Error('Timed out: '+label); }
-function createUI(port, supportsMask = true) {
+function createUI(port, supportsMask = true, width=1024, prepare=()=>{}) {
   const dom = new JSDOM(html, { url:'http://localhost:'+port+'/?session=test', runScripts:'outside-only' });
   const w=dom.window;
+  Object.defineProperty(w,'innerWidth',{value:width,writable:true,configurable:true});
+  w.scrollTo=options=>{w.lastScroll=options};
   w.CSS = { supports: (property, value) => supportsMask && property === '-webkit-text-security' && value === 'disc' };
   w.addEventListener('error', e => failures.push(e.error || e.message));
   w.HTMLDialogElement.prototype.showModal = function(){this.open=true};
-  w.HTMLDialogElement.prototype.close = function(){this.open=false};
+  w.HTMLDialogElement.prototype.close = function(){this.open=false;this.dispatchEvent(new w.Event('close'))};
   Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async value=>{copiedCommand=value;}}});
   w.fetch = async (url, options) => {
     const body=JSON.parse(options.body), path=url.replace('/api/','');requests.push({path,body});
     let value;
-    if(path==='defaults') value=defaults;
+    if(path==='task-history') value={Records:[],Interrupted:0,Keep:50};
+    else if(path==='defaults') value=defaults;
     else if(path==='dedupe-info') {const selected=body.Path||'';const available=selected.endsWith('VDF.GUI.exe')&&!selected.includes('missing');value={Path:selected,Available:available,Message:available?'已找到本地软件，可以打开。':'尚未找到本地软件，请按下方步骤下载。'};}
     else if(path==='dedupe-open') value={Message:'已发送启动请求'};
     else if(path==='passwords') value=passwordVault.map(({ID,Name})=>({ID,Name}));
@@ -43,8 +47,11 @@ function createUI(port, supportsMask = true) {
     else if(path==='password-delete') {passwordVault.splice(passwordVault.findIndex(x=>x.ID===body.ID),1);value={ok:true};}
     else if(path==='cli-commands') value={Preview:'toolbox cli '+body.Tool,Execute:'toolbox cli '+body.Tool+' --execute',Notice:'PowerShell 命令，仅预览默认不执行'};
     else if(path==='video-commands'||path==='native-commands') value=[{Label:'hevc_nvenc',PowerShell:"& 'ffmpeg.exe' '-i' 'source.mp4' 'target.mp4'"},{Label:'libx265（备用）',PowerShell:"& 'ffmpeg.exe' '-c:v' 'libx265' 'target.mp4'"}];
+    else if(path==='browse'){if(browseHook){const response=await browseHook(body);if(response)return response;}value={Path:body.Path||'',Parent:'',Dirs:[],Files:[]};}
     else if(path==='info') value={Name:'仓鼠工具箱',Version:'0.1.0'};
+    else if(path==='version-update') value={Current:'0.1.0',Latest:'v0.2.1',State:'available',Available:true,Message:'发现新版',URL:'https://github.com/sizhaiwu/hamster-toolbox/releases/tag/v0.2.1'};
     else if(path==='settings') value=storage;
+    else if(path==='ui-settings') {Object.assign(storage,body);value=storage;}
     else if(path==='number-info') value={Name:'Sample作者',Style:body.NumberStyle==='custom'?'custom':'dash',MaxNumber:98,NextNumber:99,Digits:3,Existing:98,Pending:100};
     else if(path==='save-settings') { const c={...body};saved.push(c);storage.Workspaces[c.Tool]=c;storage.LastTool=c.Tool;value=storage; }
     else if(path==='dependencies'&&dependencyFailure) return {ok:false,text:async()=>'测试：依赖检查请求失败'};
@@ -68,13 +75,18 @@ function createUI(port, supportsMask = true) {
     else throw Error('Unexpected API '+path);
     return {ok:true,json:async()=>JSON.parse(JSON.stringify(value))};
   };
+  prepare(w);
+  w.eval(fs.readFileSync('web/version-info.js','utf8'));
+  w.eval(fs.readFileSync('web/task-feedback.js','utf8'));
+  w.eval(fs.readFileSync('web/task-history.js','utf8'));
   w.eval(script);return dom;
 }
-(async()=>{
+module.exports={createUI,until,storage,requests,setState:value=>{state=value}};
+if(require.main===module)(async()=>{
   let dom=createUI(10001),w=dom.window,$=id=>w.document.getElementById(id);
   const switchTool=async id=>{
     w.document.querySelector('[data-tool="'+id+'"]').click();
-    await until(()=>$('title').textContent===({video:'压缩视频',image:'压缩图片',pdf:'PDF 图册索引',exif:'清理元数据',format:'目录统计命名',describe:'媒体信息命名',rename:'批量重命名',number:'目录批量编号',thumbnail:'视频缩略图',archive:'打包资源',extract:'解压资源',dedupe:'文件去重'})[id]&&!$('nav').firstChild.disabled,'switch '+id);
+    await until(()=>$('title').textContent===({video:'压缩视频',image:'压缩图片',pdf:'PDF 图册索引',exif:'清理元数据',format:'目录统计命名',describe:'媒体信息命名',rename:'批量重命名',number:'目录批量编号',thumbnail:'视频缩略图',archive:'打包资源',extract:'解压资源',dedupe:'文件去重'})[id]&&!$('nav').querySelector('button[data-tool]').disabled,'switch '+id);
   };
   const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('input',{bubbles:true}));};
   await until(()=>$('builtInReady').hidden===false&&!$('preview').disabled,'built-in ready');
@@ -88,6 +100,15 @@ function createUI(port, supportsMask = true) {
   assert.equal($('logs').querySelectorAll('.log-success').length,1);assert.equal($('logs').querySelectorAll('.log-warning').length,1);assert.equal($('logs').querySelectorAll('.log-error').length,1);assert.equal($('logs').querySelectorAll('.log-progress').length,1);
   assert.equal($('logs').querySelector('img'),null);assert.equal($('logs').querySelector('.log-time').textContent,'12:00:00 ');
   $('followLogs').click();assert.equal($('followLogs').getAttribute('aria-pressed'),'false');$('followLogs').click();assert.equal($('followLogs').getAttribute('aria-pressed'),'true');
+  const originalInert=[...w.document.querySelectorAll('[inert]')];
+  const previewBody=$('items'),tablePane=$('previewSection').querySelector('.table-wrap');tablePane.scrollTop=37;
+  $('previewFullscreen').click();assert($('previewSection').classList.contains('terminal-panel-expanded'));assert(w.document.body.classList.contains('terminal-view-open'));assert.equal($('previewSection').getAttribute('role'),'dialog');assert.equal($('previewFullscreen').getAttribute('aria-pressed'),'true');assert($('toolboxSidebar').hasAttribute('inert'));assert(!$('taskResultDialog').hasAttribute('inert'));assert.equal($('items'),previewBody,'expand retains preview DOM');
+  tablePane.scrollTop=0;w.document.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!$('previewSection').classList.contains('terminal-panel-expanded'));assert.equal(tablePane.scrollTop,37,'restore position if viewport expansion clamps scrolling');assert.deepEqual([...w.document.querySelectorAll('[inert]')],originalInert);assert.equal(w.document.activeElement,$('previewFullscreen'));
+  $('followLogs').click();$('logs').scrollTop=22;$('logsFullscreen').click();assert.equal($('followLogs').getAttribute('aria-pressed'),'false');w.renderLogs('12:00:04 视频进度：60%');assert.match($('logs').textContent,/60%/,'live logs continue in fullscreen');assert.equal($('logs').scrollTop,22);
+  $('logs').dispatchEvent(new w.Event('wheel',{bubbles:true}));$('logs').scrollTop=9;
+  $('taskResultDialog').showModal();w.document.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert($('logsSection').classList.contains('terminal-panel-expanded'),'Esc for a completion dialog must not close the panel');$('taskResultDialog').close();
+  $('logsFullscreen').click();assert.equal($('logs').scrollTop,9,'keep user scrolling on exit');assert(!w.document.body.classList.contains('terminal-view-open'));assert.equal(w.document.querySelectorAll('.terminal-panel-placeholder').length,0);assert.equal($('logsSection').getAttribute('role'),null);
+  $('previewFullscreen').click();$('logsFullscreen').click();assert.equal(w.document.querySelectorAll('.terminal-panel-expanded').length,1);$('logsFullscreen').click();assert.deepEqual([...w.document.querySelectorAll('[inert]')],originalInert,'background focus is fully restored');$('followLogs').click();
   assert.equal($('dependencies').hidden,true);assert.equal($('FFmpeg'),null);
   assert.equal($('CRF').disabled,true);assert.equal($('MinMB').disabled,true);
   input('Root','E:/测试输入');
@@ -111,6 +132,9 @@ function createUI(port, supportsMask = true) {
   dependencyFailure=false;await w.inspectDependencies(false);assert.equal($('dependencySummary').className,'ok');assert.equal($('preview').disabled,false);
   for(const a of w.document.querySelectorAll('.dependency-links a'))assert.equal(a.rel,'noopener noreferrer');
   input('Output','E:/视频输出');$('videoQuality').value='28';$('videoQuality').dispatchEvent(new w.Event('change'));assert.equal($('CRF').value,'28');
+  assert.equal($('VideoHDR').value,'preserve');assert.match($('videoHDRHint').textContent,/10-bit/);
+  $('VideoHDR').value='sdr';$('VideoHDR').dispatchEvent(new w.Event('change'));assert.match($('videoHDRHint').textContent,/CPU/);
+  $('VideoHDR').value='base';$('VideoHDR').dispatchEvent(new w.Event('change'));assert.match($('videoHDRHint').textContent,/移除杜比/);
   assert.equal($('VideoMode').value,'efficient');assert.match($('videoModeHint').textContent,/H.265/);
   $('VideoMode').value='archive';$('VideoMode').dispatchEvent(new w.Event('change'));assert.equal($('VideoAcceleration').disabled,true);assert.match($('videoAccelerationHint').textContent,/固定使用 CPU/);
   $('VideoMode').value='compatible';$('VideoMode').dispatchEvent(new w.Event('change'));assert.equal($('VideoAcceleration').disabled,false);assert.match($('videoModeHint').textContent,/H.264/);
@@ -189,13 +213,13 @@ function createUI(port, supportsMask = true) {
   await switchTool('pdf');assert.equal($('thumbnailOptions').hidden,true);assert.equal($('ThumbnailWidth').disabled,true);
   assert.equal($('Output').value,'');assert.equal($('recursiveOption').hidden,true);assert.ok($('Font'));assert.equal($('outputLabel').textContent,'保存为 PDF 文件');
   await switchTool('video');assert.equal($('Output').value,'E:/视频输出');assert.equal($('CRF').value,'28');assert.equal($('FFprobe').value,'C:/special/ffprobe.exe');
-  assert.equal($('VideoMode').value,'compatible');assert.equal($('VideoAcceleration').value,'intel');
-  assert.equal(saved.filter(c=>c.Tool==='image').some(c=>'VideoMode' in c),false);
+  assert.equal($('VideoMode').value,'compatible');assert.equal($('VideoAcceleration').value,'intel');assert.equal($('VideoHDR').value,'base');
+  assert.equal(saved.filter(c=>c.Tool==='image').some(c=>'VideoMode' in c||'VideoHDR' in c),false);
   await switchTool('describe');assert.equal($('FFprobe').value,defaults.FFprobe);assert.equal($('FFmpeg'),null);
   await switchTool('exif');assert.equal($('preview').disabled,true);assert.ok($('Exiftool'));assert.equal($('Magick'),null);
-  assert.equal($('metadataOptions').hidden,false);assert.equal($('MetadataTypes').value,'images');$('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFmpeg')&&!$('nav').firstChild.disabled,'video cleanup dependencies');assert.ok($('FFprobe'));assert.equal(saved.filter(c=>c.Tool==='exif').at(-1).MetadataTypes,'videos');
-  $('MetadataTypes').value='images';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!$('FFmpeg')&&!$('nav').firstChild.disabled,'image cleanup dependency isolation');assert.equal($('FFprobe'),null);
-  $('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFprobe')&&!$('nav').firstChild.disabled,'restore video cleanup');
+  assert.equal($('metadataOptions').hidden,false);assert.equal($('MetadataTypes').value,'images');$('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFmpeg')&&!$('nav').querySelector('button[data-tool]').disabled,'video cleanup dependencies');assert.ok($('FFprobe'));assert.equal(saved.filter(c=>c.Tool==='exif').at(-1).MetadataTypes,'videos');
+  $('MetadataTypes').value='images';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!$('FFmpeg')&&!$('nav').querySelector('button[data-tool]').disabled,'image cleanup dependency isolation');assert.equal($('FFprobe'),null);
+  $('MetadataTypes').value='videos';$('MetadataTypes').dispatchEvent(new w.Event('change'));await until(()=>!!$('FFprobe')&&!$('nav').querySelector('button[data-tool]').disabled,'restore video cleanup');
   await switchTool('rename');assert.equal($('dependencies').hidden,true);assert.equal($('preview').disabled,false);
   input('Find','^test\\s*第\\d+期\\s*');input('Replace','');
   assert.equal($('Regex').checked,false);$('RenameMode').value='regex';$('RenameMode').dispatchEvent(new w.Event('change'));
@@ -241,7 +265,7 @@ function createUI(port, supportsMask = true) {
   await delay(1300);assert.match($('message').textContent,/预览已失效/);
   await switchTool('image');await delay(550);dom.window.close();
   dom=createUI(20002);w=dom.window;$=id=>w.document.getElementById(id);
-  await until(()=>$('title').textContent==='压缩图片'&&!$('nav').firstChild.disabled,'restart on another port');
+  await until(()=>$('title').textContent==='压缩图片'&&!$('nav').querySelector('button[data-tool]').disabled,'restart on another port');
   assert.equal($('Output').value,'E:/图片输出');assert.equal($('Quality').value,'75');
   assert.equal($('ImageFormatMode').value,'png');assert.deepEqual(storage.Workspaces.image.ImageFormats,['.png']);
   assert.equal($('PngMode').value,'webp-png');assert.equal($('PngQuality').value,'92');
@@ -249,6 +273,10 @@ function createUI(port, supportsMask = true) {
   await switchTool('thumbnail');assert.equal($('Output').value,'E:/缩略图输出');assert.equal($('ThumbnailColumns').value,'4');assert.equal($('ThumbnailRows').value,'3');assert.equal($('ThumbnailFormat').value,'png');assert.equal($('ThumbnailBackground').value,'#224466');assert.equal($('ThumbnailInfo').checked,false);
   assert.equal(failures.length,0,failures.map(String).join('\n'));
   await switchTool('archive');
+  assert.equal($('archiveAdvanced').open,false,'legacy settings keep advanced options collapsed');
+  $('archiveAdvanced').querySelector('summary').click();
+  await until(()=>storage.ArchiveAdvancedOpen===true,'archive advanced expanded state persisted');
+  assert.equal('ArchiveAdvancedOpen' in w.config(),false,'presentation state does not change the execution config');
   assert.equal($('archiveOptions').hidden,false);assert.equal($('entryOptions').hidden,false);assert.equal($('recursiveOption').hidden,true);
   assert.equal($('SevenZip').value,'C:/tools/sevenzip/7za.exe');assert.equal($('ArchiveExtras').disabled,true);assert.match($('archiveSummary').textContent,/D_001\.7z\.001/);assert.match($('outputHint').textContent,/0utput_7z/);assert.match($('outputHint').textContent,/目录\.txt/);assert.match($('Output').placeholder,/0utput_7z/);
   input('ArchivePassword','Private-Session!');
@@ -256,6 +284,7 @@ function createUI(port, supportsMask = true) {
   input('ArchiveExtras','C:/sample/info.txt');assert.equal($('ArchiveExtras').disabled,false);
   $('ArchiveSplit').value='none';$('ArchiveSplit').dispatchEvent(new w.Event('change'));assert.equal($('ArchiveVolume').disabled,true);
   await switchTool('format');await switchTool('archive');assert.equal($('ArchivePassword').value,'Private-Session!');
+  assert.equal($('archiveAdvanced').open,true,'switching tools preserves expanded state');
   assert.equal(saved.filter(x=>x.Tool==='archive').some(x=>'ArchivePassword' in x),false);
   assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('CRF').disabled,true);
   const archivePlanCount=requests.filter(r=>r.path==='plan').length;$('preview').click();
@@ -305,10 +334,42 @@ function createUI(port, supportsMask = true) {
   const dedupeSaved=saved.filter(c=>c.Tool==='dedupe').at(-1);assert.equal(dedupeSaved.DedupeProgram,'C:/apps/VDF/VDF.GUI.exe');assert.equal('Root' in dedupeSaved,false);
   await switchTool('format');assert.equal($('batchWorkspace').hidden,false);assert.equal($('previewSection').hidden,false);assert.equal($('dedupePanel').hidden,true);
   await switchTool('dedupe');assert.equal($('DedupeProgram').value,'C:/apps/VDF/VDF.GUI.exe');assert.equal($('launchDedupe').disabled,false);
+  await switchTool('format');input('Root','E:/source');let releaseBrowse;browseHook=body=>body.Path==='E:/slow'?new Promise(resolve=>{releaseBrowse=()=>resolve({ok:true,json:async()=>({Path:'E:/slow',Parent:'',Dirs:[],Files:[]})})}):null;
+  $('browse').click();await until(()=>$('folderDialog').open&&!$('selectFolder').disabled,'folder picker ready');input('browsePath','E:/slow');assert.equal($('selectFolder').disabled,true,'typed paths must be confirmed before selecting');$('goto').click();await until(()=>Boolean(releaseBrowse),'slow folder listing');input('browsePath','E:/fast');$('goto').click();await until(()=>$('browsePath').value==='E:/fast'&&!$('selectFolder').disabled,'new folder listing');releaseBrowse();await delay(30);assert.equal($('browsePath').value,'E:/fast','late folder listing must not replace current path');$('selectFolder').click();assert.equal($('Root').value,'E:/fast');assert.equal($('folderDialog').open,false);browseHook=null;await delay(600);
   assert.equal(failures.length,0,failures.map(String).join('\n'));dom.window.close();
+  const archiveRestored=createUI(15134),arw=archiveRestored.window,ard=arw.document;
+  await until(()=>ard.getElementById('appVersion').textContent==='v0.1.0','archive disclosure settings loaded on another port');
+  assert.equal(ard.getElementById('archiveAdvanced').open,true,'expanded state survives refresh and port changes');
+  const archiveFetch=arw.fetch;
+  arw.fetch=async(url,options)=>url==='/api/ui-settings'?{ok:false,text:async()=> 'test write failure'}:archiveFetch(url,options);
+  ard.getElementById('archiveAdvanced').querySelector('summary').click();
+  await until(()=>ard.getElementById('settingsStatus').textContent.includes('test write failure'),'disclosure save error shown');
+  assert.equal(ard.getElementById('archiveAdvanced').open,true,'failed save restores the persisted state');
+  arw.fetch=archiveFetch;ard.getElementById('archiveAdvanced').querySelector('summary').click();
+  await until(()=>storage.ArchiveAdvancedOpen===false,'collapsed state also persisted');
+  archiveRestored.window.close();
   const fallback=createUI(15135,false),fd=fallback.window.document;
+  await until(()=>fd.getElementById('appVersion').textContent==='v0.1.0','collapsed disclosure loaded');
+  assert.equal(fd.getElementById('archiveAdvanced').open,false,'collapsed state survives another restart');
   for(const id of ['ArchivePassword','ExtractPassword','PasswordValue'])assert.equal(fd.getElementById(id).type,'password');
   fd.getElementById('toggleExtractPassword').click();assert.equal(fd.getElementById('ExtractPassword').type,'text');fd.getElementById('toggleExtractPassword').click();assert.equal(fd.getElementById('ExtractPassword').type,'password');
   await delay(100);fallback.window.close();
+  const collapsed=createUI(15136);await until(()=>collapsed.window.document.getElementById('appVersion').textContent==='v0.1.0','sidebar settings ready');
+  collapsed.window.document.getElementById('toggleSidebar').click();await until(()=>storage.SidebarCollapsed===true,'toolbox sidebar persisted');assert(collapsed.window.document.body.classList.contains('sidebar-collapsed'));await delay(30);collapsed.window.close();
+  const restoredSidebar=createUI(15137);await until(()=>restoredSidebar.window.document.body.classList.contains('sidebar-collapsed'),'toolbox sidebar restored on another port');assert.equal(restoredSidebar.window.document.getElementById('toggleSidebar').getAttribute('aria-expanded'),'false');await delay(100);restoredSidebar.window.close();
+  const mobile=createUI(15138,true,390),mw=mobile.window,md=mw.document,mb=id=>md.getElementById(id);
+  await until(()=>mb('title').textContent&&[...mb('nav').querySelectorAll('button[data-tool]')].every(b=>!b.disabled),'mobile toolbox initialized');
+  assert.equal(mb('toolboxSidebar').inert,true);assert.equal(mb('toolboxNavBackdrop').hidden,true);assert.equal(md.querySelectorAll('#nav [aria-current=page]').length,1);
+  const sidebarSaveCount=requests.filter(r=>r.path==='ui-settings').length;
+  mb('toggleSidebar').click();assert(md.body.classList.contains('nav-open'));assert.equal(mb('toolboxSidebar').inert,false);assert.equal(mb('toolboxNavBackdrop').hidden,false);
+  md.querySelector('[data-tool=image]').click();await until(()=>mb('title').textContent==='压缩图片'&&!md.querySelector('[data-tool=image]').disabled,'mobile tool switch');assert(!md.body.classList.contains('nav-open'));assert.equal(mb('toolboxSidebar').inert,true);assert.equal(mw.lastScroll.top,0,'switching tools starts at the new tool heading');
+  mb('toggleSidebar').click();md.dispatchEvent(new mw.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!md.body.classList.contains('nav-open'));assert.equal(md.activeElement,mb('toggleSidebar'));
+  mb('toggleSidebar').click();mb('toolboxNavBackdrop').click();assert(!md.body.classList.contains('nav-open'));
+  await delay(30);assert.equal(requests.filter(r=>r.path==='ui-settings').length,sidebarSaveCount,'mobile drawer does not overwrite saved desktop collapse preference');
+  mw.innerWidth=1280;mw.dispatchEvent(new mw.Event('resize'));assert.equal(mb('toolboxSidebar').inert,true,'desktop collapse preference survives mobile use');assert.equal(mb('toolboxNavBackdrop').hidden,true);
+  mb('toggleSidebar').click();await until(()=>storage.SidebarCollapsed===false,'desktop expanded state saved');
+  mw.innerWidth=390;mw.dispatchEvent(new mw.Event('resize'));assert.equal(mb('toolboxSidebar').inert,true,'mobile starts closed even when desktop is expanded');mb('toggleSidebar').click();mb('closeToolboxNav').click();assert(!md.body.classList.contains('nav-open'));
+  mw.innerWidth=1280;mw.dispatchEvent(new mw.Event('resize'));assert.equal(mb('toolboxSidebar').inert,false);assert.equal(mb('toolboxNavBackdrop').hidden,true);assert.equal(failures.length,0,failures.map(String).join('\n'));await delay(50);mw.close();
+  console.log('PASS: shared-theme navigation, mobile drawer, keyboard/backdrop closing, active tool labels and independent desktop preference');
   console.log('PASS: tool-scoped dependencies, download links, missing-program guidance, presets, output isolation, independent settings, conflict blocking, directory numbering from 099, 7-Zip extraction, shared password management, optional duplicate-finder launcher, independent settings, restart persistence');
 })().catch(e=>{console.error(e);process.exitCode=1;setTimeout(()=>process.exit(1),100)});

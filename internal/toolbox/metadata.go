@@ -36,11 +36,29 @@ func probeMetadataMedia(ctx context.Context, exe, path string) (metadataMedia, e
 
 func cleanMetadata(ctx context.Context, c Config, source, target string) error {
 	if !has(source, metadataVideos) || has(source, metadataExifVideos) {
+		var before metadataMedia
+		var e error
+		video := has(source, metadataVideos)
+		if video {
+			before, e = probeMetadataMedia(ctx, c.FFprobe, source)
+			if e != nil {
+				return e
+			}
+		}
 		if e := publishContext(ctx, source, target); e != nil {
 			return e
 		}
-		_, e := run(ctx, c.Exiftool, "-all=", "-overwrite_original", target)
-		return e
+		if _, e = run(ctx, c.Exiftool, "-all=", "-overwrite_original", target); e != nil {
+			return e
+		}
+		if video {
+			after, e := probeMetadataMedia(ctx, c.FFprobe, target)
+			if e != nil {
+				return e
+			}
+			return validateMetadataCopy(before, after)
+		}
+		return nil
 	}
 	before, e := probeMetadataMedia(ctx, c.FFprobe, source)
 	if e != nil {
@@ -67,6 +85,10 @@ func cleanMetadata(ctx context.Context, c Config, source, target string) error {
 	if e != nil {
 		return e
 	}
+	return validateMetadataCopy(before, after)
+}
+
+func validateMetadataCopy(before, after metadataMedia) error {
 	if len(before.Streams) != len(after.Streams) || len(before.Chapters) != len(after.Chapters) {
 		return fmt.Errorf("清理后轨道或章节数量变化，保留原件")
 	}
