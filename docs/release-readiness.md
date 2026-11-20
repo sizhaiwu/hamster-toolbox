@@ -14,7 +14,7 @@
 - 共享首次登录、权限与静态资源隔离、分卷解压与进度、异常音轨时间戳和缩略图定位均有回归。缩略图另使用合成 MPEG-TS 与本机明确选择的只读样本验证，原文件哈希不变；样本和私人路径不分发。
 - 待提交内容和发行文件排除个人配置、密码库、会话、日志、缓存及临时验收目录；历史与本版提交身份均使用仓库公开身份。文档图片仅使用合成素材。
 
-源码的 Windows、Linux、macOS 自动检查以 [GitHub Actions](https://github.com/sizhaiwu/hamster-toolbox/actions) 的实际运行结果为准，不能把交叉编译或自动检查等同于所有平台桌面功能的真机验收。
+源码的 Windows、Linux、macOS（Intel）自动检查以 [GitHub Actions](https://github.com/sizhaiwu/hamster-toolbox/actions) 的实际运行结果为准。macOS 的 Intel 与 Apple Silicon 程序及测试代码另通过交叉编译；不能把交叉编译或自动检查等同于所有平台桌面功能的真机验收。
 
 ## 验证范围与使用边界
 
