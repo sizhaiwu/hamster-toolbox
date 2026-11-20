@@ -196,8 +196,13 @@ func resolveOrdinaryPath(path string, allowRoot bool) (string, error) {
 	if runtime.GOOS == "darwin" {
 		for _, alias := range []string{"/var", "/tmp", "/etc"} {
 			if p == alias || strings.HasPrefix(p, alias+"/") {
-				if target, e := os.Readlink(alias); e == nil && target == "/private"+alias {
-					p = target + strings.TrimPrefix(p, alias)
+				if target, e := os.Readlink(alias); e == nil {
+					if !filepath.IsAbs(target) {
+						target = filepath.Join(filepath.Dir(alias), target)
+					}
+					if filepath.Clean(target) == "/private"+alias {
+						p = filepath.Clean(target) + strings.TrimPrefix(p, alias)
+					}
 				}
 			}
 		}
