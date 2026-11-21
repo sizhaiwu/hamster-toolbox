@@ -262,7 +262,7 @@ type planSafety struct {
 }
 
 func capturePlanSafety(p *Plan) error {
-	root, e := safePath(p.Config.Root)
+	root, e := configRootPath(p.Config)
 	if e != nil {
 		return e
 	}
@@ -306,6 +306,9 @@ func capturePlanSafety(p *Plan) error {
 }
 
 func validateItemPaths(c Config, it Item) error {
+	if c.Tool == "extract" && c.ExtractSource != "" && !sameExtractPath(c.ExtractSource, it.Source) {
+		return errors.New("所选压缩包与处理源不一致，请重新扫描")
+	}
 	if !pathContains(c.Root, it.Source) || sameExtractPath(c.Root, it.Source) {
 		return errors.New("安全拦截：处理源超出输入目录")
 	}
@@ -346,7 +349,7 @@ func checkPlanSafety(p *Plan) error {
 	if p.safety == nil {
 		return capturePlanSafety(p)
 	}
-	root, e := safePath(p.Config.Root)
+	root, e := configRootPath(p.Config)
 	if e != nil {
 		return e
 	}

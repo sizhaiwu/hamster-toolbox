@@ -51,6 +51,9 @@ func (b *fileBrowser) resumable(w http.ResponseWriter, r *http.Request, local bo
 	defer b.uploadMu.Unlock()
 	b.operations.Lock()
 	defer b.operations.Unlock()
+	if route != "api/upload-chunk" {
+		defer b.invalidateDirectoryListings()
+	}
 	if r.Context().Err() != nil {
 		return
 	}
@@ -265,8 +268,5 @@ func (b *fileBrowser) resumable(w http.ResponseWriter, r *http.Request, local bo
 		return
 	}
 	os.Remove(filepath.Join(b.dataDir, "uploads", u.ID+".json"))
-	b.listingMu.Lock()
-	b.listings = nil
-	b.listingMu.Unlock()
 	send(w, map[string]bool{"OK": true})
 }

@@ -105,6 +105,9 @@ func browserKind(name string) string {
 			return kind
 		}
 	}
+	if ext != "" && toolbox.IsExtractArchiveName(name) {
+		return "archive"
+	}
 	return "file"
 }
 
@@ -394,6 +397,7 @@ func (b *fileBrowser) mutate(w http.ResponseWriter, r *http.Request, local bool)
 	}
 	b.operations.Lock()
 	defer b.operations.Unlock()
+	defer b.invalidateDirectoryListings()
 	if r.Context().Err() != nil {
 		return
 	}
@@ -477,6 +481,7 @@ func (b *fileBrowser) upload(w http.ResponseWriter, r *http.Request, local bool)
 	}
 	b.operations.Lock()
 	defer b.operations.Unlock()
+	defer b.invalidateDirectoryListings()
 	p, _, e := b.resolve(r, local, true, target)
 	if e != nil {
 		browserFail(w, local, e)

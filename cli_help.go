@@ -57,6 +57,7 @@ var cliFieldHelp = map[string]string{
 	"ArchiveDigits":       "打包编号最少位数 1–9，默认 3",
 	"ArchiveLevel":        "7-Zip 压缩强度：0 仅存储（默认）、1 快速、5 标准、9 最高",
 	"ArchiveMarker":       "在 extras 模式加入 .packing_date 标记，默认关闭；pure 模式忽略",
+	"ExtractSource":       "仅扫描指定的一个压缩包；必须位于 --root 的直接子级，分卷请选择首卷",
 	"ExtractConflict":     "解压同名文件：rename 自动重命名（默认）、skip 跳过、overwrite 覆盖",
 	"ExtractLayout":       "解压目录：separate 每包单独目录（默认）、merge 合并到输出目录",
 	"ExtractDeleteSource": "成功解压并校验后清理原包及其分卷，默认关闭",

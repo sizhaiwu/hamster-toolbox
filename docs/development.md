@@ -4,11 +4,11 @@
 
 ## 环境
 
-- Go：`go.mod` 声明 Go 1.23.0，工具链为 1.23.7；使用可满足该要求的 Go 环境。
-- Node.js：仅用于界面回归，要求见 `package.json`；CI 使用 Node 24。普通用户运行不需要 Node/npm。
+- Go：`go.mod` 声明 Go 1.26.0，工具链为 1.26.11；使用可满足该要求的 Go 环境。
+- Node.js：用于界面回归和笔记富文本编辑器构建，要求见 `package.json`；CI 使用 Node 24。普通用户运行不需要 Node/npm。
 - Windows 完整组件由 `prepare-tools.ps1` 准备；Linux/macOS 自行安装本机依赖。
 
-后端为 Go HTTP 服务，前端为内嵌 HTML/CSS/JavaScript，无需前端构建。Go 模块依赖见 `go.mod`/`go.sum`，包括平台系统接口与 Windows 命名管道支持。
+后端为 Go HTTP 服务，前端为内嵌 HTML/CSS/JavaScript；仓库保留已构建的笔记富文本编辑器，普通 Go 构建无需再次打包前端。修改编辑器源码时需按下文重新构建并保留产物。Go 模块依赖见 `go.mod`/`go.sum`，包括平台系统接口、Windows 命名管道、Argon2id、Markdown 与本地二维码编码。私密笔记测试只使用临时目录和合成密码，不得将真实笔记、恢复码或备份提交到仓库。
 
 ## 获取源码和运行
 
@@ -54,3 +54,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare-tools.ps1
 功能变化同步[功能清单](features.md)、对应操作指南与输入输出示例；CLI 参数变化同步[参数手册](cli-reference.md)，组件变化同步清单和第三方说明。默认值、格式范围和保护规则以代码为准，不把目标功能写成已经支持。
 
 公开截图只使用合成媒体。不要提交私人路径、日志、设置、密码库、下载缓存、第三方二进制文件或体验副本。问题反馈提供程序版本、复现步骤和脱敏日志。项目代码采用 MIT；第三方组件遵守各自许可。
+
+## 笔记编辑器
+
+前端开发使用 Node.js 20.19 或更高版本。修改 `scripts/notes-rich-editor.js` 后运行 `npm run build:notes-editor`，将本地打包结果 `web/notes-rich.js` 随源码保留；最终用户不需要 Node.js。编辑器依赖许可包含在 `release/THIRD-PARTY.txt`。

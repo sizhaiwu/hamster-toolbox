@@ -7,10 +7,28 @@
     const stored = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
     if (Array.isArray(stored)) records = stored.filter(r => typeof r?.id === 'string').slice(-64);
   } catch {}
-  const prefs = {TaskPopup:true, TaskSound:true,BrowserAutoPlay:true,BrowserMuted:false,RememberPlayback:false,RestoreTabs:false,DefaultPlayer:"browser",FontScale:100,ThumbnailCacheMB:256};
+  const prefs = {CloseDialogOnBackdrop:false,TaskPopup:true, TaskSound:true,BrowserAutoPlay:true,BrowserMuted:false,RememberPlayback:false,RestoreTabs:false,DefaultPlayer:"browser",FontScale:100,ThumbnailCacheMB:256};
   window.toolboxSettings=prefs;
   let generalAPI,refreshGeneralSettings;
   window.addEventListener('storage',event=>{if(event.key==='hamster.toolbox.general.refresh')refreshGeneralSettings?.().catch(()=>{})});
+  let backdropPress=null,backdropReleased=false;
+  function outsideDialog(dialog,event){const r=dialog.getBoundingClientRect();return event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom}
+  document.addEventListener('pointerdown',event=>{
+    backdropPress=null;backdropReleased=false;
+    const dialog=event.target;
+    if(initialized&&prefs.CloseDialogOnBackdrop&&event.button===0&&dialog instanceof HTMLDialogElement&&dialog.open&&outsideDialog(dialog,event))backdropPress={dialog,pointer:event.pointerId,x:event.clientX,y:event.clientY};
+  },true);
+  document.addEventListener('pointermove',event=>{if(backdropPress&&event.pointerId===backdropPress.pointer&&Math.hypot(event.clientX-backdropPress.x,event.clientY-backdropPress.y)>8){backdropPress=null;backdropReleased=false}},true);
+  document.addEventListener('pointerup',event=>{backdropReleased=Boolean(backdropPress&&event.pointerId===backdropPress.pointer&&event.target===backdropPress.dialog&&outsideDialog(backdropPress.dialog,event))},true);
+  document.addEventListener('pointercancel',()=>{backdropPress=null;backdropReleased=false},true);
+  document.addEventListener('click',event=>{
+    const pressed=backdropPress,ready=backdropReleased;backdropPress=null;backdropReleased=false;
+    if(!initialized||!prefs.CloseDialogOnBackdrop||!pressed||!ready||event.target!==pressed.dialog||!pressed.dialog.open||!outsideDialog(pressed.dialog,event))return;
+    event.preventDefault();event.stopPropagation();
+    if(!pressed.dialog.dispatchEvent(new Event('cancel',{cancelable:true})))return;
+    const cancel=pressed.dialog.querySelector('button[id*="close" i],button[id*="cancel" i]');
+    if(cancel){if(!cancel.disabled)cancel.click()}else pressed.dialog.close('cancel');
+  },true);
   let save, label = () => '工具箱任务', initialized = false, writes = Promise.resolve();
   let context, currentID = '', previousFocus;
   const pending = new Map();

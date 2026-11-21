@@ -19,6 +19,7 @@ import (
 )
 
 type Config struct {
+	ExtractSource                                                                                          string
 	Workers                                                                                                int
 	FormatCleanOther                                                                                       bool
 	FormatDeleteMode                                                                                       string
@@ -115,7 +116,7 @@ func Normalize(c Config) (Config, error) {
 	if strings.TrimSpace(c.Root) == "" {
 		return c, errors.New("请选择输入目录")
 	}
-	if _, e := safePath(c.Root); e != nil {
+	if _, e := configRootPath(c); e != nil {
 		return c, e
 	}
 	var e error
@@ -136,6 +137,14 @@ func Normalize(c Config) (Config, error) {
 		if e := normalizeExtractOptions(&c); e != nil {
 			return c, e
 		}
+		if c.ExtractSource != "" {
+			c.ExtractSource, e = safePath(c.ExtractSource)
+			if e != nil {
+				return c, e
+			}
+			c.Root = filepath.Dir(c.ExtractSource)
+		}
+
 	}
 	if c.Tool == "format" {
 		if c.FormatDeleteMode == "" {
@@ -266,7 +275,7 @@ func Normalize(c Config) (Config, error) {
 		if e != nil {
 			return c, e
 		}
-		root, e := safePath(c.Root)
+		root, e := configRootPath(c)
 		if e != nil {
 			return c, e
 		}

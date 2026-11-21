@@ -29,8 +29,9 @@ func (b *fileBrowser) readDirectoryListing(r *http.Request, path string, scope *
 	if scope != nil {
 		scopeKey = scope.Root
 	}
-	key := fmt.Sprintf("%s|%s|%s|%t|%t|%d", scopeKey, path, search, dirs, recursive, revision)
 	b.listingMu.Lock()
+	epoch := b.listingEpoch
+	key := fmt.Sprintf("%s|%s|%s|%t|%t|%d|%d", scopeKey, path, search, dirs, recursive, revision, epoch)
 	cached, ok := b.listings[key]
 	b.listingMu.Unlock()
 	if !force && ok && time.Since(cached.At) < 5*time.Second && cached.Modified.Equal(info.ModTime()) {
@@ -105,6 +106,10 @@ func (b *fileBrowser) readDirectoryListing(r *http.Request, path string, scope *
 		return nil, err
 	}
 	b.listingMu.Lock()
+	if epoch != b.listingEpoch {
+		b.listingMu.Unlock()
+		return items, nil
+	}
 	if b.listings == nil {
 		b.listings = map[string]directoryListingSnapshot{}
 	}
@@ -120,4 +125,13 @@ func (b *fileBrowser) readDirectoryListing(r *http.Request, path string, scope *
 	}
 	b.listingMu.Unlock()
 	return items, nil
+}
+
+// Filesystem directory timestamps may remain unchanged after rapid mutations.
+// Advance the epoch so an older in-flight scan cannot repopulate stale entries.
+func (b *fileBrowser) invalidateDirectoryListings() {
+	b.listingMu.Lock()
+	b.listingEpoch++
+	b.listings = nil
+	b.listingMu.Unlock()
 }

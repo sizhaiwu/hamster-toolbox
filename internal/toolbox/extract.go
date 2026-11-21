@@ -78,7 +78,10 @@ func extractArchiveName(path string) (string, bool) {
 		n, _ := strconv.Atoi(m[1])
 		return strings.TrimSuffix(name, m[0]), n == 1
 	}
-	if !has(name, ".7z .zip .rar") {
+	if base, _ := compressedTAR(name); base != "" {
+		return base, true
+	}
+	if !has(name, extractArchiveExtensions) && !disguisedExtractArchive(name) {
 		return "", false
 	}
 	return strings.TrimSuffix(name, filepath.Ext(name)), true
@@ -189,9 +192,12 @@ func readExtractMembers(ctx context.Context, c Config, source string) ([]extract
 		if name == "" {
 			continue
 		}
-		size, e := strconv.ParseInt(f["Size"], 10, 64)
-		if e != nil || size < 0 {
-			return nil, 0, errors.New("压缩包文件大小无效")
+		size := int64(-1) // Some stream formats cannot list an unpacked size.
+		if value := strings.TrimSpace(f["Size"]); value != "" {
+			size, e = strconv.ParseInt(value, 10, 64)
+			if e != nil || size < 0 {
+				return nil, 0, errors.New("压缩包文件大小无效")
+			}
 		}
 		dir := f["Folder"] == "+" || strings.HasPrefix(f["Attributes"], "D") || strings.HasPrefix(f["Attributes"], "d")
 		result = append(result, extractMember{name, size, dir})
@@ -200,7 +206,13 @@ func readExtractMembers(ctx context.Context, c Config, source string) ([]extract
 }
 
 func buildExtractPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
-	paths, e := scan(ctx, c)
+	var paths []string
+	var e error
+	if c.ExtractSource != "" {
+		paths = []string{c.ExtractSource}
+	} else {
+		paths, e = scan(ctx, c)
+	}
 	if e != nil {
 		return nil, e
 	}
@@ -219,14 +231,20 @@ func buildExtractPlan(ctx context.Context, c Config, log func(string)) (*Plan, e
 		}
 		name, ok := extractArchiveName(source)
 		if !ok {
+			if c.ExtractSource != "" {
+				return nil, errors.New("所选文件不是支持的压缩包入口，请选择首卷")
+			}
 			continue
 		}
-		if unnamedExtractSplit(source) {
+		if unnamedExtractSplit(source) || disguisedExtractArchive(source) {
 			format, err := extractSplitType(source)
 			if err != nil {
 				return nil, err
 			}
 			if format == "" {
+				if c.ExtractSource != "" {
+					return nil, errors.New("所选文件没有可识别的压缩包文件头")
+				}
 				continue
 			}
 		}
@@ -278,13 +296,22 @@ func buildExtractPlan(ctx context.Context, c Config, log func(string)) (*Plan, e
 		}
 		files := 0
 		var total int64
+		unknownSize := false
 		for _, m := range job.Members {
 			if !m.Dir {
 				files++
-				total += m.Size
+				if m.Size < 0 {
+					unknownSize = true
+				} else {
+					total = addExtractBytes(total, m.Size)
+				}
 			}
 		}
-		it.Note += fmt.Sprintf(" · %d 个文件 / %s", files, Human(total))
+		if unknownSize {
+			it.Note += fmt.Sprintf(" · %d 个文件 / 大小解压时确认", files)
+		} else {
+			it.Note += fmt.Sprintf(" · %d 个文件 / %s", files, Human(total))
+		}
 		p.Items = append(p.Items, it)
 		p.extracts = append(p.extracts, job)
 	}

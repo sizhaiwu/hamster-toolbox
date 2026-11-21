@@ -315,12 +315,13 @@ CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面�
 
 | 参数 | JSON 字段 | 默认值 | 控制什么 |
 | --- | --- | --- | --- |
+| `--extract-source` | `ExtractSource` | 空 | 仅处理这个压缩包的完整路径；`--root` 为它的直接上级目录，分卷请选择首卷。留空则扫描整个目录。 |
 | `--extract-conflict` | `ExtractConflict` | `rename` | `rename` 自动重命名重复文件；`skip` 跳过已有文件；`overwrite` 覆盖同名文件。 |
 | `--extract-layout` | `ExtractLayout` | `separate` | `separate` 每个压缩包使用独立目录；`merge` 合并到输出目录，重名按上面的规则处理。 |
 | `--extract-delete-source` | `ExtractDeleteSource` | `false` | 该包解压成功、校验完成后清理原包及其相关分卷；失败时保留。 |
 | `--extract-delete-mode` | `ExtractDeleteMode` | `recycle` | 开启原包清理时使用：`recycle` 移入 Windows 回收站；`permanent` 永久删除。回收站操作失败会报告，不自动改成永久删除。 |
 
-支持 7z/ZIP/RAR 及可识别分卷，例如 `.7z.001`、`.zip.001`、`.part1.rar`、RAR 的 `.rar + .r00`、ZIP 的 `.zip + .z01`。仅剩 `.001/.002` 的字节分卷会读取首卷文件头，按真实 7z/ZIP/RAR 类型处理，不必补回格式后缀。相关卷必须放在一起，程序只把入口卷作为一个任务；不是承诺支持 7-Zip 所有可读取格式。
+支持 7z/ZIP/RAR/TAR、复合 TAR 和常见归档（完整范围见[解压格式](usage.md#解压资源)）及可识别分卷，例如 `.7z.001`、`.zip.001`、`.part1.rar`、RAR 的 `.rar + .r00`、ZIP 的 `.zip + .z01`。仅剩 `.001/.002` 的字节分卷会读取首卷文件头，按真实 7z/ZIP/RAR 类型处理，不必补回格式后缀。相关卷必须放在一起，程序只把入口卷作为一个任务；不是承诺支持 7-Zip 所有可读取格式。
 
 ```powershell
 # 默认自动重命名重复文件，保留原包
@@ -351,3 +352,5 @@ CLI 默认 `--crf 18`，页面的初始“均衡”选择为 23；复制页面�
 上面的参数都属于 `hamster-toolbox.exe cli`。页面预览项还可复制 FFmpeg、FFprobe、ImageMagick、ExifTool、7-Zip 原生命令，其参数由工具箱按当前预览生成，不能把工具箱的 `--crf` 等参数直接拼到它们后面。
 
 原生命令会绕过工具箱的部分或全部校验、暂存发布、编码回退、“结果未变小就跳过”和原包清理。普通批量任务建议使用完整 CLI。多步 PDF、缩略图、复杂元数据清理、带附加文件的打包也使用完整 CLI；具体边界见 [CLI 入门](cli.md#原生工具命令)。
+
+解压资源可使用 `--extract-source <压缩包完整路径>` 限定为单个包，`--root` 必须是该包的直接上级目录；其他包不扫描。分卷选择首卷，相关分卷仍需齐全。省略该参数则按目录批量扫描；来源、输出及执行前文件变化保护仍生效。

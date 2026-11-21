@@ -41,6 +41,16 @@ func extractSplitType(path string) (string, error) {
 }
 
 func extractTypeOptions(source string) ([]string, error) {
+	if disguisedExtractArchive(source) {
+		format, err := extractSplitType(source)
+		if err != nil {
+			return nil, err
+		}
+		if format == "" {
+			return nil, errors.New("文件头不是可识别的 7z、ZIP 或 RAR")
+		}
+		return []string{"-t" + format}, nil
+	}
 	if !unnamedExtractSplit(source) {
 		return nil, nil
 	}

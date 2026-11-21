@@ -52,6 +52,8 @@ type server struct {
 	autostartMu    sync.Mutex
 	autostart      *autostartManager
 	updates        *releaseChecker
+	notesInitMu    sync.Mutex
+	notes          *notesMemory
 }
 
 func (s *server) line(m string) {
@@ -97,6 +99,10 @@ func (s *server) guard(next http.HandlerFunc) http.HandlerFunc {
 func (s *server) api(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "POST required", 405)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/notes/") {
+		s.notesAPI(w, r)
 		return
 	}
 	switch r.URL.Path {
@@ -169,17 +175,18 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		send(w, p)
 	case "/api/ui-settings":
 		var change struct {
-			BrowserAutoPlay     *bool
-			BrowserMuted        *bool
-			RememberPlayback    *bool
-			RestoreTabs         *bool
-			DefaultPlayer       *string
-			FontScale           *int
-			ThumbnailCacheMB    *int
-			SidebarCollapsed    *bool
-			ArchiveAdvancedOpen *bool
-			TaskPopup           *bool
-			TaskSound           *bool
+			CloseDialogOnBackdrop *bool
+			BrowserAutoPlay       *bool
+			BrowserMuted          *bool
+			RememberPlayback      *bool
+			RestoreTabs           *bool
+			DefaultPlayer         *string
+			FontScale             *int
+			ThumbnailCacheMB      *int
+			SidebarCollapsed      *bool
+			ArchiveAdvancedOpen   *bool
+			TaskPopup             *bool
+			TaskSound             *bool
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1024)
 		decoder := json.NewDecoder(r.Body)
@@ -214,6 +221,9 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			}
 			if change.TaskSound != nil {
 				p.TaskSound = change.TaskSound
+			}
+			if change.CloseDialogOnBackdrop != nil {
+				p.CloseDialogOnBackdrop = change.CloseDialogOnBackdrop
 			}
 			if change.BrowserAutoPlay != nil {
 				p.BrowserAutoPlay = change.BrowserAutoPlay
@@ -521,7 +531,7 @@ func main() {
 	exe, _ := os.Executable()
 	if *dataDir == "" {
 		if userDir, e := os.UserConfigDir(); e == nil {
-			*dataDir = filepath.Join(userDir, "media-toolbox")
+			*dataDir = filepath.Join(userDir, "hamster-toolbox")
 		} else {
 			*dataDir = filepath.Join(filepath.Dir(exe), "data")
 		}
@@ -548,6 +558,7 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/files/", browser.local)
+	mux.HandleFunc("/notes/", s.notesPage)
 	mux.HandleFunc("/api/", s.guard(s.api))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")

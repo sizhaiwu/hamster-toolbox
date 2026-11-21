@@ -5,6 +5,7 @@
 
 ## 能做什么
 
+- **私密笔记**：本地加密的富文本 / Markdown 笔记，支持图片文件、历史、回收站和自动备份。[使用说明](docs/private-notes.md)。
 - **整理命名**：目录统计命名、批量重命名、自定义目录编号与续号、按媒体信息命名。
 - **图片与视频**：清理元数据、压缩图片和视频、生成视频缩略图拼图、PDF 图册索引。
 - **打包与解压**：7-Zip 加密、分卷、附加说明文件；识别常见及仅有 `.001/.002` 后缀的分卷，显示解压进度，管理常用密码。
@@ -30,21 +31,25 @@ Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、P
 
 ## 界面预览
 
-工具设置在左，状态、处理前后对比和运行日志在右。
+**工具箱页面**：工具分组可折叠；设置在左，任务状态、处理预览和运行日志在右。
 
-![工具箱与处理预览](docs/images/overview.jpg)
+![工具箱页面](docs/images/toolbox-groups.png)
 
-资源管理器支持文件预览、视频时长和多种观看方式。
+**笔记页面**：支持富文本和 Markdown 分栏、图片文件附件、全屏和侧栏折叠。
+
+![笔记页面与实时预览](docs/images/private-notes-desktop.png)
+
+**资源管理器**：支持文件预览、视频时长和多种观看方式。
 
 ![资源管理器与视频时长](docs/images/explorer.jpg)
 
-截图只使用合成素材，用于展示主要操作，具体按钮以当前版本为准。更多操作见[使用指南](docs/usage.md)、[资源管理器](docs/file-browser.md)和[媒体预览](docs/media-preview.md)。
+截图只使用合成素材，用于展示主要操作，具体按钮以当前版本为准。更多操作见[使用指南](docs/usage.md)、[私密笔记](docs/private-notes.md)、[资源管理器](docs/file-browser.md)和[媒体预览](docs/media-preview.md)。
 
 其他设备访问的[口令页和登录后界面](docs/remote-access.md#访客访问示例)见远程访问文档。
 
 ## 文档与开发
 
-文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
+文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。本版变化见 [v0.2.3 发布说明](docs/releases/0.2.3.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
 
 - 使用：[CLI 入门](docs/cli.md) · [参数手册](docs/cli-reference.md) · [常见问题](docs/faq.md)
 - 维护：[开发](docs/development.md) · [测试](docs/testing.md) · [打包](docs/packaging.md) · [组件](docs/dependencies.md) · [安全](docs/safety.md)

@@ -36,6 +36,12 @@ function showToolboxLauncher(folder){
   const b=document.createElement('a'),url=new URL(boot.ToolboxURL,location.href);url.searchParams.set('tool',id);url.searchParams.set('root',folder);b.href=url.href;b.className='button-link';b.textContent=name;$('toolboxLaunchTools').append(b)
  }$('toolboxLaunchDialog').showModal();
 }
+function openArchiveExtraction(item){
+ if(!local||!item||item.Dir||item.Kind!=='archive'||!item.Version||loading||mutating)return;
+ const at=Math.max(item.Path.lastIndexOf('\\'),item.Path.lastIndexOf('/'));if(at<0)return;
+ const url=new URL(boot.ToolboxURL,location.href);url.searchParams.set('tool','extract');url.searchParams.set('root',item.Path.slice(0,at+1));url.searchParams.set('extract-source',item.Path);
+ window.open(url.href,'_blank','noopener');
+}
 function canPasteResources(target=path){return Boolean(resourceClipboard?.items.length&&resourceClipboard.root===root&&writable()&&(target||!local&&root)&&!loading&&!mutating)}
 function syncResourceClipboard(){
  const items=selected(),stable=items.length>0&&items.every(item=>item.Version&&item.Kind!=='drive'),ready=!loading&&!mutating;

@@ -129,7 +129,7 @@ function explorerIcon(kind){
 function controlIcon(kind){const svg=explorerIcon(kind);svg.classList.add('control-icon');svg.setAttribute('stroke-width','1.8');return svg}
 function contextMenuIcon(label){
   if(label.includes('取消固定'))return 'unpin';if(label.includes('快速访问'))return 'pin';
-  if(label.includes('属性'))return 'info';if(label.includes('工具箱'))return 'toolbox';
+  if(label.includes('解压'))return 'archive';if(label.includes('属性'))return 'info';if(label.includes('工具箱'))return 'toolbox';
   if(label.includes('剪切'))return 'cut';if(label.includes('粘贴'))return 'paste';
   if(label.includes('复制'))return 'copy';if(label.includes('下载'))return 'download';if(label.includes('删除'))return 'trash';
   if(label.includes('重命名'))return 'edit';if(label.includes('关闭其他')||label.includes('关闭右侧'))return 'closeOthers';if(label.includes('关闭'))return 'close';
@@ -247,6 +247,7 @@ function showContextMenu(event,item=null){
   if(item){
     const items=selected(),one=items.length<=1;
     add(item.Dir?'打开目录':item.Kind==='shortcut'?'打开目标文件夹':'预览文件',()=>activateResource(item),one,explorerIconKind(item));
+    if(local&&!item.Dir&&item.Kind==='archive'&&typeof openArchiveExtraction==='function')add('解压资源…',()=>openArchiveExtraction(item),one&&Boolean(item.Version));
     if(local&&item.Dir&&typeof showToolboxLauncher==='function')add('使用工具箱处理…',()=>showToolboxLauncher(item.Path),one);
     if(writable()&&item.Kind!=='drive'&&typeof copySelectedResources==='function'){add('复制',()=>copySelectedResources('copy'));add('剪切',()=>copySelectedResources('move'));add('复制到…',()=>openTransferPicker('copy'));}
     if(local&&item.Dir)add(inQuickAccess(item.Path)?'已在快速访问中':'添加到快速访问',()=>setQuickAccess(item.Path),one&&!quickAccessSaving&&!inQuickAccess(item.Path));
@@ -302,7 +303,7 @@ function initializeExplorerShell(){
     if(activate&&!document.querySelector('dialog[open]')&&!loading&&!mutating)(event.button===3?$('back'):$('forward')).click();
   };
   for(const type of ['pointerdown','pointerup','mousedown','mouseup','auxclick'])document.addEventListener(type,sideButton,{capture:true,passive:false});
-  document.addEventListener('keydown',event=>{if(!event.altKey||event.ctrlKey||event.metaKey||!['ArrowLeft','ArrowRight'].includes(event.key)||$('app').hidden)return;event.preventDefault();event.stopPropagation();if(!document.querySelector('dialog[open]')&&!loading&&!mutating)(event.key==='ArrowLeft'?$('back'):$('forward')).click()},{capture:true});
+  document.addEventListener('keydown',event=>{if(event.key==='ArrowUp'&&document.activeElement.matches('input,textarea,select,[contenteditable]'))return;if(!event.altKey||event.ctrlKey||event.metaKey||!['ArrowLeft','ArrowRight','ArrowUp'].includes(event.key)||$('app').hidden)return;event.preventDefault();event.stopPropagation();if(!document.querySelector('dialog[open]')&&!loading&&!mutating)(event.key==='ArrowLeft'?$('back'):event.key==='ArrowUp'?$('up'):$('forward')).click()},{capture:true});
   $('openWithNative').onclick=()=>requestOpenWith(openWithItem);
   $('openWithCancel').onclick=()=>$('openWithDialog').close();$('openWithSave').onclick=async()=>{const program=$('openWithProgram').value.trim();if(!program){$('openWithError').textContent='请填写本机程序的完整路径';return}if(await requestOpenWith(openWithItem,program))$('openWithDialog').close()};$('openWithProgram').onkeydown=event=>{if(event.key==='Enter'){$('openWithSave').click();event.preventDefault()}};
   $('sidebarToggle').onclick=()=>{
@@ -326,7 +327,7 @@ function initializeExplorerShell(){
   });
   addEventListener('scroll',()=>{$('backTop').hidden=window.scrollY<400;closeContextMenu()},{passive:true});
   addEventListener('resize',()=>{closeContextMenu();applySidebar()});
-  const tips={back:'返回上一个已浏览目录',forward:'前进到下一个已浏览目录',up:'打开当前目录的上一级',refresh:'重新读取当前目录',go:'打开地址栏中的目录',favorite:'将当前目录添加到快速访问，重启后保留',newFolder:'在当前目录新建文件夹',upload:'上传文件到当前目录，同名文件不会覆盖',rename:'修改所选文件或文件夹的名称',move:'把所选项目移动到其他目录；同名时选择处理方式',remove:'删除所选项目，默认移入回收站，操作前需要确认',download:'下载所选文件的原文件',openFolderTab:'在工具箱新标签页打开所选目录',selectAll:'选择当前页全部项目',clearSelection:'取消当前所有选择',view:'切换图标与列表视图',previous:'显示上一页项目',next:'显示下一页项目',sort:'选择名称、修改时间或文件大小排序',order:'选择正序或倒序，文件夹始终排在文件前面',pageSize:'选择每页显示条数；自动记忆，大图标较多时可选较小数量',backToolbox:'返回仓鼠工具箱的批处理工具',sharing:'设置共享目录、访问口令和修改权限'};
+  const tips={back:'返回上一个已浏览目录',forward:'前进到下一个已浏览目录',up:'打开当前目录的上一级',refresh:'重新读取当前目录（F5）',go:'打开地址栏中的目录',favorite:'将当前目录添加到快速访问，重启后保留',newFolder:'在当前目录新建文件夹',upload:'上传文件到当前目录，同名文件不会覆盖',rename:'修改所选文件或文件夹的名称（F2）',move:'把所选项目移动到其他目录；同名时选择处理方式',remove:'删除所选项目，默认移入回收站，操作前需要确认（Delete）',download:'下载所选文件的原文件',openFolderTab:'在工具箱新标签页打开所选目录',selectAll:'选择当前页全部项目',clearSelection:'取消当前所有选择',view:'切换图标与列表视图',previous:'显示上一页项目',next:'显示下一页项目',sort:'选择名称、修改时间或文件大小排序',order:'选择正序或倒序，文件夹始终排在文件前面',pageSize:'选择每页显示条数；自动记忆，大图标较多时可选较小数量',backToolbox:'返回仓鼠工具箱的批处理工具',sharing:'设置共享目录、访问口令和修改权限'};
   for(const [id,text]of Object.entries(tips))$(id).title=text;
   const decorate=node=>{if(node.nodeType!==1)return;for(const b of [node,...node.querySelectorAll('button,[role=button],select')])if(b.matches('button,[role=button],select')&&!b.title)b.title=b.getAttribute('aria-label')||b.textContent.trim()};
   decorate(document.body);new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)decorate(node)}).observe(document.body,{subtree:true,childList:true});

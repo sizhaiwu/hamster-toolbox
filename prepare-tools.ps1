@@ -216,7 +216,7 @@ if (Test-Path -LiteralPath $tools) {
     $componentUsers = @(Get-Process | ForEach-Object {
         try { $processPath = $_.Path } catch { $processPath = $null }
         if ($processPath -and ($processPath.StartsWith($tools+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
-            ((Split-Path -Parent $processPath) -eq $repo -and ([IO.Path]::GetFileName($processPath) -like 'hamster-*.exe' -or [IO.Path]::GetFileName($processPath) -eq 'media-toolbox.exe')))) { $_.Id }
+            ((Split-Path -Parent $processPath) -eq $repo -and [IO.Path]::GetFileName($processPath) -like 'hamster-*.exe'))) { $_.Id }
     })
     if ($componentUsers.Count -gt 0) { throw ('Components need rebuilding. Finish tasks and close the running toolbox/player first. Process IDs: '+($componentUsers -join ', ')) }
     Move-Item -LiteralPath $tools -Destination (Join-Path $repo ('work\tools-backup-'+[guid]::NewGuid().ToString('N')))

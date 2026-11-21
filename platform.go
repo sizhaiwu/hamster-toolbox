@@ -36,12 +36,22 @@ func browserLocations() []string {
 }
 
 func openBrowserCommand(address string) *exec.Cmd {
-	switch runtime.GOOS {
+	return browserCommandFor(runtime.GOOS, address, exec.LookPath)
+}
+
+func browserCommandFor(platform, address string, lookup func(string) (string, error)) *exec.Cmd {
+	switch platform {
 	case "windows":
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", address)
 	case "darwin":
 		return exec.Command("open", address)
 	default:
+		if path, err := lookup("xdg-open"); err == nil {
+			return exec.Command(path, address)
+		}
+		if path, err := lookup("gio"); err == nil {
+			return exec.Command(path, "open", address)
+		}
 		return exec.Command("xdg-open", address)
 	}
 }

@@ -4,6 +4,19 @@
 // Store navigation only: never cache credentials, file versions or mutations.
 let fileTabs=[],activeFileTab='',future=[],navigationAbort=null,workspaceStorageOK=true,scrollRestorePending=null;
 const maxFileTabs=20,maxTabHistory=40;
+const directorySelectionMemory=Symbol('directory-selection');
+function captureDirectorySelection(location){
+ const focused=document.activeElement?.closest('#entries .entry')?.dataset.path||'';
+ location[directorySelectionMemory]={paths:[...selection].slice(0,1000),anchor:selectionAnchor,focused};return location;
+}
+function restoreDirectorySelection(location){
+ const saved=location?.[directorySelectionMemory];if(!saved)return '';
+ const visible=new Set(rows.map(item=>item.Path));
+ for(const item of saved.paths)if(visible.has(item))selection.add(item);
+ selectionAnchor=visible.has(saved.anchor)?saved.anchor:[...selection][0]||'';
+ return visible.has(saved.focused)?saved.focused:[...selection][0]||'';
+}
+
 
 function tabStorage(){return local&&window.toolboxSettings?.RestoreTabs?localStorage:sessionStorage}
 function activeTab(){return fileTabs.find(tab=>tab.id===activeFileTab)}
@@ -30,6 +43,7 @@ function newTabState(location={root,path}){
 function rememberTab(){
   const tab=activeTab();if(!tab)return;
   const scroll=scrollRestorePending?.tab===activeFileTab?scrollRestorePending.value:loading?tab.scroll:Math.max(0,window.scrollY||0);
+  if(!loading)captureDirectorySelection(tab);
   Object.assign(tab,{root,path,back:history.slice(-maxTabHistory),forward:future.slice(-maxTabHistory),search:$('search').value.slice(0,256),sort:$('sort').value,order:$('order').value,view,offset,scroll});
 }
 let serverWorkspaceTimer;
@@ -173,7 +187,7 @@ async function switchFileTab(id,{remember=true}={}){
   $('location').value=local?path:(boot.Roots.find(item=>item.ID===root)?.Name||'共享目录')+(path?'/'+path:'');
   renderTabs();render();breadcrumb();side();persistTabs();
   const navigationRevision=requestID+1;
-  const restored=await navigate(path,{remember:false,page:next.offset,scroll:next.scroll});
+  const restored=await navigate(path,{remember:false,page:next.offset,scroll:next.scroll,selectionSnapshot:next});
   if(!restored&&requestID===navigationRevision&&activeFileTab===id&&$('loginPanel').hidden){
     history=[];future=[];next.back=[];next.forward=[];
     const available=await navigate('',{remember:false,scroll:0});

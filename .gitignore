@@ -39,3 +39,8 @@ passwords.dat
 
 # Native executable built from source
 /hamster-toolbox
+
+# Private notes and encrypted migration backups
+private-notes/
+*.hamster-notes
+.vault-*

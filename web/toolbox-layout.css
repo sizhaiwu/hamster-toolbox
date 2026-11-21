@@ -1,9 +1,9 @@
 /* The same light workspace as the file browser, with dark read-only terminals. */
 body{background:var(--ui-canvas);color:var(--ui-text);font-family:var(--ui-font);font-size:15px}
 /* Emphasize controls without adding weight to notes, filenames or terminal output. */
-#nav button,#openFiles,#toolboxSidebar .brand>span,label,.check,button,.button-link,input:not([type=checkbox]):not([type=range]),select,textarea{font-weight:var(--ui-weight-control)}
+#nav button,#nav>a,#toolboxSidebar .brand>span,label,.check,button,.button-link,input:not([type=checkbox]):not([type=range]),select,textarea{font-weight:var(--ui-weight-control)}
 #nav button.active{font-weight:var(--ui-weight-active)}
-#toolboxSidebar .brand small,.check>small,.hint,#cliCode,input::placeholder,textarea::placeholder,#nav button>span:first-child,#openFiles>span:first-child{font-weight:var(--ui-weight-regular)}
+#toolboxSidebar .brand small,.check>small,.hint,#cliCode,input::placeholder,textarea::placeholder,#nav button>span:first-child,#nav>a>span:first-child{font-weight:var(--ui-weight-regular)}
 main{margin-left:var(--ui-sidebar-width);padding:0 28px;min-height:100vh;background:var(--ui-surface)}
 #toolboxSidebar{width:var(--ui-sidebar-width);padding:22px 14px;background:var(--ui-sidebar);color:#475565;border-right:1px solid var(--ui-line);overflow:hidden;z-index:12}
 #toolboxSidebar .brand{gap:12px;padding:0 6px;margin-bottom:22px;font-size:18px;line-height:1.5;color:#263b43;flex-shrink:0}
@@ -11,15 +11,15 @@ main{margin-left:var(--ui-sidebar-width);padding:0 28px;min-height:100vh;backgro
 #toolboxSidebar .brand small{color:#8a98a4;font-size:11px;letter-spacing:0;margin-top:3px}
 .navlabel{font-size:12px;letter-spacing:0;color:#96a0ab;margin:0 12px 10px}
 #nav{display:block;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 2px;scrollbar-width:thin;scrollbar-color:#c3cfd4 transparent}
-#nav button,#openFiles{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;height:auto;white-space:nowrap;text-align:left;text-decoration:none;padding:6px 11px;margin:1px 0;border:0;border-radius:8px;background:transparent;color:#596672;font-size:14px;line-height:1.5;flex-shrink:0}
-#nav button>span:first-child,#openFiles>span:first-child{width:22px;text-align:center;flex-shrink:0;font-size:18px;color:#83959f;line-height:1}
-#nav button:hover:not(:disabled),#openFiles:hover{background:#edf0f3;color:#405b61}
+#nav button,#nav>a{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;height:auto;white-space:nowrap;text-align:left;text-decoration:none;padding:6px 11px;margin:1px 0;border:0;border-radius:8px;background:transparent;color:#596672;font-size:14px;line-height:1.5;flex-shrink:0}
+#nav button>span:first-child,#nav>a>span:first-child{width:22px;text-align:center;flex-shrink:0;font-size:18px;color:#83959f;line-height:1}
+#nav button:hover:not(:disabled),#nav>a:hover{background:#edf0f3;color:#405b61}
 #nav button.active,#nav button.active:hover{background:#e4f1eb;color:#25644e}
 #nav button.active>span:first-child{color:#28765f}
-#nav button>span:first-child,#openFiles>span:first-child{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;color:currentColor;opacity:.85}
-#nav .tool-nav-icon svg,#openFiles>span:first-child svg{display:block;width:21px;height:21px;flex-shrink:0}
+#nav button>span:first-child,#nav>a>span:first-child{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;color:currentColor;opacity:.85}
+#nav .tool-nav-icon svg,#nav>a>span:first-child svg{display:block;width:21px;height:21px;flex-shrink:0}
 #nav button.active>.tool-nav-icon{opacity:1}
-#openFiles{margin-bottom:8px;border:1px solid #d8e7df;background:#f0f6f3;color:#356951}
+#nav>a{margin-bottom:8px;border:1px solid #d8e7df;background:#f0f6f3;color:#356951}
 .aside-foot{margin-top:12px;padding:12px 6px 0;border-top:1px solid #e1e6eb;color:#99a3ac;font-size:11px;line-height:1.6}
 .aside-foot small{display:none}.dot{background:#67a68a}.github-link{background:#fff;border-color:#e2e7eb;color:#647985;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px}
 .github-link:hover{background:#edf5f1;color:#2d7055;border-color:#c9ded3}
@@ -106,7 +106,7 @@ dialog label{font-size:14px}dialog .hint{font-size:13px}textarea{font-size:14px;
 .settings .check input[type=checkbox]{width:20px;height:20px;flex:0 0 20px;margin-top:2px}
 .settings .check:has(>small){display:grid;grid-template-columns:20px minmax(0,1fr);column-gap:9px;row-gap:2px}
 .settings .check>small{grid-column:2}
-@media(min-width:761px) and (max-width:1100px){#toolboxSidebar{width:210px;padding:20px 12px}main{margin-left:210px;padding:0 20px}#toolboxSidebar .brand{gap:9px;font-size:17px}#nav button,#openFiles{font-size:14px;padding:8px 9px;gap:9px}.layout{grid-template-columns:minmax(0,1fr)}.workspace-results .status{display:grid}}
+@media(min-width:761px) and (max-width:1100px){#toolboxSidebar{width:210px;padding:20px 12px}main{margin-left:210px;padding:0 20px}#toolboxSidebar .brand{gap:9px;font-size:17px}#nav button,#nav>a{font-size:14px;padding:8px 9px;gap:9px}.layout{grid-template-columns:minmax(0,1fr)}.workspace-results .status{display:grid}}
 @media(min-width:1101px) and (max-width:1350px){.settings .two{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){
   #toolboxSidebar{position:fixed;inset:0 auto 0 0;width:270px;max-width:85vw;padding:20px 14px;transform:translateX(-100%);visibility:hidden;transition:transform .18s ease,visibility .18s;z-index:22}
@@ -118,8 +118,8 @@ dialog label{font-size:14px}dialog .hint{font-size:13px}textarea{font-size:14px;
   #toolboxSidebar .brand{padding:0;margin-bottom:20px;gap:10px;font-size:18px}
   .toolbox-nav-close{display:block;min-width:30px;min-height:34px;padding:4px;border:0;background:transparent;color:#95a3ad;font-size:19px;margin-left:auto}
   .navlabel{display:block;margin:0 10px 8px}.aside-foot{display:block;margin-top:12px;padding:10px 6px 0;border-top:1px solid #e1e6eb}.aside-foot>.dot{display:inline-block}.aside-foot>small{display:none}.github-link{margin-top:10px}
-  #nav{display:block;overflow-y:auto;overflow-x:hidden}#nav button,#openFiles{width:100%;min-height:43px;white-space:normal;margin:2px 0;padding:9px 11px;font-size:15px}
-  #openFiles{margin-bottom:8px}main,body.sidebar-collapsed main{margin-left:0;padding:0 14px}
+  #nav{display:block;overflow-y:auto;overflow-x:hidden}#nav button,#nav>a{width:100%;min-height:43px;white-space:normal;margin:2px 0;padding:9px 11px;font-size:15px}
+  #nav>a{margin-bottom:8px}main,body.sidebar-collapsed main{margin-left:0;padding:0 14px}
   header{min-height:60px;padding:9px 0;gap:8px;flex-wrap:nowrap;font-size:12px}#toggleSidebar{min-width:36px;min-height:36px;font-size:21px}#showCLI{min-height:36px;font-size:12px;padding:6px 8px}
   .intro{padding:20px 0 18px;gap:12px}.intro .eyebrow{font-size:11px}h1{font-size:24px;margin:7px 0}.intro p{font-size:13px;line-height:1.8;max-width:100%}#tool-number{width:40px;height:40px;font-size:18px;align-self:flex-start;margin-top:8px}
   .layout{grid-template-columns:minmax(0,1fr);gap:16px}.card{padding:18px;border-radius:10px}.section-title{font-size:16px;margin-bottom:18px}.section-title>span{font-size:11px}
@@ -135,7 +135,7 @@ dialog label{font-size:14px}dialog .hint{font-size:13px}textarea{font-size:14px;
   dialog{max-width:calc(100vw - 24px);max-height:92dvh;padding:18px;border-radius:12px}dialog .section-title{font-size:17px}dialog .input-row{flex-wrap:wrap}dialog .input-row input{flex:1 1 170px}#folderList{height:40dvh}
   .password-tools{flex-wrap:wrap}.password-tools select{flex-basis:100%}.saved-password-row{flex-wrap:wrap}.saved-password-row b{flex-basis:100%}.dedupe-panel .input-row{flex-wrap:wrap}.dedupe-panel .input-row input{flex-basis:100%}.dedupe-panel .input-row button{margin-top:0}.dedupe-panel .download-guide{padding:14px;font-size:13px}#cliCode{font-size:12px;min-height:220px;max-height:48dvh}
 }
-@media(pointer:coarse){#nav button,#openFiles{min-height:44px}.toolbox-nav-close{min-width:40px;min-height:40px}}
+@media(pointer:coarse){#nav button,#nav>a{min-height:44px}.toolbox-nav-close{min-width:40px;min-height:40px}}
 @media(prefers-reduced-motion:reduce){#toolboxSidebar{transition:none}}
 .general-settings-link{width:100%;margin-top:12px;font-size:14px;font-weight:600;min-height:38px}
 #generalSettingsDialog{width:480px}#generalSettingsDialog h3{font-size:16px;margin:0 0 16px}#generalSettingsDialog .check{margin:16px 0;font-size:15px}#generalSettingsStatus{min-height:24px;overflow-wrap:anywhere}
@@ -183,3 +183,18 @@ body.terminal-view-open{overflow:hidden}
 @media(max-width:760px){.header-actions{gap:5px}#openTaskHistory,#showCLI{font-size:12px;padding:6px 8px;min-height:36px}.history-recovery{flex-wrap:wrap}.history-layout{grid-template-columns:minmax(0,1fr);gap:18px}.history-list{max-height:200px}.history-record{padding:10px}.history-detail h3{font-size:16px}.history-actions button{font-size:12px;padding:7px 9px}.history-paths{grid-template-columns:60px minmax(0,1fr)}}
 
 .history-pages label{white-space:nowrap;flex-shrink:0}.history-pages select{width:auto;max-width:180px}
+
+#extractSourceScope{padding:12px;border:1px solid var(--border,#dce5e9);border-radius:8px;margin-bottom:12px}#extractSourceName{overflow-wrap:anywhere;user-select:text}#clearExtractSource{margin-top:6px}
+
+/* Grouped navigation keeps tools and independent workspaces distinct. */
+#nav .tool-nav-group{border:0;margin:0 0 8px;padding:0}
+#nav .tool-nav-group>summary{display:flex;align-items:center;gap:7px;margin:0;padding:7px 9px;color:#7c8994;font-size:12px;font-weight:650;list-style:none;border-radius:6px;user-select:none}
+#nav .tool-nav-group>summary::-webkit-details-marker{display:none}
+#nav .tool-nav-group>summary::before{content:'›';font-size:16px;line-height:1;transition:transform .15s}
+#nav .tool-nav-group[open]>summary::before{transform:rotate(90deg)}
+#nav .tool-nav-group>summary:hover{background:#eaf0ed;color:#356951}
+#nav .tool-nav-group>summary:focus-visible{outline:2px solid var(--ui-focus);outline-offset:-2px}
+#nav .tool-nav-items>a{background:transparent;border:0;display:flex;align-items:center;gap:10px;padding:6px 11px;min-height:36px;margin:1px 0;border-radius:8px;color:#596672;font-size:14px;font-weight:var(--ui-weight-control);text-decoration:none}
+#nav .tool-nav-items>a:hover{background:#edf0f3;color:#356951}
+#nav .tool-nav-items>a>span:first-child{display:flex;width:22px;height:22px;flex-shrink:0}
+#nav .tool-nav-items>a svg{width:21px;height:21px;flex-shrink:0}

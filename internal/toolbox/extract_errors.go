@@ -15,6 +15,10 @@ func runExtractCommand(ctx context.Context, c Config, source string, args ...str
 	return runExtractCommandProgress(ctx, c, source, nil, args...)
 }
 func runExtractCommandProgress(ctx context.Context, c Config, source string, notify func(int), args ...string) ([]byte, error) {
+	_, compression := compressedTAR(source)
+	if compression != "" {
+		return runCompressedTAR(ctx, c, source, compression, notify, args...)
+	}
 	types, err := extractTypeOptions(source)
 	if err != nil {
 		return nil, err

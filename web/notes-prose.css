@@ -1,0 +1,111 @@
+/* Shared document typography for the rich editor and sandboxed preview.
+   All rules stay inside the document surface; no remote fonts or resources. */
+.notes-prose{
+  box-sizing:border-box;
+  width:100%;max-width:840px;min-width:0;
+  margin:0 auto;padding:26px clamp(16px,4%,40px) 72px;
+  color:#333b43;background:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+  font-size:var(--note-font-size,1rem);line-height:1.8;
+  overflow-wrap:anywhere;word-break:normal;tab-size:4;
+  -webkit-font-smoothing:antialiased;
+}
+.notes-prose *{box-sizing:border-box}
+.notes-prose>:first-child{margin-top:0}
+.notes-prose>:last-child{margin-bottom:0}
+.notes-prose h1,.notes-prose h2,.notes-prose h3,
+.notes-prose h4,.notes-prose h5,.notes-prose h6{
+  color:#252e36;font-weight:650;line-height:1.4;
+  margin:1.65em 0 .65em;scroll-margin-top:20px;
+}
+.notes-prose h1{font-size:2em;letter-spacing:-.02em;padding-bottom:.3em;border-bottom:1px solid #e8ecef}
+.notes-prose h2{font-size:1.55em;padding-bottom:.25em;border-bottom:1px solid #edf0f2}
+.notes-prose h3{font-size:1.28em}
+.notes-prose h4{font-size:1.12em}
+.notes-prose h5{font-size:1em}
+.notes-prose h6{font-size:1em;color:#74808b}
+.notes-prose p{margin:.9em 0}
+.notes-prose strong{font-weight:650;color:#2c353e}
+.notes-prose del,.notes-prose s{color:#83909a}
+.notes-prose ul,.notes-prose ol{margin:.85em 0;padding-left:1.75em}
+.notes-prose li{padding-left:.15em}
+.notes-prose li+li{margin-top:.3em}
+.notes-prose li>p{margin:.35em 0}
+.notes-prose li>ul,.notes-prose li>ol{margin:.25em 0 .45em}
+.notes-prose li::marker{color:#687682}
+.notes-prose li:has(>input[type=checkbox]){list-style:none}
+.notes-prose input[type=checkbox]{width:1em;height:1em;margin:0 .55em 0 -1.5em;vertical-align:-.1em;accent-color:#28765f}
+.notes-prose blockquote{
+  margin:1.2em 0;padding:.65em 1.15em;
+  border-left:4px solid #b6cfc2;border-radius:0 6px 6px 0;
+  background:#f6f9f7;color:#65726e;
+}
+.notes-prose blockquote>:first-child{margin-top:0}
+.notes-prose blockquote>:last-child{margin-bottom:0}
+.notes-prose blockquote blockquote{margin:.7em 0;background:#eef4f0}
+.notes-prose code,.notes-prose kbd{
+  padding:.12em .35em;border:1px solid #ece7e9;border-radius:4px;
+  background:#f8f3f5;color:#a94b61;
+  font-family:"Cascadia Code",Consolas,"SFMono-Regular",Menlo,monospace;
+  font-size:.9em;white-space:break-spaces;
+}
+.notes-prose pre{
+  max-width:100%;margin:1.2em 0;padding:15px 18px;
+  border:1px solid #e8ecef;border-radius:8px;
+  background:#f7f8fa;color:#36414c;overflow:auto;
+  line-height:1.65;white-space:pre;overflow-wrap:normal;word-break:normal;
+  scrollbar-width:thin;
+}
+.notes-prose pre code{
+  display:block;padding:0;border:0;border-radius:0;background:transparent;
+  color:inherit;font-size:.9em;line-height:inherit;white-space:pre;
+  overflow-wrap:normal;word-break:normal;
+}
+.notes-prose table{
+  display:block;width:max-content;max-width:100%;margin:1.2em 0;
+  border-collapse:collapse;border-spacing:0;overflow:auto;
+  font-variant-numeric:tabular-nums;scrollbar-width:thin;
+}
+.notes-prose th,.notes-prose td{
+  min-width:72px;padding:8px 14px;
+  border:1px solid #dfe5e9;text-align:left;vertical-align:top;
+}
+.notes-prose th{font-weight:650;color:#3f4b54;background:#f3f6f8}
+.notes-prose tbody tr:nth-child(even){background:#fafbfc}
+.notes-prose td[align=center],.notes-prose th[align=center]{text-align:center}
+.notes-prose td[align=right],.notes-prose th[align=right]{text-align:right}
+.notes-prose hr{height:0;margin:2em 0;border:0;border-top:1px solid #e1e7eb}
+.notes-prose .notes-prose-link,.notes-prose .notes-inert-link{
+  color:#28765f;text-decoration:underline;text-decoration-color:#a6c6b8;
+  text-underline-offset:.18em;
+}
+.notes-prose .notes-hidden-image{
+  display:inline-block;padding:.2em .65em;border:1px dashed #d8e0e5;
+  border-radius:5px;background:#fafbfc;color:#85919a;font-size:.9em;
+}
+.notes-prose img.notes-attachment-preview,.notes-prose .notes-inline-image img{
+  display:block;max-width:100%;height:auto;max-height:480px;
+  margin:1.15em auto;border-radius:7px;object-fit:contain;
+}
+.notes-prose .notes-inline-image{display:block;max-width:100%}
+.notes-prose ::selection{background:#dcece3;color:#203c30}
+@media(max-width:480px){
+  .notes-prose{padding-top:18px;padding-bottom:40px}
+  .notes-prose h1{font-size:1.85em}
+  .notes-prose h2{font-size:1.45em}
+  .notes-prose th,.notes-prose td{padding:7px 10px}
+  .notes-prose pre{padding:12px 14px}
+}
+
+@container notes-document (max-width:480px){
+  .notes-prose{padding-top:18px;padding-bottom:40px}
+  .notes-prose h1{font-size:1.85em}
+  .notes-prose h2{font-size:1.45em}
+  .notes-prose th,.notes-prose td{padding:7px 10px}
+  .notes-prose pre{padding:12px 14px}
+}
+
+/* Semantic colors also apply to the rich editor and sandboxed reading view. */
+.notes-prose h1,.notes-prose h2{color:#276681}.notes-prose h3,.notes-prose h4{color:#466c62}.notes-prose h5{color:#75618a}
+.notes-prose strong{color:#675080}.notes-prose em{color:#88623f}
+.syntax-keyword{color:#8152a4}.syntax-string{color:#32775e}.syntax-number{color:#ad603a}.syntax-comment{color:#84918b}

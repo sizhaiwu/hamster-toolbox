@@ -76,7 +76,7 @@ func TestGuestLoginPageLoadsAllAssetsBeforeAuthentication(t *testing.T) {
 			t.Errorf("first visit cannot load %s before login: HTTP %d", u.Path, asset.StatusCode)
 		}
 	}
-	for _, route := range []string{"/api/boot", "/api/list", "/api/sharing", "/api/version-update", "/api/preferences", "/sharing.json", "/passwords.dat"} {
+	for _, route := range []string{"/api/boot", "/api/list", "/api/sharing", "/api/version-update", "/api/preferences", "/sharing.json", "/passwords.dat", "/api/notes/status", "/api/notes/unlock", "/api/notes/list", "/notes/", "/notes/notes.js"} {
 		r := httptest.NewRequest("POST", route, strings.NewReader(`{}`))
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("X-Hamster-Browser", "1")

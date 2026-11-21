@@ -34,7 +34,7 @@ func (s *server) startupManager() *autostartManager {
 		program := filepath.Join(filepath.Dir(exe), "hamster-toolbox-desktop.exe")
 		defaultData := ""
 		if dir, e := os.UserConfigDir(); e == nil {
-			defaultData = filepath.Join(dir, "media-toolbox")
+			defaultData = filepath.Join(dir, "hamster-toolbox")
 		} else {
 			defaultData = filepath.Join(filepath.Dir(exe), "data")
 		}

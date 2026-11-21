@@ -21,6 +21,7 @@ func (b *fileBrowser) transfer(w http.ResponseWriter, r *http.Request, local boo
 	}
 	b.operations.Lock()
 	defer b.operations.Unlock()
+	defer b.invalidateDirectoryListings()
 	src, _, err := b.resolve(r, local, req.Action == "move", req.Path)
 	if err != nil {
 		browserFail(w, local, err)
@@ -86,9 +87,6 @@ func (b *fileBrowser) transfer(w http.ResponseWriter, r *http.Request, local boo
 		emit(map[string]any{"Error": message})
 		return
 	}
-	b.listingMu.Lock()
-	b.listings = nil
-	b.listingMu.Unlock()
 	backup := result.Backup
 	if backup != "" && !local {
 		if _, scope, e := b.resolve(r, false, false, req.Target); e == nil && scope != nil {

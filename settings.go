@@ -10,20 +10,21 @@ import (
 )
 
 type preferences struct {
-	BrowserAutoPlay     *bool `json:",omitempty"`
-	BrowserMuted        *bool `json:",omitempty"`
-	RememberPlayback    *bool `json:",omitempty"`
-	RestoreTabs         *bool `json:",omitempty"`
-	DefaultPlayer       string
-	FontScale           int
-	ThumbnailCacheMB    *int `json:",omitempty"`
-	Version             int
-	LastTool            string
-	Workspaces          map[string]toolbox.Config
-	SidebarCollapsed    bool
-	ArchiveAdvancedOpen bool
-	TaskPopup           *bool `json:",omitempty"`
-	TaskSound           *bool `json:",omitempty"`
+	CloseDialogOnBackdrop *bool `json:",omitempty"`
+	BrowserAutoPlay       *bool `json:",omitempty"`
+	BrowserMuted          *bool `json:",omitempty"`
+	RememberPlayback      *bool `json:",omitempty"`
+	RestoreTabs           *bool `json:",omitempty"`
+	DefaultPlayer         string
+	FontScale             int
+	ThumbnailCacheMB      *int `json:",omitempty"`
+	Version               int
+	LastTool              string
+	Workspaces            map[string]toolbox.Config
+	SidebarCollapsed      bool
+	ArchiveAdvancedOpen   bool
+	TaskPopup             *bool `json:",omitempty"`
+	TaskSound             *bool `json:",omitempty"`
 }
 
 func (s *server) loadPreferences() (preferences, error) {

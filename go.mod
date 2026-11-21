@@ -1,9 +1,14 @@
 module github.com/sizhaiwu/hamster-toolbox
 
-go 1.23.0
+go 1.26.0
 
-toolchain go1.23.7
+toolchain go1.26.11
 
-require golang.org/x/sys v0.31.0
+require golang.org/x/sys v0.50.0
 
-require github.com/Microsoft/go-winio v0.6.2
+require (
+	github.com/Microsoft/go-winio v0.6.2
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+	github.com/yuin/goldmark v1.8.7
+	golang.org/x/crypto v0.59.0
+)

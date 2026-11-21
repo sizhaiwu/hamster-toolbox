@@ -67,6 +67,7 @@ type fileBrowser struct {
 	uploadMu                         sync.Mutex
 	diskCacheMu                      sync.Mutex
 	listingMu                        sync.Mutex
+	listingEpoch                     uint64
 	directorySizeRunning             bool
 	listings                         map[string]directoryListingSnapshot
 	mu                               sync.Mutex

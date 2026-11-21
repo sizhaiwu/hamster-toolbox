@@ -17,7 +17,7 @@ function say(text,bad=false,quiet=false){
   if(!bad&&!quiet&&text&&!/^(正在|请等待)/.test(text))noticeTimer=setTimeout(()=>{$('noticeToast').hidden=true},6500);
 }
 $('dismissNotice').onclick=()=>{clearTimeout(noticeTimer);$('noticeToast').hidden=true};
-$('browserHelp').onclick=()=>say('单击选中，双击打开；也可选中后点“打开”。'+(writable()?' Ctrl/⌘ 多选，Shift 连选。':' 此共享只读。'));
+$('browserHelp').onclick=()=>say('单击选中，双击打开；F2 改名、Delete 删除确认、方向键选择、Backspace 后退。'+(writable()?' Ctrl/⌘ 多选，Shift 连选。':' 此共享只读。'));
 function endpoint(route,extra={},requestRoot=root){const query=new URLSearchParams({...((!local&&requestRoot)?{root:requestRoot}:{}),...extra});return base+route+(query.size?'?'+query:'')}
 async function api(route,data={},requestRoot=root,signal){
   const response=await fetch(endpoint('api/'+route,{},requestRoot),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Hamster-Browser':'1'},body:JSON.stringify(data),signal,keepalive:route==='preferences'});
@@ -59,9 +59,47 @@ function selectItem(item,event={},checked){
 function selectPage(){if(loading||mutating)return;for(const item of rows)selection.add(item.Path);selectionAnchor=rows[0]?.Path||'';actions()}
 $('selectMode').onclick=()=>{if(loading||mutating)return;selectionMode=!selectionMode;if(!selectionMode){selection.clear();selectionAnchor=''}actions()};
 $('selectAll').onclick=selectPage;$('clearSelection').onclick=()=>{selection.clear();selectionAnchor='';actions()};
+function moveExplorerKeyboardSelection(event){
+ const focus=document.activeElement,inside=focus===document.body||focus===$('entries')||Boolean(focus.closest('#entries'));
+ if(!inside||!rows.length||event.altKey||event.ctrlKey||event.metaKey)return false;
+ const key=event.key;if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End'].includes(key))return false;
+ if(view==='list'&&['ArrowLeft','ArrowRight'].includes(key))return false;
+ const cards=[...$('entries').querySelectorAll('.entry')],focused=focus.closest('.entry')?.dataset.path;
+ let index=rows.findIndex(item=>item.Path===focused);if(index<0)index=rows.findIndex(item=>selection.has(item.Path));
+ let next=index;
+ if(key==='Home')next=0;else if(key==='End')next=rows.length-1;else if(index<0)next=key==='ArrowUp'||key==='ArrowLeft'?rows.length-1:0;
+ else{
+  let columns=1;
+  if(view!=='list'&&cards.length>1){const first=cards[0].getBoundingClientRect();if(first.height>0){columns=cards.length;for(let n=1;n<cards.length;n++){if(Math.abs(cards[n].getBoundingClientRect().top-first.top)>2){columns=n;break}}}}
+  if(key==='ArrowLeft')next=Math.max(0,index-1);if(key==='ArrowRight')next=Math.min(rows.length-1,index+1);
+  if(key==='ArrowUp'&&index>=columns)next=index-columns;
+  if(key==='ArrowDown'&&Math.floor(index/columns)<Math.floor((rows.length-1)/columns))next=Math.min(rows.length-1,index+columns);
+ }
+ event.preventDefault();
+ if(!event.shiftKey)selection.clear();
+ selectItem(rows[next],event,true);
+ const open=cards[next]?.querySelector('.entry-open');open?.focus({preventScroll:true});open?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+ return true;
+}
+function explorerFileShortcut(event){
+ if(event.altKey||event.ctrlKey||event.metaKey||!$('contextMenu').hidden)return;
+ const focus=document.activeElement,listFocus=focus===document.body||focus===$('entries')||Boolean(focus.closest('#entries'));
+ if(event.key==='Backspace'&&!event.shiftKey){event.preventDefault();if(!event.repeat)$('back').click();return}
+ if(event.key==='F5'&&!event.shiftKey){event.preventDefault();if(!event.repeat)$('refresh').click();return}
+ if(!listFocus)return;
+ if(event.key==='F2'&&!event.shiftKey&&!$('rename').disabled){
+  event.preventDefault();if(event.repeat)return;const item=selected()[0];$('rename').click();
+  const dot=item?.Name.lastIndexOf('.');if(item&&!item.Dir&&dot>0)$('newName').setSelectionRange(0,dot);return;
+ }
+ if(event.key==='Delete'&&!event.shiftKey&&!$('remove').disabled){event.preventDefault();if(!event.repeat)$('remove').click();return}
+ if(event.key==='Enter'&&!event.shiftKey&&selected().length===1&&!$('openSelected').disabled){event.preventDefault();if(!event.repeat)$('openSelected').click();return}
+ moveExplorerKeyboardSelection(event);
+}
 document.addEventListener('keydown',event=>{
-  const focus=document.activeElement,editing=focus.isContentEditable||focus.closest('.floating-window')||focus.matches('textarea,select,input:not([type=checkbox]):not([type=radio])');
+  if(event.defaultPrevented)return;
+  const focus=document.activeElement,editing=focus.isContentEditable||focus.closest('[contenteditable]:not([contenteditable=false]),.floating-window,video,audio')||focus.matches('textarea,select,input:not([type=checkbox]):not([type=radio])');
   if($('app').hidden||document.querySelector('dialog[open]')||editing||loading||mutating)return;
+  explorerFileShortcut(event);
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){event.preventDefault();selectPage()}
   if((event.ctrlKey||event.metaKey)&&!event.altKey){
     const key=event.key.toLowerCase();
@@ -130,11 +168,12 @@ $('view').onclick=()=>{stopVideoHover();view=view==='grid'?'list':'grid';setView
 function separator(){return local?(boot?.Separator||'\\'):'/'}
 function breadcrumb(){const crumbs=$('crumbs');crumbs.replaceChildren();const share=boot?.Roots?.find(x=>x.ID===root);crumbs.append(button(local?'此电脑':share?.Name||'共享目录',()=>navigate('')));const parts=path.split(/[\\/]/).filter(Boolean);let current=local&&separator()==='/'?'/':'';for(let i=0;i<parts.length;i++){current=local?(separator()==='/'?current.replace(/\/$/,'')+'/'+parts[i]:i===0?parts[i]+'\\':current.replace(/[\\/]$/,'')+'\\'+parts[i]):parts.slice(0,i+1).join('/');const target=current;crumbs.append(document.createTextNode('›'),button(parts[i],()=>navigate(target)))}}
 
-async function navigate(next,{remember=true,page=0,targetRoot=root,mode='',scroll,force=false}={}){
+async function navigate(next,{remember=true,page=0,targetRoot=root,mode='',scroll,force=false,selectionSnapshot=null}={}){
   if(mutating){say('请等待当前文件操作结束',true);return false}
   stopVideoHover();stopListingMedia();closeContextMenu();
   const tabID=activeFileTab,id=++requestID,previousLocation={root,path,offset,scroll:scrollRestorePending?.value??Math.max(0,window.scrollY||0),search:$('search').value,sort:$('sort').value,order:$('order').value,view,pageSize};
-  const destination=mode==='back'?history.at(-1):mode==='forward'?future.at(-1):null;
+  captureDirectorySelection(previousLocation);
+  const destination=mode==='back'?history.at(-1):mode==='forward'?future.at(-1):remember&&next===parent?history.findLast(item=>item.root===targetRoot&&sameBrowserPath(item.path,next)):null;
   if(destination){page=destination.offset||0;scroll=destination.scroll||0}
   scroll??=next===path&&targetRoot===root&&page===offset&&!remember?previousLocation.scroll:0;
   scrollRestorePending=null;
@@ -154,6 +193,7 @@ async function navigate(next,{remember=true,page=0,targetRoot=root,mode='',scrol
     if(destination){view=destination.view||view;pageSize=requestedPageSize;$('pageSize').value=pageSize;$('search').value=search;$('sort').value=sort;$('order').value=order}
     $('location').value=local?path:(boot.Roots.find(item=>item.ID===root)?.Name||'共享目录')+(path?'/'+path:'');
     $('heading').textContent=path.split(/[\\/]/).filter(Boolean).pop()||(local?'此电脑':'共享目录');
+    const restoredFocus=restoreDirectorySelection(destination||selectionSnapshot||(!changed&&offset===previousLocation.offset?previousLocation:null));
     render();breadcrumb();side();
     const tab=activeTab();if(tab)Object.assign(tab,{root,path,back:[...history],forward:[...future],search,sort,order,view,offset,scroll});
     renderTabs();persistTabs();
@@ -161,7 +201,7 @@ async function navigate(next,{remember=true,page=0,targetRoot=root,mode='',scrol
     $('previous').disabled=offset===0;$('next').disabled=offset+rows.length>=total;
     $('page').textContent=total?Math.floor(offset/pageSize)+1+' / '+Math.ceil(total/pageSize):'0 / 0';closeNav();
     scrollRestorePending={tab:tabID,value:scroll};
-    requestAnimationFrame(()=>{if(id===requestID&&tabID===activeFileTab){window.scrollTo({top:scroll,behavior:'auto'});scrollRestorePending=null}});
+    requestAnimationFrame(()=>{if(id===requestID&&tabID===activeFileTab){window.scrollTo({top:scroll,behavior:'auto'});scrollRestorePending=null;if(restoredFocus&&!document.activeElement.matches('input,textarea,select,[contenteditable]')){const card=[...$('entries').querySelectorAll('.entry')].find(item=>item.dataset.path===restoredFocus);card?.querySelector('.entry-open')?.focus({preventScroll:true})}}});
     return true;
   }catch(e){if(id===requestID&&tabID===activeFileTab&&e.name!=='AbortError')say(e.message,true);return false}
   finally{if(id===requestID&&tabID===activeFileTab){loading=false;navigationAbort=null;$('cancelSearch').hidden=true;actions()}}

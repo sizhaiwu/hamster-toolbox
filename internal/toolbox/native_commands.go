@@ -17,6 +17,11 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 	if c.Tool == "video" {
 		return VideoCommands(ctx, c, it)
 	}
+	if c.Tool == "extract" {
+		if _, format := compressedTAR(it.Source); format != "" {
+			return nil, errors.New("复合 TAR 使用两步流式解压，请复制页面顶部的工具箱 CLI 命令；普通 PowerShell 二进制管道可能损坏数据")
+		}
+	}
 	if e := validateItemPaths(c, it); e != nil {
 		return nil, e
 	}

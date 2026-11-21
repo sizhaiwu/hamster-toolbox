@@ -10,10 +10,11 @@ const tools = [
   ['video', '压缩视频', '按清晰度压缩视频，可选 H.264 / H.265，自动尝试显卡加速并保留原视频。'],
   ['thumbnail', '视频缩略图', '均匀截取视频画面，生成带文件信息和时间的预览拼图。'],
   ['archive', '打包资源', '使用 7-Zip 将目录与文件独立打包为 7z，支持分卷、加密、附加文件与自动校验。'],
-  ['extract', '解压资源', '使用 7-Zip 批量解压 7z、ZIP、RAR 和分卷包，默认自动改名并保留原包。'],
+  ['extract', '解压资源', '使用 7-Zip 批量解压 7z、ZIP、RAR、TAR 等归档和分卷包，默认自动改名并保留原包。'],
   ['dedupe', '文件去重', '使用 Video Duplicate Finder 查找重复或相似的视频和图片，支持打开本地软件与下载指引。']
 ];
 const toolIconPaths={
+  notes:['M5 3h10l4 4v14H5Z','M15 3v5h4M9 12h6M9 16h6'],
   files:['M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11H3Z','M7 10h3v3H7Zm7 0h3v3h-3ZM7 16h10'],
   format:['M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v11H3Z','M7 17v-3m5 3v-6m5 6v-4'],
   rename:['M4 5h7M4 9h4M4 19h16','m10 13 8-8 3 3-8 8-4 1Zm6-6 3 3'],
@@ -29,13 +30,13 @@ const toolIconPaths={
   dedupe:['M8 3h12v15M4 7h12v14H4Z','M7 12h6M7 16h6']
 };
 function toolNavIcon(kind){
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');svg.dataset.icon=kind;
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('width','21');svg.setAttribute('height','21');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');svg.dataset.icon=kind;
   for(const d of toolIconPaths[kind]){const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',d);svg.append(path)}
   if(kind==='pdf'){const text=document.createElementNS(svg.namespaceURI,'text');text.setAttribute('x','12');text.setAttribute('y','17');text.setAttribute('text-anchor','middle');text.setAttribute('fill','currentColor');text.setAttribute('stroke','none');text.setAttribute('font-size','5.4');text.setAttribute('font-family','Segoe UI, sans-serif');text.setAttribute('font-weight','700');text.textContent='PDF';svg.append(text)}return svg;
 }
 const optionKeys = {
   dedupe: ['DedupeProgram'],
-  extract: ['Recursive','Output','ExtractConflict','ExtractLayout','ExtractPassword','ExtractDeleteSource','ExtractDeleteMode'],
+  extract: ['ExtractSource','Recursive','Output','ExtractConflict','ExtractLayout','ExtractPassword','ExtractDeleteSource','ExtractDeleteMode'],
   archive: ['Output','Files','Dirs','ArchiveMode','ArchivePassword','ArchiveExtras','ArchiveMarker','ArchiveSplit','ArchiveFirstVolume','ArchiveVolume','ArchiveDirPrefix','ArchiveFilePrefix','ArchiveStart','ArchiveDigits','ArchiveLevel'],
   format: ['Recursive','FormatCleanOther','FormatDeleteMode'], rename: ['Recursive', 'Files', 'Dirs', 'Find', 'Replace', 'Regex', 'Prefix', 'Suffix', 'RenameMode', 'ExampleNumber', 'ExampleAtStart'],
   number: ['NumberName', 'StartNumber', 'NumberDigits', 'NumberStyle', 'NumberOrder', 'NumberFilter', 'NumberKeepOriginal'],
@@ -47,6 +48,7 @@ const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recu
 const imageFormatExtensions = '.jpg .jpeg .jpe .jfif .png .webp'.split(' ');
 const jpegFormats = ['.jpg', '.jpeg', '.jpe', '.jfif'];
 const token = new URLSearchParams(location.search).get('session');
+$('openNotes').href='/notes/?session='+encodeURIComponent(token||'');
 $('openFiles').href='/files/?session='+encodeURIComponent(token||'');
 const statuses = { idle: '等待开始', scanning: '正在扫描', ready: '预览就绪', running: '正在执行', finished: '处理完成', cancelled: '已取消', error: '任务失败' };
 let tool = 'format', defaults = {}, workspaces = {}, dependencyMetadata = [];
@@ -171,6 +173,7 @@ function updateActions() {
   $('formatDeleteOptions').hidden = !$('FormatCleanOther').checked;
   if (tool === 'archive') activeInputs.add('ArchiveSavedPassword');
   if (tool === 'extract') activeInputs.add('ExtractSavedPassword');
+  $('clearExtractSource').disabled=locked;
   $('manageArchivePasswords').disabled = $('manageExtractPasswords').disabled = locked;
   if (tool === 'video') activeInputs.add('videoQuality');
   if (tool === 'video' && $('VideoMode').value === 'archive') activeInputs.delete('VideoAcceleration');
@@ -338,6 +341,7 @@ function updateVideoOptions() {
 }
 function updateExtractOptions() {
   if (tool !== 'extract') return;
+  $('extractSourceScope').hidden=!$('ExtractSource').value; $('extractSourceName').textContent=$('ExtractSource').value;
   $('extractDeleteModeOptions').hidden = !$('ExtractDeleteSource').checked;
   $('extractDeleteHint').textContent = !$('ExtractDeleteSource').checked ? '默认保留原包；开启后可选择移入回收站或永久删除。' : $('ExtractDeleteMode').value === 'permanent' ? '完整解压、全部写出且无跳过后永久删除原包及实际分卷，不进入回收站。' : '完整解压、全部写出且无跳过后移入回收站；无法回收时保留，不会自动永久删除。';
   $('extractRuleHint').textContent = ({rename:'重名时把新文件改为“文件_1.ext”等，已有文件保留。',skip:'已有同名文件时跳过，保留原有内容。',overwrite:'已有同名文件会被替换，请确认输出位置。'})[$('ExtractConflict').value];
@@ -433,7 +437,7 @@ async function selectTool(id, initial = false) {
   if ((busy || switching) && !initial) return; switching = true; updateActions();
   try {
     if (!initial) await saveNow(); dependencyRequest++; clearTimeout(checkTimer); dedupeRequest++; clearTimeout(dedupeTimer); dedupeChecking=false;
-    tool = id; checking = false; planID = ''; lastConfig = '';
+    tool = id; toolGroups.find(g=>g.tools.includes(id)).section.open=true; checking = false; planID = ''; lastConfig = '';
     resetPreview();
     const t = tools.find(t => t[0] === id);
     $('title').textContent = $('crumb').textContent = t[1]; $('description').textContent = t[2]; $('tool-number').textContent = String(tools.indexOf(t) + 1).padStart(2, '0');
@@ -476,7 +480,7 @@ async function selectTool(id, initial = false) {
     }
     if (id === 'number' && !$('NumberTemplate').value) putValue('NumberTemplate', '{name} 第{number}期');
     if (id === 'image') { putValue('PngMode', active.PngMode || 'lossless'); putValue('PngQuality', active.PngQuality || 90); restoreImageFormats(active.ImageFormats); }
-    if (id === 'extract') putValue('ExtractDeleteMode',active.ExtractDeleteMode || 'recycle');
+    if (id === 'extract') {putValue('ExtractDeleteMode',active.ExtractDeleteMode || 'recycle');putValue('ExtractSource',active.ExtractSource||'');}
     if (id === 'exif') putValue('MetadataTypes', active.MetadataTypes || (workspaces[id] ? 'images' : 'all'));
     if (id === 'video') {
       putValue('VideoMode', active.VideoMode || (workspaces[id] ? 'compatible' : 'efficient'));
@@ -501,9 +505,23 @@ async function selectTool(id, initial = false) {
   } catch (e) { dependenciesReady = false; $('message').textContent = e.message; }
   finally { switching = false; updateActions(); await poll(); }
 }
+const toolGroups=[
+ {id:'workspace',label:'工作空间',tools:[]},
+ {id:'organize',label:'文件整理',tools:['format','rename','number','dedupe']},
+ {id:'media',label:'媒体处理',tools:['describe','exif','pdf','image','video','thumbnail']},
+ {id:'archive',label:'打包与解压',tools:['archive','extract']}
+];
+let navGroupsState={};try{navGroupsState=JSON.parse(localStorage.getItem('hamster.nav.groups.v1')||'{}')||{}}catch{}
+for(const group of toolGroups){
+ const section=document.createElement('details'),summary=document.createElement('summary'),body=document.createElement('div');
+ section.className='tool-nav-group';section.dataset.group=group.id;summary.textContent=group.label;body.className='tool-nav-items';section.append(summary,body);section.open=typeof navGroupsState[group.id]==='boolean'?navGroupsState[group.id]:['workspace','organize'].includes(group.id);group.section=section;group.body=body;
+ function persistGroup(){navGroupsState[group.id]=section.open;try{localStorage.setItem('hamster.nav.groups.v1',JSON.stringify(navGroupsState))}catch{}}
+ summary.addEventListener('click',event=>{event.preventDefault();section.open=!section.open;persistGroup()});section.addEventListener('toggle',persistGroup);$('nav').append(section);
+}
+toolGroups[0].body.append($('openFiles'),$('openNotes'));
 for (const t of tools) {
   const b = document.createElement('button'); b.type = 'button'; b.dataset.tool = t[0];
-  const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2]; b.append(icon, document.createTextNode(t[1])); b.onclick = () => selectTool(t[0]); $('nav').append(b);
+  const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2]; b.append(icon, document.createTextNode(t[1])); b.onclick = () => selectTool(t[0]); toolGroups.find(g=>g.tools.includes(t[0])).body.append(b);
 }
 $('openFiles').firstElementChild.replaceChildren(toolNavIcon('files'));
 for (const [index, ext] of imageFormatExtensions.entries()) {
@@ -513,6 +531,7 @@ for (const [index, ext] of imageFormatExtensions.entries()) {
 }
 setImageFormats(null);
 for (const el of $('form').querySelectorAll('input, textarea')) el.addEventListener('input', () => {
+  if(el.id==='Root')putValue('ExtractSource','');
   $('qualityValue').textContent = $('Quality').value; if (el.id === 'CRF') updateVideoPreset(); changed();
 });
 for (const id of ['NumberStyle', 'NumberOrder']) $(id).addEventListener('change', () => changed());
@@ -842,6 +861,7 @@ async function poll() {
 }
 function choosePath(path) {
   if(!browseConfirmed){$('browseError').textContent='请先点击前往，确认当前目录。';return}
+  if(browseTarget==='Root')putValue('ExtractSource','');
   if (browseTarget === 'ArchiveExtras') { const lines = $('ArchiveExtras').value.split(/\r?\n/).filter(Boolean); if (!lines.includes(path)) lines.push(path); putValue(browseTarget, lines.join('\n')); } else putValue(browseTarget, path);
   if (browseTarget === 'DedupeProgram') { changed(); inspectDedupeProgram(); $('folderDialog').close(); return; }
   if (browseTarget === 'FFmpeg' && $('FFprobe') && !$('FFprobe').value) putValue('FFprobe', path.replace(/ffmpeg(\.exe)?$/i, defaults.Platform&&defaults.Platform!=='windows'?'ffprobe':'ffprobe.exe'));
@@ -904,13 +924,11 @@ $('drives').onclick = () => browse(''); $('up').onclick = () => browse(parentPat
     $('appVersion').textContent = window.toolboxVersion?.label(info.Version)||(info.Version === 'dev' ? '开发版' : 'v' + info.Version);
     $('bundleNotice').hidden = !info.BundleWarning; $('bundleNotice').textContent = info.BundleWarning || '';
     if(defaults.Platform&&defaults.Platform!=='windows'){for(const row of document.querySelectorAll('.password-tools'))row.hidden=true;$('DedupeProgram').placeholder='选择当前系统的 VDF.GUI 图形程序';$('dedupeDownloadHelp').querySelector('ol').textContent='下载适合当前系统和架构的图形界面版本，完整解压后选择 VDF.GUI 可执行文件。需要桌面环境，具体平台支持以软件发布页为准。'}
-    if (!Object.keys(workspaces).length) {
-      try { const old = JSON.parse(localStorage.getItem('media-toolbox-settings') || '{}'); if (tools.some(t => t[0] === old.Tool)) { workspaces[old.Tool] = old; preferences.LastTool = old.Tool; } } catch {}
-    }
     const incoming=new URLSearchParams(location.search),requestedTool=incoming.get('tool');
     await selectTool(tools.some(t=>t[0]===requestedTool)?requestedTool:tools.some(t => t[0] === preferences.LastTool) ? preferences.LastTool : 'format', true);
-    if(incoming.has('root')&&tools.some(t=>t[0]===requestedTool)){putValue('Root',incoming.get('root'));changed();}
- await refreshSavedPasswords().catch(() => {}); setInterval(poll, 1200);
+    if(incoming.has('root')&&tools.some(t=>t[0]===requestedTool)){putValue('Root',incoming.get('root'));putValue('ExtractSource','');if(requestedTool==='extract'&&incoming.get('extract-source')){putValue('ExtractSource',incoming.get('extract-source'));putValue('Output','');}changed();}
+ if(requestedTool==='extract'&&incoming.get('extract-source')){const clean=new URL(location.href);for(const key of ['tool','root','extract-source'])clean.searchParams.delete(key);history.replaceState(history.state,'',clean.href);}
+ await refreshSavedPasswords().catch(() => {}); if(requestedTool==='extract'&&incoming.get('extract-source')&&dependenciesReady&&!busy)$('preview').click(); setInterval(poll, 1200);
   } catch (e) { $('message').textContent = '初始化失败：' + e.message; switching = false; updateActions(); }
 })();
 
@@ -962,3 +980,7 @@ taskHistory=window.setupTaskHistory?.({api,$,toolName:id=>tools.find(t=>t[0]===i
   scan:id=>startPreview(id),
   message:(text,error=false)=>showMessage(text,error)
 });
+
+$('clearExtractSource').onclick=()=>{if(busy||switching||submitting)return;putValue('ExtractSource','');changed();};
+
+$('openNotes').firstElementChild.replaceChildren(toolNavIcon('notes'));

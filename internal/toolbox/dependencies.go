@@ -192,6 +192,7 @@ func ScopeConfig(c Config) Config {
 	case "dedupe":
 		return Config{Tool: c.Tool, DedupeProgram: c.DedupeProgram}
 	case "extract":
+		r.ExtractSource = c.ExtractSource
 		r.Output, r.SevenZip = c.Output, c.SevenZip
 		r.ExtractConflict, r.ExtractLayout, r.ExtractPassword = c.ExtractConflict, c.ExtractLayout, c.ExtractPassword
 		r.ExtractDeleteSource = c.ExtractDeleteSource

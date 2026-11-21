@@ -46,3 +46,39 @@ func TestTaskNotificationSettingsPersistence(t *testing.T) {
 		t.Fatal("invalid input changed settings")
 	}
 }
+
+func TestBackdropCloseSettingPersistsIndependently(t *testing.T) {
+	s := &server{token: "test-session", dataDir: t.TempDir()}
+	p, err := s.loadPreferences()
+	if err != nil || p.CloseDialogOnBackdrop != nil {
+		t.Fatal("legacy setting must be opt-in", p, err)
+	}
+	for _, change := range []map[string]any{{"CloseDialogOnBackdrop": true}, {"TaskSound": false}} {
+		w := requestAPI(t, s, "/api/ui-settings", change)
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	c := toolbox.DefaultConfig()
+	c.Tool = "format"
+	if _, err = s.saveWorkspace(c); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &server{dataDir: s.dataDir}
+	p, err = restarted.loadPreferences()
+	if err != nil || p.CloseDialogOnBackdrop == nil || !*p.CloseDialogOnBackdrop || p.TaskSound == nil || *p.TaskSound {
+		t.Fatal("setting lost on workspace save/restart", p, err)
+	}
+	w := requestAPI(t, s, "/api/ui-settings", map[string]any{"CloseDialogOnBackdrop": "true"})
+	if w.Code == 200 {
+		t.Fatal("invalid boolean accepted")
+	}
+	w = requestAPI(t, s, "/api/ui-settings", map[string]any{"CloseDialogOnBackdrop": false})
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	p, err = restarted.loadPreferences()
+	if err != nil || p.CloseDialogOnBackdrop == nil || *p.CloseDialogOnBackdrop {
+		t.Fatal("disable did not persist", p, err)
+	}
+}

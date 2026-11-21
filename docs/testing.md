@@ -150,3 +150,21 @@ go test . -run 'TestResource.*Properties' -count=1
 `TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestVideoTimestampPrecisionIntegration` 使用合成可变帧率视频验证精细时间基准，检查帧数与时长；公开测试不使用私人媒体。
 
 标签长期恢复由 `TestSavedExplorerWorkspaceAcrossServerRestart` 与 UI 扩展测试验证，包括跨端口所需的服务端导航快照、超过旧页数范围的位置、共享范围和凭据字段拒绝。Windows 本机一次 race 运行器在启动内部工具测试前返回 `0xc0000139`，未获得该包的 race 结果；普通测试和确定性并发限制测试另行执行。
+
+扩展解压格式：`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestExpandedExtract -count=1` 使用合成 TAR、GZIP/BZip2/XZ/Zstandard 复合 TAR、单文件压缩、LZMA、CAB、WIM、ZIPX，验证内部文件、原包保留与路径/链接拒绝。其他归档由所选 7-Zip 读取和校验，不表示每种第三方格式均已真包验收。复合 TAR 采用两个受同一取消上下文控制的进程流式连接，不生成中间 TAR。
+
+压缩包右键解压：`node tests/explorer-extract-check.cjs` 验证菜单图标、新标签页传参、单包范围、自动预览不自动执行与访客隔离。`TOOLBOX_INTEGRATION=1 go test ./internal/toolbox -run TestSelectedExtract` 验证只处理所选包、忽略同目录其他包、跨目录拒绝、显式单包只读父目录范围，以及其他工具的根目录保护。
+
+快捷键与遮罩关闭：`node tests/explorer-shortcuts-check.cjs` 覆盖 F2 名称选择、删除确认、列表/图标方向选择、Shift 范围、输入/弹窗隔离、Backspace 历史与只读权限；`node tests/dialog-backdrop-check.cjs` 覆盖开关保存、内部点击、拖动、指针取消、取消事件否决和删除取消。`go test . -run TestBackdropCloseSetting` 验证偏好跨重启保存、独立更新和无效类型拒绝。
+
+私密笔记的 `TestPrivateNotes*` 覆盖真实加密文件、错误密码、篡改、重启、跨目录迁移、恢复前备份、修订冲突、TOTP 标准向量与重放、恢复码单次使用、主密码修改、文件锁、可配置空闲过期、禁用自动锁定、设置的重启/备份迁移与共享隔离。`tests/private-notes-check.cjs` 覆盖编辑期间保存串行、失败草稿保留、预览沙箱、二维码/恢复码清理及返回缓存清空；另覆盖分栏拖动、取消回退、方向键调整、双击复位、横纵比例独立记忆及锁定时释放拖动状态。测试全部使用临时目录、合成笔记和合成密码；不代表第三方密码学安全审计。
+
+笔记字号和编辑锁的回归同时覆盖前后端：字号的有效范围、安全预览与迁移、锁定前保存草稿、锁定后拒绝普通保存和删除、旧修订不能解除编辑锁、解锁后恢复修改，以及锁状态和字号在重启/加密备份迁移后保留。
+
+笔记扩展测试：`go test . -run TestPrivateNotes -count=1` 和 `node tests/private-notes-features-check.cjs` 覆盖草稿密文恢复、旧内容回显、损坏文件恢复、历史/回收站、备份轮换与失败隔离、附件加密/锁保护、改密保留附件、完整备份迁移、路径与缺失附件拒绝、富文本安全结构和 2000 篇笔记分批搜索。`go test . -run ^$ -bench BenchmarkPrivateNotesLargeVaultPreview -benchtime=30x` 测量 1500 篇合成笔记下的预览后端接口，不代表浏览器端到端耗时。测试不使用个人笔记。
+
+笔记编辑体验与导航：`node tests/private-notes-experience-check.cjs` 验证源码/代码配色、内容只作为文字处理、小数滚动偏好、段落锚点、消息来源校验和锁定清空；`node tests/toolbox-nav-groups-check.cjs` 验证工作空间/工具分组、折叠即时保存与自动展开当前工具。`TestPrivateNotesArchiveLimitsAndEditorPreferences` 包含小数滚动位置的实际保存与重启恢复；`TestPrivateNotesPreviewSourceAnchorsAndFixedBridge` 验证源行标记、固定脚本 CSP 哈希及正文脚本拒绝。滚动桥接在不具备同源权限的 iframe 中运行，只允许固定哈希脚本，正文不能注入脚本。
+
+刷新解锁状态：`node tests/private-notes-resume-check.cjs` 覆盖刷新恢复、严格开关、过期/手动锁定清理、服务器身份范围、新导航隔离和 bfcache 恢复；`go test . -run TestPrivateNotesResume` 验证无凭证拒绝、完整会话状态、手动锁定、超时、服务重启和外部改密失效。临时会话凭证仅放在当前标签页 sessionStorage，不将主密码、解密密钥或明文笔记写入浏览器存储。
+
+笔记布局：`node tests/private-notes-layout-check.cjs` 验证电脑侧栏折叠记忆、手机列表返回、草稿保留、原生全屏接口与拒绝回退、Esc 与查找/弹窗隔离、预览消息来源校验及锁定时退出全屏。浏览器实测补充验证全屏工作区高度、刷新恢复折叠状态和 390px 手机布局。
