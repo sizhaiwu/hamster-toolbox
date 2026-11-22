@@ -952,7 +952,7 @@ func (s *server) notesPage(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "notes.html"
 	}
-	if name != "notes.html" && name != "notes.js" && name != "notes.css" && name != "notes-rich.js" && name != "notes-prose.css" && name != "notes-syntax.js" && name != "notes-layout.js" {
+	if name != "notes.html" && name != "notes.js" && name != "notes-general.js" && name != "notes.css" && name != "notes-rich.js" && name != "notes-prose.css" && name != "notes-syntax.js" && name != "notes-layout.js" {
 		http.NotFound(w, r)
 		return
 	}
@@ -970,6 +970,7 @@ func (s *server) notesPage(w http.ResponseWriter, r *http.Request) {
 		kind = "text/javascript"
 	}
 	if strings.HasSuffix(name, ".html") {
+		b = sharedSettingsHTML(b)
 		kind = "text/html"
 	}
 	w.Header().Set("Content-Type", kind+"; charset=utf-8")

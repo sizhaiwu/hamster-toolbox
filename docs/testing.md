@@ -168,3 +168,7 @@ go test . -run 'TestResource.*Properties' -count=1
 刷新解锁状态：`node tests/private-notes-resume-check.cjs` 覆盖刷新恢复、严格开关、过期/手动锁定清理、服务器身份范围、新导航隔离和 bfcache 恢复；`go test . -run TestPrivateNotesResume` 验证无凭证拒绝、完整会话状态、手动锁定、超时、服务重启和外部改密失效。临时会话凭证仅放在当前标签页 sessionStorage，不将主密码、解密密钥或明文笔记写入浏览器存储。
 
 笔记布局：`node tests/private-notes-layout-check.cjs` 验证电脑侧栏折叠记忆、手机列表返回、草稿保留、原生全屏接口与拒绝回退、Esc 与查找/弹窗隔离、预览消息来源校验及锁定时退出全屏。浏览器实测补充验证全屏工作区高度、刷新恢复折叠状态和 390px 手机布局。
+
+共享配置公共入口由 `node tests/shared-settings-check.cjs` 和 `go test . -run 'TestSharedSettings|TestRemoteSharedSettings'` 验证：工具箱、资源管理器、笔记的通用设置共用表单，检查目录选择、保存反馈、口令清空、配置持久化，以及普通共享访客无法调用管理接口。
+
+手机笔记的滚动与键盘定位由 `node tests/mobile-notes-scroll-check.cjs` 覆盖：Markdown 输入区、富文本光标、可视窗口偏移、手动滑动不回弹、弹窗隔离和无 VisualViewport 的布局高度变化。可选 `TestMobileNotesBrowserAcceptance` 使用临时数据和长篇合成笔记提供浏览器检查入口（设置 `TOOLBOX_MOBILE_NOTES_QA` 为输出 JSON 文件路径）；桌面浏览器缩小可见区域的验证不能代替 iPhone 真机键盘测试。

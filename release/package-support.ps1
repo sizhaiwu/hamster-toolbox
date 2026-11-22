@@ -1,10 +1,10 @@
 # Packaging helpers are also exercised with disposable fixtures by tests/package-check.ps1.
 function Assert-ReleaseUIPrerequisites([string]$Repository) {
     if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command npm -ErrorAction SilentlyContinue)) {
-        throw 'Packaging requires Node.js 18+ and npm for UI checks. Recipients do not need Node.js.'
+        throw 'Packaging requires Node.js 20.19+ and npm for UI checks. Recipients do not need Node.js.'
     }
     $nodeVersion = & node --version
-    if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.' -or [int]$Matches[1] -lt 18) { throw 'Packaging requires Node.js 18 or newer.' }
+    if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.(\d+)\.' -or [int]$Matches[1] -lt 20 -or ([int]$Matches[1] -eq 20 -and [int]$Matches[2] -lt 19)) { throw 'Packaging requires Node.js 20.19 or newer.' }
     if (-not (Test-Path -LiteralPath (Join-Path $Repository 'node_modules\jsdom\package.json') -PathType Leaf)) {
         throw 'UI test dependencies are missing. Run npm ci --ignore-scripts before packaging.'
     }

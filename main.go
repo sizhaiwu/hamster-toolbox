@@ -54,6 +54,7 @@ type server struct {
 	updates        *releaseChecker
 	notesInitMu    sync.Mutex
 	notes          *notesMemory
+	notesDraftName string
 }
 
 func (s *server) line(m string) {
@@ -151,6 +152,23 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(w, map[string]bool{"OK": true})
+	case "/api/sharing-status", "/api/sharing-save", "/api/sharing-folders":
+		if s.browser == nil {
+			fail(w, fmt.Errorf("共享服务尚未就绪"))
+			return
+		}
+		switch r.URL.Path {
+		case "/api/sharing-status":
+			send(w, s.browser.status())
+		case "/api/sharing-save":
+			if err := s.browser.saveSharing(r); err != nil {
+				fail(w, err)
+				return
+			}
+			send(w, s.browser.status())
+		case "/api/sharing-folders":
+			s.browser.list(w, r, true)
+		}
 	case "/api/settings":
 		s.settingsMu.Lock()
 		p, e := s.loadPreferences()
@@ -553,50 +571,11 @@ func main() {
 	browser, e := newFileBrowser(*dataDir, s.token)
 	s.browser = browser
 	sharingErr := e
+	mux := s.httpHandler()
+	browser.workspace = newRemoteWorkspace(s, mux)
 	if sharingErr == nil {
 		sharingErr = browser.startSavedSharing()
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/files/", browser.local)
-	mux.HandleFunc("/notes/", s.notesPage)
-	mux.HandleFunc("/api/", s.guard(s.api))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
-		p := r.URL.Path
-		if p == "/" {
-			if r.URL.Query().Get("session") != s.token {
-				http.Error(w, "请使用程序启动时提供的链接", 403)
-				return
-			}
-			p = "/index.html"
-		}
-		brandType := brandContentType(strings.TrimPrefix(p, "/"))
-		if p != "/index.html" && p != "/app.js" && p != "/version-info.js" && p != "/task-feedback.js" && p != "/task-history.js" && p != "/general-settings.css" && p != "/style.css" && p != "/theme.css" && p != "/toolbox-layout.css" && brandType == "" {
-			http.NotFound(w, r)
-			return
-		}
-		if p == "/index.html" && r.URL.Query().Get("session") != s.token {
-			http.Error(w, "无效会话", 403)
-			return
-		}
-		b, e := assets.ReadFile("web" + p)
-		if e != nil {
-			http.NotFound(w, r)
-			return
-		}
-		if p == "/index.html" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		} else if strings.HasSuffix(p, ".js") {
-			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		} else if brandType != "" {
-			w.Header().Set("Content-Type", brandType)
-		} else {
-			w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		}
-		w.Write(b)
-	})
 	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if e != nil {
 		if *tray {

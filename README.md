@@ -12,6 +12,7 @@
 - **资源管理器**：多标签、快速访问、自然排序、图片缩放、视频时长、缩略图列表、大目录搜索、文件夹上传与续传、复制与跨盘移动、改名和删除。
 - **多种观看方式**：浏览器预览、悬停播放、多窗口悬浮查看；本机可用 mpv 独立窗口，优先硬件解码。
 - **共享与自动化**：多个目录或磁盘根目录共享，适配电脑、手机和平板；提供 CLI 和页面复制命令。去重可打开另行安装的 Video Duplicate Finder。
+- **完整远程工作台**：独立管理员登录，从手机使用工具箱、资源管理器和私密笔记。[开启方法](docs/remote-workspace.md)。
 
 [全部功能](docs/features.md) · [输入输出示例](docs/examples.md) · [文档目录](docs/README.md)
 
@@ -37,7 +38,7 @@ Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、P
 
 **笔记页面**：支持富文本和 Markdown 分栏、图片文件附件、全屏和侧栏折叠。
 
-![笔记页面与实时预览](docs/images/private-notes-desktop.png)
+![笔记页面与实时预览](docs/images/private-notes-desktop-current.jpg)
 
 **资源管理器**：支持文件预览、视频时长和多种观看方式。
 
@@ -49,7 +50,7 @@ Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、P
 
 ## 文档与开发
 
-文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。本版变化见 [v0.2.3 发布说明](docs/releases/0.2.3.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
+文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。本版变化见 [v0.2.4 发布说明](docs/releases/0.2.4.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
 
 - 使用：[CLI 入门](docs/cli.md) · [参数手册](docs/cli-reference.md) · [常见问题](docs/faq.md)
 - 维护：[开发](docs/development.md) · [测试](docs/testing.md) · [打包](docs/packaging.md) · [组件](docs/dependencies.md) · [安全](docs/safety.md)

@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const {setup,wait}=require('./explorer-check.cjs');
+(async()=>{
+ let saved;
+ const t=setup(true,{sharingHook:async({body})=>{saved=body;return{ok:true,json:async()=>({Enabled:body.Enabled,StartupEnabled:body.Enabled,Port:body.Port,WorkspaceEnabled:body.WorkspaceEnabled,WorkspaceHTTP:body.WorkspaceHTTP,WorkspacePasswordSet:true,Roots:body.Roots,URLs:['http://192.168.1.100:18788/']})}}});
+ await wait(()=>t.$('entries').children.length,'owner ready');t.$('openGeneralSettings').ownerDocument.defaultView.toolboxNetworkSettings.open();await wait(()=>!t.$('shareSave').disabled,'sharing settings');
+ assert.equal(t.$('workspaceEnabled').checked,false);assert.equal(t.$('workspaceHTTP').checked,false);
+ t.$('workspaceEnabled').checked=true;t.$('workspaceHTTP').checked=true;t.$('workspacePassword').value='synthetic-admin-only';t.$('workspaceShowPassword').click();assert.equal(t.$('workspacePassword').dataset.hidden,'false');t.$('shareSave').click();await wait(()=>saved&&t.$('workspacePassword').value==='','administrator configuration saved');
+ assert.equal(saved.WorkspaceEnabled,true);assert.equal(saved.WorkspaceHTTP,true);assert.equal(saved.WorkspacePassword,'synthetic-admin-only');assert(t.$('workspaceEnabled').checked);assert(t.$('workspacePasswordState').textContent.includes('已设置'));assert(t.$('shareURLs').querySelector('a[href="http://192.168.1.100:18788/admin/"]'));assert.equal(t.errors.length,0);t.dom.window.close();
+ const dom=new JSDOM(fs.readFileSync('web/remote-login.html','utf8'),{url:'http://localhost/admin/',runScripts:'outside-only'}),w=dom.window,d=w.document;let attempts=0,release;
+ w.fetch=async(url,options)=>{attempts++;assert.equal(url,'/admin/login');assert.equal(options.headers['X-Hamster-Browser'],'1');assert.equal(JSON.parse(options.body).Password,'wrong-test-password');return new Promise(resolve=>{release=()=>resolve({ok:false,status:401,text:async()=> '管理员口令不正确'})})};
+ w.eval(fs.readFileSync('web/remote-login.js','utf8'));d.getElementById('adminPassword').value='wrong-test-password';d.getElementById('adminShow').click();assert.equal(d.getElementById('adminPassword').dataset.hidden,'false');d.getElementById('adminPassword').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await wait(()=>release,'login submitted');d.getElementById('adminLogin').click();assert.equal(attempts,1);release();await wait(()=>d.getElementById('adminError').textContent.includes('口令不正确')&&!d.getElementById('adminLogin').disabled,'bad admin password shown');assert.equal(d.getElementById('adminPassword').value,'wrong-test-password');dom.window.close();
+ console.log('PASS: explicit administrator/HTTP opt-in, independent password, hidden value reset, saved access link, login eye/Enter/pending guard and retry feedback');
+})().catch(error=>{console.error(error);process.exit(1)});

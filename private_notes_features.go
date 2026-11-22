@@ -177,9 +177,9 @@ func (s *server) notesFastAction(w http.ResponseWriter, r *http.Request, m *note
 				fail(w, errors.New("加密草稿无效或过大"))
 				return true
 			}
-			e = writeNotesFile(dir, "draft.json", req.Draft)
+			e = writeNotesFile(dir, s.notesDraftFile(), req.Draft)
 		} else if action == "draft-clear" {
-			e = dir.Remove("draft.json")
+			e = dir.Remove(s.notesDraftFile())
 			if os.IsNotExist(e) {
 				e = nil
 			}
@@ -190,9 +190,9 @@ func (s *server) notesFastAction(w http.ResponseWriter, r *http.Request, m *note
 		}
 		if action == "draft-get" {
 			var draft json.RawMessage
-			st, err := dir.Lstat("draft.json")
+			st, err := dir.Lstat(s.notesDraftFile())
 			if err == nil && st.Mode().IsRegular() && st.Size() <= 3<<20 {
-				b, err := dir.ReadFile("draft.json")
+				b, err := dir.ReadFile(s.notesDraftFile())
 				if err == nil && validEncryptedNotesDraft(b) {
 					draft = b
 				}

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
-const html = fs.readFileSync('web/index.html', 'utf8'), script = fs.readFileSync('web/app.js', 'utf8');
+const html = fs.readFileSync('web/index.html', 'utf8').replace('</body>',fs.readFileSync('web/shared-settings.html','utf8')+'</body>'), script = fs.readFileSync('web/app.js', 'utf8');
 const defaults = { Tool: '', Root: '', Output: '', Recursive: true, Files: true, Dirs: true, Find: '', Replace: '', Regex: false, Prefix: '', Suffix: '', Quality: 60, CRF: 23, MinMB: 100, MinKbps: 1000, FFmpeg: 'C:/ffmpeg/ffmpeg.exe', FFprobe: 'C:/ffmpeg/ffprobe.exe', Magick: 'C:/magick/magick.exe', Exiftool: '', Font: 'C:/Windows/Fonts/msyh.ttc', NumberName:'',StartNumber:1,NumberDigits:3,NumberStyle:'dash',NumberOrder:'name',NumberFilter:'',NumberKeepOriginal:true };
 Object.assign(defaults,{SevenZip:'C:/tools/sevenzip/7za.exe',ArchiveMode:'pure',ArchiveSplit:'script',ArchiveVolume:'3g',ArchiveFirstVolume:'10k',ArchiveDirPrefix:'D_',ArchiveFilePrefix:'F_',ArchiveStart:1,ArchiveDigits:3,ArchiveLevel:0,ArchivePassword:'',ArchiveExtras:'',ArchiveMarker:false});
 Object.assign(defaults,{ThumbnailColumns:5,ThumbnailRows:5,ThumbnailWidth:1024,ThumbnailGap:5,ThumbnailQuality:90,ThumbnailFormat:'jpg',ThumbnailBackground:'#ffffff',ThumbnailInfo:true,ThumbnailTime:true});
@@ -50,6 +50,8 @@ function createUI(port, supportsMask = true, width=1024, prepare=()=>{}) {
     else if(path==='browse'){if(browseHook){const response=await browseHook(body);if(response)return response;}value={Path:body.Path||'',Parent:'',Dirs:[],Files:[]};}
     else if(path==='info') value={Name:'仓鼠工具箱',Version:'0.1.0'};
     else if(path==='version-update') value={Current:'0.1.0',Latest:'v0.2.1',State:'available',Available:true,Message:'发现新版',URL:'https://github.com/sizhaiwu/hamster-toolbox/releases/tag/v0.2.1'};
+    else if(path==='sharing-status'||path==='sharing-save')value={Enabled:false,Port:18788,PasswordSet:true,WorkspacePasswordSet:true,Roots:[],URLs:[]};
+    else if(path==='sharing-folders')value={Path:'',Entries:[{Name:'Demo',Path:'E:/demo',Dir:true}],Total:1};
     else if(path==='settings') value=storage;
     else if(path==='ui-settings') {Object.assign(storage,body);value=storage;}
     else if(path==='number-info') value={Name:'Sample作者',Style:body.NumberStyle==='custom'?'custom':'dash',MaxNumber:98,NextNumber:99,Digits:3,Existing:98,Pending:100};
@@ -77,7 +79,7 @@ function createUI(port, supportsMask = true, width=1024, prepare=()=>{}) {
   };
   prepare(w);
   w.eval(fs.readFileSync('web/version-info.js','utf8'));
-  w.eval(fs.readFileSync('web/task-feedback.js','utf8'));
+  w.eval(fs.readFileSync('web/network-settings.js','utf8'));w.eval(fs.readFileSync('web/task-feedback.js','utf8'));
   w.eval(fs.readFileSync('web/task-history.js','utf8'));
   w.eval(script);return dom;
 }

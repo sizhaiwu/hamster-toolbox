@@ -8,9 +8,9 @@ function pointer(t,node,type,x,y){const e=new t.w.Event(type);for(const [key,val
 (async()=>{
  const t=setup(true,{extraEntries:clips});await ready(t);
  const image=open(t,1,'悬浮查看');assert.equal(image.getAttribute('aria-modal'),'false');assert.equal(image.querySelector('img').alt,'演示.jpg');assert(!t.$('viewer').open,'floating preview does not block the browser');
- const first=open(t,4,'悬浮播放'),second=open(t,5,'悬浮播放'),a=first.querySelector('video'),b=second.querySelector('video');assert.equal(t.d.querySelectorAll('.floating-window').length,3);assert(a.controls&&b.controls&&a.muted&&b.muted);
+ const first=open(t,4,'悬浮播放'),second=open(t,5,'悬浮播放'),a=first.querySelector('video'),b=second.querySelector('video');assert.equal(t.d.querySelectorAll('.floating-window').length,3);assert(a.controls&&b.controls&&!a.muted&&!b.muted);
  assert.equal(first.querySelector('.floating-footer'),null,'native controls do not need a second bottom console');assert.equal(first.querySelector('.floating-options').open,false,'extra options are collapsed initially');assert(first.querySelector('.floating-options-panel .compat-seek'),'full-video seek stays available in the title menu');assert.equal(first.querySelector('.floating-body .compat-actions'),null);
- a.currentTime=23;b.currentTime=47;a.volume=0.6;a.muted=false;a.dispatchEvent(new t.w.Event('volumechange'));assert.equal(a.volume,0.6);assert(!a.muted);assert(b.muted);assert.equal(b.currentTime,47,'independent native progress and volume');
+ a.currentTime=23;b.currentTime=47;b.muted=true;a.volume=0.6;a.muted=false;a.dispatchEvent(new t.w.Event('volumechange'));assert.equal(a.volume,0.6);assert(!a.muted);assert(b.muted);assert.equal(b.currentTime,47,'independent native progress and volume');
  a.playbackRate=1.5;a.dispatchEvent(new t.w.Event('ratechange'));assert.equal(a.playbackRate,1.5);assert.equal(b.playbackRate,1);
  clickText(first,'兼容播放');await wait(()=>a.src.includes('media-play'),'independent compatible playback');assert.equal(new URL(a.src).searchParams.get('start'),'23.000');assert.equal(new URL(b.src).pathname,'/files/raw');
  const pin=clickText(first,'置顶');second.dispatchEvent(new t.w.Event('focusin'));assert(Number(first.style.zIndex)>Number(second.style.zIndex),'pinned media stays above ordinary windows');assert.equal(pin.getAttribute('aria-pressed'),'true');

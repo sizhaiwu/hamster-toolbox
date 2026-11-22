@@ -23,7 +23,7 @@ import (
 	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
 )
 
-type nativePlayerConfig struct{ Program string }
+type nativePlayerConfig struct{ Program, WindowSize string }
 type nativePlaybackView struct {
 	ID, Name, Kind, Decoder, Codec  string
 	Connected, Paused, Muted, OnTop bool
@@ -38,22 +38,25 @@ type nativePlayback struct {
 	endpoint, tempDir string
 }
 type nativePlayerManager struct {
-	mu                          sync.Mutex
-	configuration               sync.Mutex
-	program, dataDir, lastError string
-	sessions                    map[string]*nativePlayback
+	mu                                      sync.Mutex
+	configuration                           sync.Mutex
+	program, dataDir, lastError, windowSize string
+	sessions                                map[string]*nativePlayback
 }
 
 func (b *fileBrowser) nativePlayer() *nativePlayerManager {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.native == nil {
-		b.native = &nativePlayerManager{dataDir: b.dataDir, sessions: map[string]*nativePlayback{}}
+		b.native = &nativePlayerManager{dataDir: b.dataDir, windowSize: "compact", sessions: map[string]*nativePlayback{}}
 		data, err := os.ReadFile(filepath.Join(b.dataDir, "native-player.json"))
 		if err == nil {
 			var c nativePlayerConfig
 			if json.Unmarshal(data, &c) == nil {
 				b.native.program = c.Program
+				if c.WindowSize == "medium" || c.WindowSize == "large" {
+					b.native.windowSize = c.WindowSize
+				}
 			}
 		}
 	}
@@ -87,7 +90,7 @@ func resolveNativePlayer(configured string) string {
 }
 func (m *nativePlayerManager) status() map[string]any {
 	m.mu.Lock()
-	program, lastError := m.program, m.lastError
+	program, lastError, windowSize := m.program, m.lastError, m.windowSize
 	sessions := make([]*nativePlayback, 0, len(m.sessions))
 	for _, session := range m.sessions {
 		sessions = append(sessions, session)
@@ -106,7 +109,7 @@ func (m *nativePlayerManager) status() map[string]any {
 		return views[i].Name < views[j].Name
 	})
 	resolved := resolveNativePlayer(program)
-	return map[string]any{"Available": resolved != "", "Program": resolved, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
+	return map[string]any{"Available": resolved != "", "Program": resolved, "WindowSize": windowSize, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
 }
 func (m *nativePlayerManager) configure(program string) error {
 	m.configuration.Lock()
@@ -127,16 +130,39 @@ func (m *nativePlayerManager) configure(program string) error {
 			return errors.New("请选择 mpv 程序文件，当前程序未通过版本检查")
 		}
 	}
-	if err := os.MkdirAll(m.dataDir, 0700); err != nil {
-		return err
-	}
 	stored := program
 	exe, _ := os.Executable()
 	base := filepath.Dir(exe)
 	if relative, e := filepath.Rel(base, program); program != "" && e == nil && strings.HasPrefix(filepath.ToSlash(relative), "tools/") {
 		stored = filepath.ToSlash(relative)
 	}
-	data, _ := json.MarshalIndent(nativePlayerConfig{Program: stored}, "", "  ")
+	m.mu.Lock()
+	windowSize := m.windowSize
+	m.mu.Unlock()
+	return m.saveConfiguration(stored, windowSize)
+}
+
+func (m *nativePlayerManager) setWindowSize(size string) error {
+	if size != "compact" && size != "medium" && size != "large" {
+		return errors.New("请选择紧凑、中等或较大的初始窗口")
+	}
+	m.configuration.Lock()
+	defer m.configuration.Unlock()
+	m.mu.Lock()
+	program := m.program
+	m.mu.Unlock()
+	return m.saveConfiguration(program, size)
+}
+
+// Called under configuration, so changing size and program cannot lose each other's updates.
+func (m *nativePlayerManager) saveConfiguration(program, size string) error {
+	if size == "" {
+		size = "compact"
+	}
+	if err := os.MkdirAll(m.dataDir, 0700); err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(nativePlayerConfig{Program: program, WindowSize: size}, "", "  ")
 	tmp, e := os.CreateTemp(m.dataDir, ".native-player-*.tmp")
 	if e != nil {
 		return e
@@ -153,7 +179,8 @@ func (m *nativePlayerManager) configure(program string) error {
 		return e
 	}
 	m.mu.Lock()
-	m.program = stored
+	m.program = program
+	m.windowSize = size
 	m.lastError = ""
 	m.mu.Unlock()
 	return nil
@@ -175,8 +202,14 @@ func (b *nativePlayerBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 func (b *nativePlayerBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.data) }
-func nativePlayerArgs(file, endpoint string, index int) []string {
-	args := []string{"--no-config", "--load-scripts=no", "--ytdl=no", "--input-terminal=no", "--terminal=no", "--hwdec=auto", "--vo=gpu-next", "--ontop=yes", "--border=no", "--keep-open=yes", "--keepaspect-window=no", "--auto-window-resize=no", "--autofit=75%x80%", "--window-dragging=yes", "--osc=yes", "--osd-font-size=28", "--osd-scale-by-window=no", "--script-opts=osc-windowcontrols=yes,osc-visibility=auto,osc-scalewindowed=1.4,osc-scalefullscreen=1.25,osc-vidscale=no,osc-deadzonesize=0", "--mute=no", "--input-media-keys=no", "--sub-auto=no", "--audio-file-auto=no", "--title=仓鼠播放器 · ${filename}", "--input-ipc-server=" + endpoint}
+func nativePlayerArgs(file, endpoint string, index int, size string) []string {
+	fit := "800x600"
+	if size == "medium" {
+		fit = "1100x825"
+	} else if size == "large" {
+		fit = "75%x80%"
+	}
+	args := []string{"--no-config", "--load-scripts=no", "--ytdl=no", "--input-terminal=no", "--terminal=no", "--hwdec=auto", "--vo=gpu-next", "--ontop=yes", "--border=no", "--keep-open=yes", "--keepaspect-window=no", "--auto-window-resize=no", "--autofit=" + fit, "--autofit-larger=90%x90%", "--window-dragging=yes", "--osc=yes", "--osd-font-size=28", "--osd-scale-by-window=no", "--script-opts=osc-windowcontrols=yes,osc-visibility=auto,osc-scalewindowed=1.4,osc-scalefullscreen=1.25,osc-vidscale=no,osc-deadzonesize=0", "--mute=no", "--input-media-keys=no", "--sub-auto=no", "--audio-file-auto=no", "--title=仓鼠播放器 · ${filename}", "--input-ipc-server=" + endpoint}
 	if browserKind(file) == "image" {
 		args = append(args, "--image-display-duration=inf")
 	}
@@ -189,6 +222,7 @@ func nativePlayerArgs(file, endpoint string, index int) []string {
 func (m *nativePlayerManager) open(file string) error {
 	m.mu.Lock()
 	program := resolveNativePlayer(m.program)
+	windowSize := m.windowSize
 	index := len(m.sessions)
 	m.mu.Unlock()
 	if program == "" {
@@ -199,7 +233,7 @@ func (m *nativePlayerManager) open(file string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(program, nativePlayerArgs(file, endpoint, index)...)
+	cmd := exec.Command(program, nativePlayerArgs(file, endpoint, index, windowSize)...)
 	prepareNativePlayerCommand(cmd)
 	diagnostics := &nativePlayerBuffer{}
 	cmd.Stderr = diagnostics
@@ -325,8 +359,8 @@ func (s *nativePlayback) monitor(parent context.Context) {
 }
 func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Action, ID, Path, Version, Program string
-		Value                              float64
+		Action, ID, Path, Version, Program, WindowSize string
+		Value                                          float64
 	}
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
@@ -340,6 +374,8 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 	case "status":
 	case "configure":
 		err = m.configure(req.Program)
+	case "window-size":
+		err = m.setWindowSize(req.WindowSize)
 	case "open":
 		kind := browserKind(req.Path)
 		if !filepath.IsAbs(req.Path) || strings.ContainsFunc(req.Path, unicode.IsControl) || (kind != "video" && kind != "image") {

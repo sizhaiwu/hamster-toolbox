@@ -1,6 +1,6 @@
 'use strict';
 
-let imageViewer=null,sharePickerState={path:'',parent:'',offset:0,total:0,selected:new Set(),revision:0};
+let imageViewer=null;
 let filmstripRows=null,filmstripKind='',filmstripRoot='',filmstripCollapsed=false,filmstripItems=[];
 let videoPlayback=null;
 let videoHover=null,hoverLifecycleInstalled=false,hoverPreviewEnabled=true,lastHoverTouch=0;
@@ -230,20 +230,6 @@ function installImageViewer(img){
 function handleImageKey(e){if(imageViewer?.key(e)){e.preventDefault();return true}return false}
 
 function sameBrowserPath(a,b){const normalize=p=>p.replace(/[\\/]+$/,'')||'/';return separator()==='\\'?normalize(a).toLowerCase()===normalize(b).toLowerCase():normalize(a)===normalize(b)}
-function addSharedPaths(paths){
-  const fresh=[];for(const p of paths){if(!p||shareRoots.some(item=>sameBrowserPath(item.Path,p))||fresh.some(other=>sameBrowserPath(other,p)))continue;fresh.push(p)}
-  if(shareRoots.length+fresh.length>shareLimit)throw Error('最多共享'+shareLimit+'个目录，请减少本次选择');
-  for(const p of fresh)shareRoots.push({Name:p.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||p,Path:p,Writable:false});
-  drawShareRoots();return fresh.length;
-}
-async function browseSharePicker(next,page=0){
-  const id=++sharePickerState.revision;$('sharePickerError').textContent='正在读取目录…';$('sharePickerCurrent').disabled=true;
-  try{const data=await api('list',{Path:next,Sort:'name',Offset:page,DirectoriesOnly:true},'');if(id!==sharePickerState.revision||!$('sharePicker').open)return;Object.assign(sharePickerState,{path:data.Path,parent:data.Parent,offset:data.Offset||0,total:data.Total||0});$('sharePickerPath').value=data.Path;$('sharePickerEntries').replaceChildren();
-    for(const item of data.Entries||[]){if(!item.Dir)continue;const row=document.createElement('div');row.className='picker-folder';const check=document.createElement('input');check.type='checkbox';check.checked=sharePickerState.selected.has(item.Path);check.setAttribute('aria-label','选择共享目录 '+item.Name);check.onchange=()=>{if(check.checked)sharePickerState.selected.add(item.Path);else sharePickerState.selected.delete(item.Path);updateSharePickerSelection()};row.append(check,button('📁 '+item.Name,()=>browseSharePicker(item.Path)));$('sharePickerEntries').append(row)}
-    $('sharePickerCurrent').disabled=!data.Path;$('sharePickerPrevious').disabled=!sharePickerState.offset;$('sharePickerNext').disabled=sharePickerState.offset+200>=sharePickerState.total;$('sharePickerPage').textContent=(Math.floor(sharePickerState.offset/200)+1)+' / '+Math.max(1,Math.ceil(sharePickerState.total/200));$('sharePickerError').textContent=data.Truncated?'目录过大，仅展示前20000项，可输入具体子目录路径。':'';updateSharePickerSelection();
-  }catch(e){if(id===sharePickerState.revision)$('sharePickerError').textContent=e.message}
-}
-function updateSharePickerSelection(){$('sharePickerSelected').disabled=!sharePickerState.selected.size;$('sharePickerSelected').textContent='添加所选目录（'+sharePickerState.selected.size+'）'}
 function initializeMediaTools(){
   initializeNativePlayer();
   updateHoverPreviewControl();$('hoverPreview').onclick=async()=>{stopVideoHover();const previous=hoverPreviewEnabled;hoverPreviewEnabled=!previous;updateHoverPreviewControl();cacheExplorerView();const saved=await savePreferences({hoverPreview:hoverPreviewEnabled});if(!saved){hoverPreviewEnabled=previous;updateHoverPreviewControl();cacheExplorerView()}};
@@ -252,11 +238,5 @@ function initializeMediaTools(){
   $('toggleFilmstrip').onclick=()=>{filmstripCollapsed=!filmstripCollapsed;updateViewerFilmstrip()};
   $('viewerThumbnails').onwheel=event=>{const rail=$('viewerThumbnails');if(event.ctrlKey||event.metaKey||Math.abs(event.deltaX)>=Math.abs(event.deltaY))return;const factor=event.deltaMode===1?32:event.deltaMode===2?rail.clientWidth:1;const next=Math.max(0,Math.min(rail.scrollWidth-rail.clientWidth,rail.scrollLeft+event.deltaY*factor));if(next!==rail.scrollLeft){event.preventDefault();rail.scrollLeft=next}};
   $('mediaFullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if($('viewerSurface').requestFullscreen)await $('viewerSurface').requestFullscreen();else{const video=$('viewerBody').querySelector('video');if(video?.webkitEnterFullscreen)video.webkitEnterFullscreen();else $('viewerHint').textContent='当前浏览器不支持全屏，可横屏查看'}}catch{$('viewerHint').textContent='当前设备未允许全屏'}};
-  $('shareBrowse').onclick=()=>{sharePickerState.selected.clear();$('sharePicker').showModal();updateSharePickerSelection();browseSharePicker($('shareAddPath').value.trim()||'')};
-  $('sharePickerHome').onclick=()=>browseSharePicker('');$('sharePickerUp').onclick=()=>browseSharePicker(sharePickerState.parent);$('sharePickerGo').onclick=()=>browseSharePicker($('sharePickerPath').value.trim());$('sharePickerPath').onkeydown=e=>{if(e.key==='Enter')$('sharePickerGo').click()};
-  $('sharePickerPath').oninput=()=>{sharePickerState.revision++;$('sharePickerCurrent').disabled=true;$('sharePickerError').textContent='请点击前往或按 Enter，确认共享目录。'};
-  $('sharePickerPrevious').onclick=()=>browseSharePicker(sharePickerState.path,Math.max(0,sharePickerState.offset-200));$('sharePickerNext').onclick=()=>browseSharePicker(sharePickerState.path,sharePickerState.offset+200);
-  const choose=paths=>{try{addSharedPaths(paths);$('shareAddPath').value='';$('sharePicker').close()}catch(e){$('sharePickerError').textContent=e.message}};
-  $('sharePickerCurrent').onclick=()=>choose([sharePickerState.path]);$('sharePickerSelected').onclick=()=>choose([...sharePickerState.selected]);$('sharePickerCancel').onclick=()=>$('sharePicker').close();
-  $('shareAdd').onclick=()=>{try{const p=$('shareAddPath').value.trim();if(!p)return;const added=addSharedPaths([p]);$('shareError').textContent=added?'':'这个目录已经添加，请直接修改列表中的设置';if(added)$('shareAddPath').value=''}catch(e){$('shareError').textContent=e.message}};
+
 }

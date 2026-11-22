@@ -16,6 +16,7 @@
 | 检查失败、中断后继续处理 | [任务历史与定向重扫](task-history.md) |
 | 加密保存富文本、Markdown、图片与文件 | [私密笔记](private-notes.md) |
 | 浏览磁盘、操作文件、共享目录 | [资源管理器](file-browser.md) |
+| 手机使用整个工具箱和编辑笔记 | [完整远程工作台](remote-workspace.md) |
 | 看图、视频、悬浮窗口与 mpv | [媒体预览](media-preview.md) |
 | 选择视频压缩模式与加速方式 | [视频压缩](video-compression.md) |
 | 手机在外访问 | [xEdge / ZeroTier 新手教程](remote-access-quickstart.md) · [通用组网与 HTTPS 代理](remote-access.md) |
@@ -34,8 +35,8 @@
 | Windows、Linux 与 macOS 差异 | [平台支持](platforms.md) |
 | 完整包、更新包和 GitHub 发布 | [打包说明](packaging.md) |
 | 发布前检查与验收边界 | [发布检查](release-readiness.md) |
-| 本版面向用户的更新说明 | [v0.2.3 发布说明](releases/0.2.3.md) |
-| 历史正式版说明 | [v0.2.2](releases/0.2.2.md) |
+| 本版面向用户的更新说明 | [v0.2.4 发布说明](releases/0.2.4.md) |
+| 历史正式版说明 | [v0.2.3](releases/0.2.3.md) · [v0.2.2](releases/0.2.2.md) |
 | 当前实现及验证边界 | [实现边界](optimization-review.md) |
 | Logo 源图、提示词与图标生成 | [品牌素材](brand/README.md) |
 

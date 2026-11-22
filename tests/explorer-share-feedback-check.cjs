@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const {setup,wait}=require('./explorer-check.cjs');
-const open=async t=>{await wait(()=>t.$('entries').children.length,'boot');t.$('sharing').click();await wait(()=>t.$('sharingDialog').open&&!t.$('shareSave').disabled,'sharing settings')};
+const open=async t=>{await wait(()=>t.$('entries').children.length,'boot');t.$('openGeneralSettings').ownerDocument.defaultView.toolboxNetworkSettings.open();await wait(()=>t.$('sharingDialog').open&&!t.$('shareSave').disabled,'sharing settings')};
 const save=async t=>{t.$('shareSave').click();await wait(()=>t.$('shareResultDialog').open&&!t.$('shareSave').disabled,'save feedback')};
 (async()=>{
  const t=setup(true);await open(t);await save(t);assert.equal(t.$('shareResultTitle').textContent,'保存成功');assert(t.$('shareResultMessage').textContent.includes('已关闭'));assert.equal(t.$('shareResultDialog').getAttribute('role'),'alertdialog');t.$('shareResultClose').click();assert(!t.$('shareResultDialog').open);assert(t.$('sharingDialog').open,'acknowledging retains settings');

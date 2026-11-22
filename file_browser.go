@@ -37,7 +37,7 @@ func securityBrowserHeaders(w http.ResponseWriter) {
 // This includes only embedded UI assets, never configuration or file APIs.
 func browserStaticAsset(path string) bool {
 	switch path {
-	case "", "explorer.html", "version-info.js", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
+	case "", "explorer.html", "version-info.js", "network-settings.js", "network-settings.css", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
 		return true
 	}
 	return brandContentType(path) != ""
@@ -64,6 +64,15 @@ func (b *fileBrowser) static(w http.ResponseWriter, r *http.Request, path string
 		contentType = mime.TypeByExtension(filepath.Ext(path))
 	}
 	w.Header().Set("Content-Type", contentType)
+	if path == "explorer.html" {
+		data = sharedSettingsHTML(data)
+		b.mu.Lock()
+		enabled := b.config.WorkspaceEnabled
+		b.mu.Unlock()
+		if enabled {
+			data = bytes.Replace(data, []byte(`<button id="login"`), []byte(`<a class="login-nav-link" href="/admin/"><span>管理员工作台</span><span aria-hidden="true">→</span></a><button id="login"`), 1)
+		}
+	}
 	if r.Method != "HEAD" {
 		w.Write(data)
 	}

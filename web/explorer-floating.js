@@ -74,9 +74,14 @@ function installFloatingImage(win,body){
   img.onerror=()=>{if(win.closed)return;if(!img.dataset.compatible){img.dataset.compatible='1';img.src=endpoint('image-preview',{path:win.item.Path},win.root);return}img.remove();const message=document.createElement('p');message.className='floating-error';message.textContent='此图片无法预览，可下载原文件查看。';stage.append(message)};
 }
 function installFloatingVideo(win,body){
-  const wrap=document.createElement('div');wrap.className='floating-video-wrap';const media=document.createElement('video');win.media=media;media.controls=true;media.muted=media.defaultMuted=true;media.setAttribute('playsinline','');media.preload='metadata';media.src=endpoint('raw',{path:win.item.Path},win.root);
-  const help=document.createElement('p');help.className='floating-video-help';help.textContent='静音启动；每个窗口可单独调进度和声音。';wrap.append(media,help);body.append(wrap);
-  win.dispose=createVideoPlayback(media,wrap,help,win.item,win.root,()=>!win.closed).dispose;
+  const wrap=document.createElement('div');wrap.className='floating-video-wrap';const media=document.createElement('video');win.media=media;media.controls=true;media.muted=media.defaultMuted=Boolean(window.toolboxSettings?.BrowserMuted);media.setAttribute('playsinline','');media.preload='metadata';media.src=endpoint('raw',{path:win.item.Path},win.root);
+  const help=document.createElement('p');help.className='floating-video-help';help.textContent='每个窗口可单独调节进度和声音。';wrap.append(media,help);body.append(wrap);
+  const playback=createVideoPlayback(media,wrap,help,win.item,win.root,()=>!win.closed);
+  const sound=button('开启声音',()=>{if(win.closed)return;media.muted=media.defaultMuted=false;media.removeAttribute('muted');if(media.volume===0)media.volume=1;playback.play();syncSound()},'floating-enable-sound');
+  sound.setAttribute('aria-label','开启此悬浮视频的声音');sound.title='仅开启当前视频的声音，其他窗口不受影响';body.append(sound);
+  function syncSound(){if(!win.closed){sound.hidden=!media.muted&&media.volume!==0;if(!media.muted&&media.defaultMuted)media.defaultMuted=false;}}
+  media.addEventListener('volumechange',syncSound);syncSound();
+  win.dispose=()=>{media.removeEventListener('volumechange',syncSound);playback.dispose()};
   // Native video controls handle sound, time and speed. Extra compatibility tools stay in the title menu.
   const options=document.createElement('details');options.className='floating-options';const summary=document.createElement('summary');summary.textContent='···';summary.title='播放选项；兼容播放时可在这里调整全片进度';summary.setAttribute('aria-label','悬浮视频播放选项');const panel=document.createElement('div');panel.className='floating-options-panel';options.append(summary,panel);win.header.insertBefore(options,win.header.children[1]);
   panel.append(wrap.querySelector('.compat-actions'),wrap.querySelector('.compat-seek'),help);
@@ -84,7 +89,7 @@ function installFloatingVideo(win,body){
   if(document.pictureInPictureEnabled&&typeof media.requestPictureInPicture==='function'){
     const pip=button('系统画中画',async()=>{try{if(document.pictureInPictureElement===media)await document.exitPictureInPicture();else await media.requestPictureInPicture();options.open=false}catch{help.textContent='当前浏览器未允许系统画中画，可继续使用页面内悬浮窗口。'}});pip.className='floating-pip';pip.title='系统画中画，可显示在其他软件上方；数量受浏览器限制';panel.append(pip);
   }
-  const playing=media.play();playing?.catch?.(()=>{if(!win.closed)help.textContent='点击播放器开始；可单独调节进度和声音。'});
+  playback.play();
 }
 function openFloatingMedia(item,itemRoot=root){
   if(!item||item.Dir||!['image','video'].includes(item.Kind))return;

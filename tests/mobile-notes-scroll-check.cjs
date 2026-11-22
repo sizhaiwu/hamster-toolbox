@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict');
+const {setup,unlock,wait}=require('./private-notes-check.cjs');
+(async()=>{
+ const t=setup(true,{width:390,viewport:{height:844,scale:1,offsetTop:20}}),w=t.w,d=t.d,$=t.$;
+ Object.defineProperty(w,'innerHeight',{value:844,writable:true,configurable:true});await unlock(t);
+ let scroll=0,calls=0;w.scrollBy=({top})=>{scroll+=top;calls++};
+ $('markdown').getBoundingClientRect=()=>({top:500-scroll,bottom:700-scroll,height:200});
+ $('markdown').focus();w.visualViewport.height=420;w.visualViewport.dispatchEvent(new w.Event('resize'));
+ await wait(()=>calls===1,'textarea moves above keyboard');assert.equal(scroll,276,'visual viewport offset and margin count toward available space');
+ await new Promise(r=>setTimeout(r,120));assert.equal(calls,1,'caret reveal must settle without a scrolling loop');
+ scroll=100;w.visualViewport.dispatchEvent(new w.Event('scroll'));await new Promise(r=>setTimeout(r,120));assert.equal(calls,1,'manual page panning must not snap back to the editor');
+ $('markdown').dispatchEvent(new w.Event('input',{bubbles:true}));await wait(()=>calls===2,'typing restores editor visibility');
+ const rich=d.createElement('div');rich.contentEditable='true';rich.setAttribute('contenteditable','true');rich.tabIndex=0;const text=d.createTextNode('synthetic note');rich.append(text);$('richEditor').append(rich);$('richEditor').hidden=false;
+ scroll=0;calls=0;$('richEditor').scrollTop=0;$('richEditor').getBoundingClientRect=()=>({top:500-scroll,bottom:700-scroll,height:200});rich.getBoundingClientRect=()=>({top:500-scroll,bottom:900-scroll,height:400});
+ const caret=()=>({top:790-scroll-$('richEditor').scrollTop,bottom:810-scroll-$('richEditor').scrollTop,height:20});w.getSelection=()=>({rangeCount:1,anchorNode:text,getRangeAt:()=>({getBoundingClientRect:caret})});rich.focus();rich.dispatchEvent(new w.Event('input',{bubbles:true}));
+ await wait(()=>calls===1,'rich text caret moves above keyboard');assert.equal($('richEditor').scrollTop,118,'scroll rich pane before page');assert.equal(caret().bottom,424,'caret is above viewport keyboard edge');
+ $('notesSecurityDialog').showModal();scroll=0;const count=calls;rich.dispatchEvent(new w.Event('input',{bubbles:true}));await new Promise(r=>setTimeout(r,120));assert.equal(calls,count,'a modal must not scroll the background editor');$('notesSecurityDialog').close();
+ w.visualViewport.height=844;w.visualViewport.dispatchEvent(new w.Event('resize'));assert(!d.body.classList.contains('notes-keyboard-open'));assert.equal(t.errors.length,0,t.errors.join('\n'));t.dom.window.close();
+ const android=setup(true,{width:390});Object.defineProperty(android.w,'innerHeight',{value:844,writable:true,configurable:true});await unlock(android);android.$('markdown').focus();android.w.dispatchEvent(new android.w.Event('resize'));android.w.innerHeight=420;android.w.dispatchEvent(new android.w.Event('resize'));assert(android.d.body.classList.contains('notes-keyboard-open'),'handle Android layout viewport shrinking without VisualViewport');android.w.innerHeight=844;android.w.dispatchEvent(new android.w.Event('resize'));assert(!android.d.body.classList.contains('notes-keyboard-open'));android.dom.window.close();
+ console.log('PASS: textarea/rich-text visibility above keyboard, viewport offset, stable scrolling, free panning, modal isolation and Android fallback');
+})().catch(error=>{console.error(error);process.exit(1)});

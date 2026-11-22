@@ -130,8 +130,9 @@
     catch(error){startupBusy=false;if(revision===startupRevision&&el('generalSettingsDialog').open){el('AutoStartEnabled').checked=startupEnabled;el('AutoStartEnabled').disabled=false;el('autostartStatus').textContent='保存失败：'+error.message}}
     finally{startupBusy=false;if(revision!==startupRevision&&el('generalSettingsDialog').open&&el('generalTabStartup').getAttribute('aria-selected')==='true')refreshStartup()}
   };
-  const generalTabs=[['generalTabPlayback','generalPlayback'],['generalTabAppearance','generalAppearance'],['generalTabTask','generalTask'],['generalTabStartup','generalStartup']];
-  const selectGeneralTab=index=>{generalTabs.forEach(([button,panel],i)=>{el(button).setAttribute('aria-selected',String(index===i));el(button).tabIndex=index===i?0:-1;el(panel).hidden=index!==i});if(index===3)refreshStartup()};
+  const generalTabs=[['generalTabPlayback','generalPlayback'],['generalTabAppearance','generalAppearance'],['generalTabTask','generalTask'],['generalTabNetwork','generalNetwork'],['generalTabStartup','generalStartup']];
+  const selectGeneralTab=index=>{generalTabs.forEach(([button,panel],i)=>{el(button).setAttribute('aria-selected',String(index===i));el(button).tabIndex=index===i?0:-1;el(panel).hidden=index!==i});if(generalTabs[index][1]==='generalStartup')refreshStartup()};
+  el('openNetworkSettings').onclick=async()=>{try{await window.toolboxNetworkSettings.open()}catch(error){el('generalSettingsStatus').textContent='打开共享设置失败：'+error.message}};
   generalTabs.forEach(([button],index)=>{el(button).onclick=()=>selectGeneralTab(index);el(button).onkeydown=event=>{let next;if(event.key==='ArrowRight')next=(index+1)%generalTabs.length;if(event.key==='ArrowLeft')next=(index+generalTabs.length-1)%generalTabs.length;if(event.key==='Home')next=0;if(event.key==='End')next=generalTabs.length-1;if(next!==undefined){event.preventDefault();selectGeneralTab(next);el(generalTabs[next][0]).focus()}}});
   el('openGeneralSettings').onclick = () => {
     el('generalSettingsStatus').textContent = '';
@@ -164,7 +165,7 @@
   el('clearThumbnailCache').onclick=async()=>{el('clearThumbnailCache').disabled=true;try{if(!generalAPI)throw Error('请从资源管理器打开设置后清理');await generalAPI('cache-clear');el('generalSettingsStatus').textContent='缩略图缓存已清空';}catch(e){el('generalSettingsStatus').textContent='清理失败：'+e.message}finally{el('clearThumbnailCache').disabled=false}};
   window.toolboxFeedback = {
     init(settings, persistSettings, toolLabel,requestAPI) {
-      if(requestAPI){generalAPI=requestAPI;refreshGeneralSettings=async()=>window.toolboxFeedback.init(await requestAPI('settings'),persistSettings,toolLabel,requestAPI);}
+      if(requestAPI){generalAPI=requestAPI;refreshGeneralSettings=async()=>window.toolboxFeedback.init(await requestAPI('settings'),persistSettings,toolLabel,requestAPI);window.toolboxNetworkSettings?.configure({read:()=>requestAPI('sharing-status'),save:body=>requestAPI('sharing-save',body),list:body=>requestAPI('sharing-folders',body)});}
       for(const key of Object.keys(prefs)){if(settings[key]!=null && settings[key]!=='' && settings[key]!==0 || settings[key]===false || key==='ThumbnailCacheMB'&&settings[key]===0)prefs[key]=settings[key];if(el(key).type==='checkbox')el(key).checked=prefs[key];else el(key).value=prefs[key];}applyGeneralStyle();
       save = persistSettings; label = toolLabel; initialized = true;
     },

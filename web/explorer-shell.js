@@ -45,7 +45,7 @@ async function openDirectoryShortcut(item,newTab=false){
   finally{if(shortcutAbort===controller)shortcutAbort=null}
 }
 async function requestOpenWith(item,program=''){
-  if(!local||!item||item.Dir||loading||mutating||nativeFileOpening)return false;
+  if(!canUseNativePrograms()||!item||item.Dir||loading||mutating||nativeFileOpening)return false;
   nativeFileOpening=true;$('openWithSave').disabled=$('openWithNative').disabled=true;$('openWithMessage').textContent='';$('openWithError').textContent='';
   say(program?'正在将文件交给本机程序…':'请在这台电脑的系统窗口中选择程序；可选择看图、播放或编辑软件。');
   try{const result=await api('open-with',{Path:item.Path,Version:item.Version,Program:program});const message=result.Cancelled?'已取消选择程序':program?'已交给本机程序打开：'+item.Name+'；编辑保存后可刷新目录。':'已请求系统选择应用；如果没有出现窗口，可在下方指定程序文件。';say(message);$('openWithMessage').textContent=message;return true}
@@ -53,7 +53,7 @@ async function requestOpenWith(item,program=''){
   finally{nativeFileOpening=false;$('openWithSave').disabled=$('openWithNative').disabled=false}
 }
 function chooseFileApplication(item){
-  if(!local||!item||item.Dir||loading||mutating||nativeFileOpening)return;
+  if(!canUseNativePrograms()||!item||item.Dir||loading||mutating||nativeFileOpening)return;
   const native=['windows','darwin'].includes(boot.Platform);openWithItem=item;$('openWithName').textContent=item.Name;$('openWithError').textContent='';$('openWithMessage').textContent='';$('openWithNative').hidden=!native;$('openWithCustom').open=!native;
   $('openWithProgram').placeholder=boot.Platform==='windows'?'例如 C:\\Windows\\System32\\notepad.exe':boot.Platform==='darwin'?'例如 /Applications/Preview.app':'例如 /usr/bin/vlc 或 /usr/bin/gedit';$('openWithDialog').showModal();if(native)$('openWithNative').focus();else $('openWithProgram').focus();
 }
@@ -252,10 +252,10 @@ function showContextMenu(event,item=null){
     if(writable()&&item.Kind!=='drive'&&typeof copySelectedResources==='function'){add('复制',()=>copySelectedResources('copy'));add('剪切',()=>copySelectedResources('move'));add('复制到…',()=>openTransferPicker('copy'));}
     if(local&&item.Dir)add(inQuickAccess(item.Path)?'已在快速访问中':'添加到快速访问',()=>setQuickAccess(item.Path),one&&!quickAccessSaving&&!inQuickAccess(item.Path));
     if(item.Kind==='shortcut')add('在新标签页打开目标文件夹',()=>openDirectoryShortcut(item,true),one&&Boolean(item.Version));
-    if(!item.Dir&&['image','video'].includes(item.Kind)&&local)add(item.Kind==='image'?'原生悬浮查看（mpv）':'原生悬浮播放（mpv）',()=>openNativeMedia(item),one&&Boolean(item.Version));
+    if(!item.Dir&&['image','video'].includes(item.Kind)&&canUseNativePrograms())add(item.Kind==='image'?'原生悬浮查看（mpv）':'原生悬浮播放（mpv）',()=>openNativeMedia(item),one&&Boolean(item.Version));
     if(!item.Dir&&['image','video'].includes(item.Kind))add(item.Kind==='image'?'悬浮查看':local?'浏览器悬浮播放':'悬浮播放',()=>openFloatingMedia(item,root),one);
-    if(item.Dir){add('在新标签页打开',()=>openFileTab({root,path:item.Path}),one);if(local)add('在本地文件管理器打开',async()=>{try{await api('open-local',{Path:item.Path});say('已在本机文件管理器打开')}catch(e){say(e.message,true)}},one)}
-    else {if(local)add('打开方式…',()=>chooseFileApplication(item),one&&!nativeFileOpening&&Boolean(item.Version));add('下载原文件',()=>download(item),one)}
+    if(item.Dir){add('在新标签页打开',()=>openFileTab({root,path:item.Path}),one);if(canUseNativePrograms())add('在本地文件管理器打开',async()=>{try{await api('open-local',{Path:item.Path});say('已在本机文件管理器打开')}catch(e){say(e.message,true)}},one)}
+    else {if(canUseNativePrograms())add('打开方式…',()=>chooseFileApplication(item),one&&!nativeFileOpening&&Boolean(item.Version));add('下载原文件',()=>download(item),one)}
     if(item.Dir&&writable())add('粘贴到此目录',()=>pasteSelectedResources(item.Path),one&&canPasteResources(item.Path));
     if(item.Kind!=='drive'&&writable())for(const [id,label]of [['rename','重命名'],['move','移动到…'],['remove','删除…']])add(label,()=>$(id).click(),!$(id).disabled);
     add(local?'复制完整路径':'复制共享内路径',()=>copyResourcePath(item.Path),one);
@@ -327,8 +327,8 @@ function initializeExplorerShell(){
   });
   addEventListener('scroll',()=>{$('backTop').hidden=window.scrollY<400;closeContextMenu()},{passive:true});
   addEventListener('resize',()=>{closeContextMenu();applySidebar()});
-  const tips={back:'返回上一个已浏览目录',forward:'前进到下一个已浏览目录',up:'打开当前目录的上一级',refresh:'重新读取当前目录（F5）',go:'打开地址栏中的目录',favorite:'将当前目录添加到快速访问，重启后保留',newFolder:'在当前目录新建文件夹',upload:'上传文件到当前目录，同名文件不会覆盖',rename:'修改所选文件或文件夹的名称（F2）',move:'把所选项目移动到其他目录；同名时选择处理方式',remove:'删除所选项目，默认移入回收站，操作前需要确认（Delete）',download:'下载所选文件的原文件',openFolderTab:'在工具箱新标签页打开所选目录',selectAll:'选择当前页全部项目',clearSelection:'取消当前所有选择',view:'切换图标与列表视图',previous:'显示上一页项目',next:'显示下一页项目',sort:'选择名称、修改时间或文件大小排序',order:'选择正序或倒序，文件夹始终排在文件前面',pageSize:'选择每页显示条数；自动记忆，大图标较多时可选较小数量',backToolbox:'返回仓鼠工具箱的批处理工具',sharing:'设置共享目录、访问口令和修改权限'};
-  for(const [id,text]of Object.entries(tips))$(id).title=text;
+  const tips={back:'返回上一个已浏览目录',forward:'前进到下一个已浏览目录',up:'打开当前目录的上一级',refresh:'重新读取当前目录（F5）',go:'打开地址栏中的目录',favorite:'将当前目录添加到快速访问，重启后保留',newFolder:'在当前目录新建文件夹',upload:'上传文件到当前目录，同名文件不会覆盖',rename:'修改所选文件或文件夹的名称（F2）',move:'把所选项目移动到其他目录；同名时选择处理方式',remove:'删除所选项目，默认移入回收站，操作前需要确认（Delete）',download:'下载所选文件的原文件',openFolderTab:'在工具箱新标签页打开所选目录',selectAll:'选择当前页全部项目',clearSelection:'取消当前所有选择',view:'切换图标与列表视图',previous:'显示上一页项目',next:'显示下一页项目',sort:'选择名称、修改时间或文件大小排序',order:'选择正序或倒序，文件夹始终排在文件前面',pageSize:'选择每页显示条数；自动记忆，大图标较多时可选较小数量',backToolbox:'返回仓鼠工具箱的批处理工具',openGeneralSettings:'通用设置：播放、界面、任务提醒、共享与远程访问及启动'};
+  for(const [id,text]of Object.entries(tips)){const control=$(id);if(control)control.title=text;}
   const decorate=node=>{if(node.nodeType!==1)return;for(const b of [node,...node.querySelectorAll('button,[role=button],select')])if(b.matches('button,[role=button],select')&&!b.title)b.title=b.getAttribute('aria-label')||b.textContent.trim()};
   decorate(document.body);new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)decorate(node)}).observe(document.body,{subtree:true,childList:true});
 }

@@ -19,6 +19,7 @@
 
 .auto-lock-setting{padding:14px 0;border-block:1px solid var(--ui-line);margin-top:16px}.auto-lock-setting>label{margin:0 0 8px}.auto-lock-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.auto-lock-controls select{font:inherit;background:white;color:var(--ui-text);border:1px solid var(--ui-line);border-radius:8px;padding:8px 10px;flex:1;min-width:150px}.auto-lock-controls select:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}#autoLockCustomRow{display:flex;align-items:center;gap:6px;font-size:14px}#autoLockCustom{width:100px;padding:8px}#autoLockHelp{margin-bottom:0}.auto-lock-controls button{white-space:nowrap}
 
+.notes-secret:not([data-secret-ready=true]){visibility:hidden}.notes-secret[data-secret-hidden=true]{-webkit-text-security:disc}
 .password-input{position:relative;display:block;margin-top:6px}.password-input>input{margin-top:0;padding-right:48px}.password-eye{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--ui-muted);line-height:1}.password-eye:hover{background:var(--ui-accent-soft);color:var(--ui-accent)}.password-eye svg{display:block;width:20px;height:20px;pointer-events:none}.password-eye[aria-pressed=false] .eye-cross{display:none}
 
 .note-divider{position:relative;display:flex;align-items:center;justify-content:center;align-self:stretch;cursor:col-resize;touch-action:none;user-select:none;background:var(--ui-canvas);outline-offset:-2px;z-index:1}.note-divider>span{width:3px;height:30px;border-radius:3px;background:#bdc8cc;pointer-events:none}.note-divider:hover,.note-divider:focus-visible,body.notes-resizing .note-divider{background:var(--ui-accent-soft)}.note-divider:hover>span,.note-divider:focus-visible>span,body.notes-resizing .note-divider>span{background:var(--ui-accent)}.note-divider:focus-visible{outline:2px solid var(--ui-focus)}.note-divider[aria-disabled=true]{cursor:default;opacity:.5}body.notes-resizing{cursor:col-resize;user-select:none}body.notes-resizing #preview{pointer-events:none}
@@ -71,3 +72,31 @@ body.notes-fullscreen{overflow:hidden}
 #notesFullscreen[aria-pressed=true]{color:var(--ui-accent);background:var(--ui-accent-soft);border-color:#b7d6c9}
 
 @media(max-width:760px){.editor-tools>.editor-actions{display:contents}.editor-tools{padding-inline:8px}.editor-tools .editor-actions button{padding-inline:6px}.editor-tools .view-modes{gap:1px}}
+
+/* Mobile pages can scroll; both panes keep usable height above the keyboard. */
+@media(max-width:760px){
+ body{height:auto;min-height:var(--notes-viewport-height,100dvh);display:block;overflow-x:hidden;overflow-y:auto}
+ body>header{height:auto;min-height:56px;flex:0 0 auto;flex-wrap:wrap;gap:6px;padding:8px 12px}
+ body>header .brand{min-width:0}.head-actions{flex:1 1 100%;min-width:0;max-width:100%;flex-wrap:wrap;gap:6px}
+ .head-actions>button{font-size:13px;padding:5px 8px;min-width:0;max-width:100%;white-space:normal}
+ #gate{min-height:0;overflow:visible}#workspace{height:auto;min-height:calc(var(--notes-viewport-height,100dvh) - 56px);width:100%;max-width:100%;overflow:visible}
+ .editor{overflow:visible}.editor-tools,.writing-tools,#noteTitle,#editorHint{flex-shrink:0}
+ .editor-body{flex:0 0 auto;height:max(520px,calc(var(--notes-viewport-height,100dvh) - 240px));min-height:520px}
+ .notes-keyboard-open{--notes-mobile-pane-height:clamp(96px,calc(var(--notes-viewport-height,100dvh) - 96px),480px)}
+ .notes-keyboard-open .editor-body{height:var(--notes-mobile-pane-height);min-height:0}
+ .notes-keyboard-open .editor-body[data-mode=split]{height:calc(2 * var(--notes-mobile-pane-height) + 8px);grid-template-rows:minmax(0,1fr) 8px minmax(0,1fr)}
+ .note-list,.editor,.list-tools,.editor-tools,.writing-tools{min-width:0;max-width:100%}
+ .list-tools input{min-width:0;flex:1 1 140px}.note-filters>select{min-width:0;max-width:100%}
+ .editor-tools{flex-wrap:wrap}.note-save-state{flex:1 1 100px;min-width:0}#saveStatus{min-width:0}
+ .editor-tools .view-modes{margin-left:0;max-width:100%}.editor-tools button{max-width:100%;white-space:normal}
+ .writing-tools{flex-wrap:wrap}.writing-tools #formatTools{flex-wrap:wrap;min-width:0;overflow:visible}
+ .note-font-control{margin:0;min-width:0}#noteTitle{font-size:max(16px,calc(var(--note-font-size,14px) + 4px))}
+ body :is(input:not(#noteTitle),textarea,select){font-size:max(16px,var(--note-font-size,14px))!important}
+ #markdown,#markdownColors,#richEditor .ProseMirror{font-size:max(16px,var(--note-font-size,14px))}
+ #richEditor .ProseMirror{overflow-wrap:anywhere}.find-bar>input{min-width:0}
+ dialog{max-width:calc(100vw - 24px)}dialog .dialog-actions{flex-wrap:wrap}dialog button{max-width:100%;white-space:normal}
+ body.notes-keyboard-open>header{display:none}
+ .notes-keyboard-open .editor-tools .editor-actions>button:not(#save),.notes-keyboard-open .editor-tools .note-font-control,.notes-keyboard-open .editor-tools .view-modes{display:none}
+ .notes-keyboard-open .writing-tools #formatTools{display:none}
+ body.notes-fullscreen{height:auto;overflow-y:auto}body.notes-fullscreen #workspace{height:auto}
+}

@@ -44,13 +44,15 @@ func sharingListenError(port int, cause error, state string) error {
 }
 
 type sharingConfig struct {
-	Enabled        bool
-	OverlayEnabled bool
-	PublicURL      string
-	TrustedProxies []string
-	Port           int
-	Salt, Hash     string
-	Roots          []sharedFolder
+	WorkspaceEnabled, WorkspaceHTTP bool
+	WorkspaceSalt, WorkspaceHash    string
+	Enabled                         bool
+	OverlayEnabled                  bool
+	PublicURL                       string
+	TrustedProxies                  []string
+	Port                            int
+	Salt, Hash                      string
+	Roots                           []sharedFolder
 }
 type guestSession struct{ Expires time.Time }
 type browserReference struct {
@@ -62,6 +64,7 @@ type loginWindow struct {
 	Count int
 }
 type fileBrowser struct {
+	workspace                        *remoteWorkspace
 	diskThumbIndex                   map[string]diskThumbnailEntry
 	diskThumbBytes                   int64
 	uploadMu                         sync.Mutex
@@ -137,17 +140,20 @@ func (b *fileBrowser) startSavedSharing() error {
 	salt, se := hex.DecodeString(cfg.Salt)
 	hash, he := hex.DecodeString(cfg.Hash)
 	var e error
-	if se != nil || he != nil || len(salt) != 24 || len(hash) != 32 {
+	if (se != nil || he != nil || len(salt) != 24 || len(hash) != 32) && (!cfg.WorkspaceEnabled || len(cfg.Roots) > 0) {
 		e = errors.New("共享口令配置无效，请在本机重新设置口令")
 	}
 	next, scopes, unavailable, rootErr := prepareSharedRoots(cfg.Roots, cfg.Roots, true)
 	if e == nil {
 		e = rootErr
 	}
-	if e == nil && len(scopes) == 0 {
+	if e == nil && len(scopes) == 0 && !cfg.WorkspaceEnabled {
 		e = errors.New("没有可用的共享目录，请连接资源磁盘后重新保存共享设置")
 	}
 	var listener net.Listener
+	if e == nil && cfg.WorkspaceEnabled {
+		e = validateWorkspaceConfig(cfg)
+	}
 	if e == nil {
 		listener, e = b.listen("tcp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(cfg.Port)))
 		if e != nil {
@@ -300,19 +306,21 @@ func (b *fileBrowser) status() map[string]any {
 	for id, reason := range b.unavailable {
 		unavailable[id] = reason
 	}
-	return map[string]any{"MaxRoots": maxSharedFolders, "Enabled": b.server != nil, "StartupEnabled": b.config.Enabled, "OverlayEnabled": b.config.OverlayEnabled, "PublicURL": b.config.PublicURL, "TrustedProxies": append([]string{}, b.config.TrustedProxies...), "Error": b.sharingError, "Unavailable": unavailable, "Port": b.config.Port, "PasswordSet": b.config.Hash != "", "Roots": append([]sharedFolder{}, b.config.Roots...), "URLs": urls}
+	return map[string]any{"WorkspaceEnabled": b.config.WorkspaceEnabled, "WorkspaceHTTP": b.config.WorkspaceHTTP, "WorkspacePasswordSet": b.config.WorkspaceHash != "", "MaxRoots": maxSharedFolders, "Enabled": b.server != nil, "StartupEnabled": b.config.Enabled, "OverlayEnabled": b.config.OverlayEnabled, "PublicURL": b.config.PublicURL, "TrustedProxies": append([]string{}, b.config.TrustedProxies...), "Error": b.sharingError, "Unavailable": unavailable, "Port": b.config.Port, "PasswordSet": b.config.Hash != "", "Roots": append([]sharedFolder{}, b.config.Roots...), "URLs": urls}
 }
 func (b *fileBrowser) saveSharing(r *http.Request) error {
 	b.configuration.Lock()
 	defer b.configuration.Unlock()
 	var req struct {
-		Enabled        bool
-		OverlayEnabled bool
-		PublicURL      string
-		TrustedProxies []string
-		Port           int
-		Password       string
-		Roots          []sharedFolder
+		WorkspaceEnabled, WorkspaceHTTP bool
+		WorkspacePassword               string
+		Enabled                         bool
+		OverlayEnabled                  bool
+		PublicURL                       string
+		TrustedProxies                  []string
+		Port                            int
+		Password                        string
+		Roots                           []sharedFolder
 	}
 	if e := json.NewDecoder(r.Body).Decode(&req); e != nil {
 		return errors.New("共享设置无效")
@@ -331,6 +339,21 @@ func (b *fileBrowser) saveSharing(r *http.Request) error {
 		return networkErr
 	}
 	next := sharingConfig{Enabled: req.Enabled, OverlayEnabled: req.OverlayEnabled, PublicURL: publicURL, TrustedProxies: proxies, Port: req.Port, Salt: current.Salt, Hash: current.Hash, Roots: []sharedFolder{}}
+	next.WorkspaceEnabled, next.WorkspaceHTTP = req.WorkspaceEnabled, req.WorkspaceHTTP
+	next.WorkspaceSalt, next.WorkspaceHash = current.WorkspaceSalt, current.WorkspaceHash
+	if req.WorkspacePassword != "" {
+		if len([]rune(req.WorkspacePassword)) < 8 || len(req.WorkspacePassword) > 512 {
+			return errors.New("管理员口令至少 8 个字符，最多 512 字节")
+		}
+		salt := notesRandom(24)
+		next.WorkspaceSalt = hex.EncodeToString(salt)
+		next.WorkspaceHash = hex.EncodeToString(sharePassword(req.WorkspacePassword, salt, 600000))
+	}
+	if next.WorkspaceEnabled {
+		if e := validateWorkspaceConfig(next); e != nil {
+			return e
+		}
+	}
 	if req.Password != "" {
 		if len([]rune(req.Password)) < 8 || len(req.Password) > 512 {
 			return errors.New("访问密码至少8个字符，最多512字节")
@@ -347,10 +370,10 @@ func (b *fileBrowser) saveSharing(r *http.Request) error {
 		return e
 	}
 	next.Roots = roots
-	if req.Enabled && (next.Hash == "" || len(next.Roots) == 0) {
+	if req.Enabled && !next.WorkspaceEnabled && (next.Hash == "" || len(next.Roots) == 0) {
 		return errors.New("开启前请设置密码，并添加至少一个共享目录")
 	}
-	if req.Enabled {
+	if req.Enabled && (!next.WorkspaceEnabled || len(next.Roots) > 0) {
 		salt, se := hex.DecodeString(next.Salt)
 		hash, he := hex.DecodeString(next.Hash)
 		if se != nil || he != nil || len(salt) != 24 || len(hash) != 32 {
@@ -412,6 +435,9 @@ func (b *fileBrowser) saveSharing(r *http.Request) error {
 	b.mu.Unlock()
 	if old != nil {
 		old.Close()
+	}
+	if b.workspace != nil {
+		b.workspace.revokeAll()
 	}
 	if req.Enabled {
 		if samePort {
@@ -547,6 +573,9 @@ func (b *fileBrowser) remote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = sharingProxyRequest(r, cfg, trustedProxy)
+	if b.remoteWorkspace(w, r, cfg) {
+		return
+	}
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "api/login" {
 		b.login(w, r)
@@ -557,7 +586,12 @@ func (b *fileBrowser) remote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !b.guestOK(r) {
-		http.Error(w, "请先输入访问密码", 401)
+		if _, err := r.Cookie("hamster_guest_" + b.cookieTag); err == nil {
+			w.Header().Set("X-Hamster-Session", "expired-guest")
+			http.Error(w, "共享会话已过期，请重新输入访问口令", 401)
+		} else {
+			http.Error(w, "请先输入访问密码", 401)
+		}
 		return
 	}
 	b.dispatch(w, r, false, path)

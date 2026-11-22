@@ -2,6 +2,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require
 const html=fs.readFileSync('web/notes.html','utf8'),script=fs.readFileSync('web/notes.js','utf8');
 async function wait(test,label){for(let i=0;i<160;i++){if(test())return;await new Promise(r=>setTimeout(r,10))}throw Error('Timeout: '+label)}
 function setup(existing=false,options={}){const dom=new JSDOM(html,{url:'http://localhost:18787/notes/?session=test-owner',runScripts:'outside-only'}),w=dom.window,d=w.document,calls=[],errors=[],clock={now:Date.now()},timers=[],data={vaultID:options.vaultID,fontSize:14,autoLockMinutes:10,exists:existing,twoFA:false,notes:existing?[{ID:'n1',Title:'Test note',Markdown:'# Secret test',Revision:1,Created:'2026-01-01T00:00:00Z',Updated:'2026-01-01T00:00:00Z'}]:[],failSave:false,expire:false,hold:null};
+ if(options.viewport){const viewport=new w.EventTarget();Object.assign(viewport,{height:844,scale:1,...options.viewport});Object.defineProperty(w,'visualViewport',{value:viewport});}
+ if(options.visualSecretMask)w.CSS={supports:(property,value)=>property==='-webkit-text-security'&&value==='disc'};
  if(options.vaultID){Object.defineProperty(w.crypto,'subtle',{value:require('node:crypto').webcrypto.subtle});w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;}
  for(const [key,value] of Object.entries(options.sessionStorage||{}))w.sessionStorage.setItem(key,value);if(options.navigationType)w.performance.getEntriesByType=()=>[{type:options.navigationType}];
  Object.defineProperty(w,'innerWidth',{value:options.width||1280,writable:true,configurable:true});for(const [key,value] of Object.entries(options.storage||{}))w.localStorage.setItem(key,value);
