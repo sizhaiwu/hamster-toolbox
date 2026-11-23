@@ -32,7 +32,7 @@ Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、P
 
 ## 界面预览
 
-**工具箱页面**：工具分组可折叠；设置在左，任务状态、处理预览和运行日志在右。
+**工具箱页面**：工具分组可折叠；设置在左，任务状态、处理预览和运行日志在右；预览和日志可独立收起。
 
 ![工具箱页面](docs/images/toolbox-groups.png)
 
@@ -50,7 +50,7 @@ Windows 完整版内置媒体处理、7-Zip 和 mpv 组件，无需安装 Go、P
 
 ## 文档与开发
 
-文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。本版变化见 [v0.2.4 发布说明](docs/releases/0.2.4.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
+文档以当前源码为功能基线，详细功能和限制集中维护在 [docs](docs/README.md)。本版变化见 [v0.2.5 发布说明](docs/releases/0.2.5.md)。版本号以 [VERSION](VERSION) 和实际程序为准；[版本变更](CHANGELOG.md)会区分待发布内容和正式版本，文档更新不代表已经发布。
 
 - 使用：[CLI 入门](docs/cli.md) · [参数手册](docs/cli-reference.md) · [常见问题](docs/faq.md)
 - 维护：[开发](docs/development.md) · [测试](docs/testing.md) · [打包](docs/packaging.md) · [组件](docs/dependencies.md) · [安全](docs/safety.md)

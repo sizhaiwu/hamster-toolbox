@@ -155,6 +155,10 @@ body:is([data-font-scale="110"],[data-font-scale="125"]) .settings .input-row bu
 /* Enlarge the original terminal, retaining its live state and event handlers. */
 body.terminal-view-open{overflow:hidden}
 .terminal-panel-placeholder{flex-shrink:0;pointer-events:none}
+.card.terminal-panel.terminal-panel-collapsed:not(.terminal-panel-expanded){min-height:0;max-height:none}
+.terminal-panel-collapsed:not(.terminal-panel-expanded)>:not(.terminal-title){display:none!important}
+.terminal-panel-collapsed:not(.terminal-panel-expanded)>.terminal-title{border-bottom:0}
+#previewCollapse,#logsCollapse{white-space:nowrap;flex-shrink:0}
 .card.terminal-panel.terminal-panel-expanded{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;width:100%;height:100dvh;min-height:0;max-height:none;margin:0;border:0;border-radius:0;padding:0}
 .terminal-panel-expanded>.terminal-title,.terminal-panel-expanded>.preview-toolbar,.terminal-panel-expanded>.hint,.terminal-panel-expanded>.terminal-footer{flex-shrink:0}
 #previewSection.terminal-panel-expanded>.table-wrap,#logsSection.terminal-panel-expanded>#logs{flex:1;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain}

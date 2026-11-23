@@ -35,8 +35,8 @@
 | Windows、Linux 与 macOS 差异 | [平台支持](platforms.md) |
 | 完整包、更新包和 GitHub 发布 | [打包说明](packaging.md) |
 | 发布前检查与验收边界 | [发布检查](release-readiness.md) |
-| 本版面向用户的更新说明 | [v0.2.4 发布说明](releases/0.2.4.md) |
-| 历史正式版说明 | [v0.2.3](releases/0.2.3.md) · [v0.2.2](releases/0.2.2.md) |
+| 本版面向用户的更新说明 | [v0.2.5 发布说明](releases/0.2.5.md) |
+| 历史正式版说明 | [v0.2.4](releases/0.2.4.md) · [v0.2.3](releases/0.2.3.md) · [v0.2.2](releases/0.2.2.md) |
 | 当前实现及验证边界 | [实现边界](optimization-review.md) |
 | Logo 源图、提示词与图标生成 | [品牌素材](brand/README.md) |
 

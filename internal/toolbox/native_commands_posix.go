@@ -28,7 +28,7 @@ func nativePOSIXCommands(c Config, it Item) ([]VideoCommand, error) {
 		if has(it.Source, metadataVideos) && !has(it.Source, metadataExifVideos) {
 			return nil, errors.New("此容器需要多步校验，请使用工具箱 CLI 命令")
 		}
-		code = guard + posixRun(c.Exiftool, []string{"-all=", "-o", it.Target, it.Source})
+		code = guard + posixRun(c.Exiftool, []string{"-charset", "filename=UTF8", "-all=", "-o", it.Target, it.Source})
 		label = "ExifTool · 清理副本元数据"
 	case "archive":
 		if c.ArchiveMode == "extras" || c.ArchiveMarker {

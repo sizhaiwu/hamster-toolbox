@@ -112,6 +112,11 @@ if(require.main===module)(async()=>{
   $('logsFullscreen').click();assert.equal($('logs').scrollTop,9,'keep user scrolling on exit');assert(!w.document.body.classList.contains('terminal-view-open'));assert.equal(w.document.querySelectorAll('.terminal-panel-placeholder').length,0);assert.equal($('logsSection').getAttribute('role'),null);
   $('previewFullscreen').click();$('logsFullscreen').click();assert.equal(w.document.querySelectorAll('.terminal-panel-expanded').length,1);$('logsFullscreen').click();assert.deepEqual([...w.document.querySelectorAll('[inert]')],originalInert,'background focus is fully restored');$('followLogs').click();
   assert.equal($('dependencies').hidden,true);assert.equal($('FFmpeg'),null);
+  $('previewCollapse').click();assert($('previewSection').classList.contains('terminal-panel-collapsed'));assert.equal($('previewCollapse').getAttribute('aria-expanded'),'false');assert(!$('logsSection').classList.contains('terminal-panel-collapsed'));
+  $('logsCollapse').click();w.renderLogs('12:00:05 后台仍在处理');assert.match($('logs').textContent,/后台仍在处理/);assert.equal(JSON.parse(w.localStorage.getItem('hamster.terminal.fold.v1')).logsSection,true);
+  $('previewFullscreen').click();assert.equal($('previewCollapse').getAttribute('aria-expanded'),'true');$('previewFullscreen').click();assert.equal($('previewCollapse').getAttribute('aria-expanded'),'false','fullscreen restores fold preference');
+  $('logsFullscreen').click();$('logsCollapse').click();assert(!$('logsSection').classList.contains('terminal-panel-expanded'));assert($('logsSection').classList.contains('terminal-panel-collapsed'));assert(!w.document.body.classList.contains('terminal-view-open'));
+  $('previewCollapse').click();$('logsCollapse').click();assert.equal($('previewCollapse').getAttribute('aria-expanded'),'true');assert.equal($('logsCollapse').getAttribute('aria-expanded'),'true');
   assert.equal($('CRF').disabled,true);assert.equal($('MinMB').disabled,true);
   input('Root','E:/测试输入');
   $('showCLI').click();await until(()=>$('cliDialog').open&&!$('copyCLI').disabled,'CLI command dialog');assert.equal($('cliCode').value,'toolbox cli format');

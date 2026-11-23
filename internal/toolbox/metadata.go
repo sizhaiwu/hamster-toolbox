@@ -5,11 +5,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const metadataVideos = ".mp4 .mov .m4v .qt .mkv .webm .avi .ts .mts .m2ts .m2t .mpg .mpeg .mpe .wmv .asf .flv"
 const metadataExifVideos = ".mp4 .mov .m4v .qt"
+
+// Only inspect the header; no image decoding or re-encoding is needed.
+func metadataImageExtension(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	ext := map[string]string{"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "GIF": ".gif", "BMP": ".bmp", "TIFF": ".tif", "AVIF": ".avif", "HEIC": ".heic"}[BrowserImageFormat(f)]
+	if ext == "" {
+		ext = filepath.Ext(path)
+	}
+	return ext, nil
+}
+
+func runMetadataExiftool(ctx context.Context, program, target string) error {
+	path, err := filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	if strings.ContainsAny(path, "\r\n") {
+		return fmt.Errorf("ExifTool 不支持路径中的换行符")
+	}
+	// UTF-8 argfiles avoid the Windows command-line code page conversion.
+	f, err := os.CreateTemp(filepath.Dir(path), ".toolbox-exif-*.args")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, err = f.WriteString("-all=\n-overwrite_original\n" + path + "\n")
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if strings.ContainsAny(program, `/\`) {
+		program, err = filepath.Abs(program)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = runInDirectory(ctx, filepath.Dir(path), program, "-charset", "filename=UTF8", "-@", filepath.Base(f.Name()))
+	return err
+}
 
 type metadataStream struct {
 	Type                    string `json:"codec_type"`
@@ -39,17 +88,35 @@ func cleanMetadata(ctx context.Context, c Config, source, target string) error {
 		var before metadataMedia
 		var e error
 		video := has(source, metadataVideos)
+		cleanTarget := target
+		if !video {
+			ext, err := metadataImageExtension(source)
+			if err != nil {
+				return err
+			}
+			if !strings.EqualFold(ext, filepath.Ext(target)) {
+				// ExifTool chooses its writer from the extension. Use the real format
+				// only for the private working copy, preserving the public filename.
+				cleanTarget = target + ".metadata" + ext
+				defer os.Remove(cleanTarget)
+			}
+		}
 		if video {
 			before, e = probeMetadataMedia(ctx, c.FFprobe, source)
 			if e != nil {
 				return e
 			}
 		}
-		if e := publishContext(ctx, source, target); e != nil {
+		if e := publishContext(ctx, source, cleanTarget); e != nil {
 			return e
 		}
-		if _, e = run(ctx, c.Exiftool, "-all=", "-overwrite_original", target); e != nil {
+		if e = runMetadataExiftool(ctx, c.Exiftool, cleanTarget); e != nil {
 			return e
+		}
+		if cleanTarget != target {
+			if e = browserMoveNoReplace(cleanTarget, target); e != nil {
+				return e
+			}
 		}
 		if video {
 			after, e := probeMetadataMedia(ctx, c.FFprobe, target)

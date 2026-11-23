@@ -30,7 +30,7 @@ try {
     & (Join-Path $repo 'prepare-tools.ps1')
 
     Write-Host '[2/6] Running tests...'
-    & go test ./...
+    & go test ./... -count=1
     if ($LASTEXITCODE -ne 0) { throw 'Go tests failed. No release was published.' }
     & npm run test:ui
     if ($LASTEXITCODE -ne 0) { throw 'UI tests failed. No release was published.' }

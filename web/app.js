@@ -64,6 +64,18 @@ let lastActionError = '';
 let taskHistory = null;
 let followLogs = true;
 let expandedTerminal = null;
+const terminalFoldKey = 'hamster.terminal.fold.v1';
+let terminalFoldState = {};
+try { const saved=JSON.parse(localStorage.getItem(terminalFoldKey)||'{}'); if(saved && typeof saved==='object' && !Array.isArray(saved)) terminalFoldState=saved; } catch {}
+function syncTerminalFold(panel) {
+  const button=$(panel.id==='previewSection'?'previewCollapse':'logsCollapse');
+  const name=panel.id==='previewSection'?'处理预览':'运行日志';
+  const collapsed=panel.classList.contains('terminal-panel-collapsed')&&!panel.classList.contains('terminal-panel-expanded');
+  button.textContent=collapsed?'展开':'收起';
+  button.setAttribute('aria-expanded',String(!collapsed));
+  button.setAttribute('aria-label',(collapsed?'展开':'收起')+name);
+  button.title=(collapsed?'展开':'收起')+name;
+}
 function terminalScrollState(panel) {
   return [...panel.querySelectorAll('.table-wrap,#logs')].map(el => ({el,top:el.scrollTop,left:el.scrollLeft}));
 }
@@ -79,6 +91,7 @@ function exitTerminalFullscreen(restoreFocus = true) {
   const positions = state.touched ? terminalScrollState(state.panel) : state.positions;
   expandedTerminal = null;
   state.panel.classList.remove('terminal-panel-expanded');
+  syncTerminalFold(state.panel);
   for (const [name,value] of state.attributes) {
     if (value === null) state.panel.removeAttribute(name); else state.panel.setAttribute(name,value);
   }
@@ -117,6 +130,7 @@ function toggleTerminalFullscreen(panel,button,name) {
   expandedTerminal = {panel,button,name,placeholder,inert,x,y,positions,touched:false,
     attributes:['role','aria-modal','aria-label'].map(key=>[key,panel.getAttribute(key)])};
   panel.classList.add('terminal-panel-expanded');
+  syncTerminalFold(panel);
   panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',name+' · 全屏查看');
   document.body.classList.add('terminal-view-open');
   button.textContent='退出全屏';button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','退出'+name+'全屏');button.title='退出全屏（Esc）';
@@ -125,6 +139,18 @@ function toggleTerminalFullscreen(panel,button,name) {
 }
 for (const [panel,button,name] of [['previewSection','previewFullscreen','处理预览'],['logsSection','logsFullscreen','运行日志']]) {
   $(button).onclick=()=>toggleTerminalFullscreen($(panel),$(button),name);
+  const section=$(panel),fold=$(panel==='previewSection'?'previewCollapse':'logsCollapse');
+  section.classList.toggle('terminal-panel-collapsed',terminalFoldState[panel]===true);
+  syncTerminalFold(section);
+  fold.onclick=()=>{
+    const collapsed=expandedTerminal?.panel===section||!section.classList.contains('terminal-panel-collapsed');
+    if(expandedTerminal?.panel===section) exitTerminalFullscreen(false);
+    section.classList.toggle('terminal-panel-collapsed',collapsed);
+    terminalFoldState[panel]=collapsed;
+    syncTerminalFold(section);
+    try {localStorage.setItem(terminalFoldKey,JSON.stringify(terminalFoldState));} catch {}
+    fold.focus({preventScroll:true});
+  };
 }
 for (const type of ['wheel','touchmove','pointerdown','change','keydown']) document.addEventListener(type,event=>{
   if (!expandedTerminal || !expandedTerminal.panel.contains(event.target) || expandedTerminal.button.contains(event.target)) return;

@@ -25,6 +25,15 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 	if e := validateItemPaths(c, it); e != nil {
 		return nil, e
 	}
+	if c.Tool == "exif" && !has(it.Source, metadataVideos) {
+		ext, err := metadataImageExtension(it.Source)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(ext, filepath.Ext(it.Source)) || !strings.EqualFold(ext, filepath.Ext(it.Target)) {
+			return nil, errors.New("图片实际格式需要临时副本处理，请复制页面顶部的工具箱 CLI 命令")
+		}
+	}
 	if runtime.GOOS != "windows" {
 		return nativePOSIXCommands(c, it)
 	}
@@ -49,7 +58,7 @@ func NativeCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, err
 		if has(it.Source, metadataVideos) && !has(it.Source, metadataExifVideos) {
 			return nil, errors.New("此容器需要多步轨道校验，请使用页面顶部的工具箱 CLI 命令")
 		}
-		command = guard + run(c.Exiftool, []string{"-all=", "-o", it.Target, it.Source})
+		command = guard + run(c.Exiftool, []string{"-charset", "filename=UTF8", "-all=", "-o", it.Target, it.Source})
 		label = "ExifTool · 清理副本元数据"
 	case "archive":
 		if c.ArchiveMode == "extras" || c.ArchiveMarker {

@@ -1,25 +1,32 @@
-# v0.2.4 发布与验收
+# v0.2.5 发布与验收
 
-[文档目录](README.md) · [发布说明](releases/0.2.4.md) · [打包说明](packaging.md)
+[文档目录](README.md) · [发布说明](releases/0.2.5.md) · [打包说明](packaging.md)
 
-本页记录本版发布验收。正式附件见 [v0.2.4 发布页](https://github.com/sizhaiwu/hamster-toolbox/releases/tag/v0.2.4)，历史记录见 [v0.2.3 验收](releases/0.2.3-validation.md)。
+本页记录本版发布验收。正式附件见 [v0.2.5 发布页](https://github.com/sizhaiwu/hamster-toolbox/releases/tag/v0.2.5)，历史记录见 [v0.2.4 验收](releases/0.2.4-validation.md)。
 
 ## 本轮检查
 
-- [x] Windows 全部 Go 测试、`go vet ./...` 和 48 项 UI 回归。
-- [x] 远程管理员与访客隔离、会话过期、独立笔记会话和原生程序拦截。
-- [x] 源码、文档和分发载荷脱敏；只分发白名单文件。
-- [x] 正式版本号、文档链接、当前功能说明与合成截图。
-- [x] Windows、Linux、macOS 的 amd64/arm64 核心交叉编译。
-- [x] 固定组件哈希、许可、空配置、中文目录和系统 PATH 下的 11 项便携自测。
-- [x] 安装包、完整 ZIP、更新 ZIP 及 SHA256 核对。
+- [x] 正式版本号、文档链接、功能说明与脱敏。
+- [x] Windows Go 测试、静态检查和 48 项 UI 回归。
+- [x] 六组合成图片样本的错后缀与中文路径、像素和原件不变、输出保护，以及视频元数据清理回归。
+- [x] 栏目独立收起、日志继续更新、全屏交互与状态恢复。
+- [x] Windows、Linux、macOS 的 amd64/arm64 交叉编译。
+- [x] 固定组件哈希、许可、空配置、中文目录和仅系统 PATH 下的 11 项便携自测。
+- [x] 安装包、完整 ZIP、更新 ZIP、文件白名单和 SHA256。
+- [x] 安装器的自启、升级与卸载隔离测试。
 
-完整 ZIP 的 550 个组件文件逐一核对哈希，两个 ZIP 均通过 CRC、文件白名单和程序哈希检查。安装器使用隔离的测试 AppId、注册表和合成载荷，验证默认不开机自启、手动启用、升级保留自定义数据路径、关闭自启以及卸载不删除其他安装的设置；未覆盖安装到现有真实环境。
+## 本地附件
 
-本地附件位于 `dist/`，文件名前缀为 `hamster-toolbox-0.2.4-windows-x64-20261122-164003`；安装包约 150 MiB，完整 ZIP 约 173 MiB，更新 ZIP 约 9.7 MiB。每个附件均附带 `.sha256`。发布时核对标签与源码提交，上传后核对 GitHub 返回的附件大小及 SHA256；三平台 CI 状态可在 [Actions](https://github.com/sizhaiwu/hamster-toolbox/actions/workflows/ci.yml) 查看。
+本地文件位于 `dist/`，前缀为 `hamster-toolbox-0.2.5-windows-x64-20261123-154607`。安装包约 150 MiB，完整 ZIP 约 173 MiB，更新 ZIP 约 9.7 MiB，各自附带 `.sha256`。
+
+两个 ZIP 均通过 CRC、文件白名单、版本及程序哈希核对，完整包的 550 个组件文件逐一核对哈希。当前源码按相同版本和构建参数重建后，可逐字节复现控制台与托盘两个正式 EXE。本轮打包强制使用 `go test ./... -count=1`，不复用测试结果缓存。
+
+发布时核对标签与源码提交，上传后核对 GitHub 返回的附件大小及 SHA256；三平台 CI 状态可在 [Actions](https://github.com/sizhaiwu/hamster-toolbox/actions/workflows/ci.yml) 查看。
 
 ## 验证边界
 
-手机键盘与声音已做自动化回归；浏览器缩小可见区域的检查不能代替 iPhone 真机测试。mpv 在当前 Windows 设备使用合成横屏、竖屏视频实测尺寸；不代表所有显卡和驱动均可硬解。
+本轮使用合成素材，不把私人图片、笔记、配置或日志放入仓库及发行包。历史真实图片副本的本机验证不作为可公开测试素材。
 
-本轮不修改真实笔记、共享设置、开机自启或现有安装。程序与安装器未签名，且没有独立第三方密码学安全审计。Linux/macOS 的交叉编译不等同于本轮桌面真机验收；完整分发仍为 Windows x64。
+安装器生命周期测试使用独立 AppId、注册表及合成载荷，不替换现有安装或用户数据。Linux/macOS 交叉编译不等于桌面真机验收；完整发行仍为 Windows x64。HEIC/AVIF 等未逐格式实测；本轮不新增 iPhone 真机或显卡硬解验收。
+
+程序和安装器未签名，没有独立第三方密码学安全审计。更新前保存笔记、备份数据并退出正在运行的工具箱；仅刷新页面不会更新后台程序。
