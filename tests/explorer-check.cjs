@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {JSDOM}=require('jsdom');
 const html=fs.readFileSync('web/explorer.html','utf8').replace('</body>',fs.readFileSync('web/shared-settings.html','utf8')+'</body>'),script=fs.readFileSync('web/explorer-upgrades.js','utf8')+'\n'+fs.readFileSync('web/explorer-media.js','utf8')+'\n'+fs.readFileSync('web/explorer-tabs.js','utf8')+'\n'+fs.readFileSync('web/explorer-shell.js','utf8')+'\n'+fs.readFileSync('web/explorer-floating.js','utf8')+'\n'+fs.readFileSync('web/explorer-native.js','utf8')+'\n'+fs.readFileSync('web/explorer.js','utf8');
-const wait=async(test,label)=>{for(let i=0;i<100;i++){if(test())return;await new Promise(r=>setTimeout(r,10))}throw Error('Timeout: '+label)};
+const wait=async(test,label,timeout=1000)=>{for(let i=0;i<Math.ceil(timeout/10);i++){if(test())return;await new Promise(r=>setTimeout(r,10))}throw Error('Timeout: '+label)};
 function activateEntry(element){element.click();element.click();element.dispatchEvent(new element.ownerDocument.defaultView.MouseEvent('dblclick',{bubbles:true,cancelable:true}))}
 function setup(local,options={}){
  const dom=new JSDOM(html,{url:options.url||(local?'http://localhost/files/?session=test':'http://localhost/'),runScripts:'outside-only'}),w=dom.window,d=w.document,calls=[],errors=[];
