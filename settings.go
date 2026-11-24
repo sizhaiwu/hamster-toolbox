@@ -60,6 +60,9 @@ func (s *server) loadPreferences() (preferences, error) {
 		if key == "video" && c.VideoMode == "" {
 			c.VideoMode = "compatible"
 		}
+		if key == "video" && c.VideoContainer == "" {
+			c.VideoContainer = "original"
+		}
 		if key == "video" && c.VideoHDR == "" {
 			c.VideoHDR = "preserve"
 		}

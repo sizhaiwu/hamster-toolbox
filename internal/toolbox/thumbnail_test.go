@@ -153,6 +153,7 @@ func TestThumbnailIntegration(t *testing.T) {
 	}
 	c := integrationConfig(t)
 	c.Tool = "thumbnail"
+	c.Workers = 2
 	c.Root = t.TempDir()
 	c.ThumbnailColumns, c.ThumbnailRows, c.ThumbnailWidth = 3, 2, 640
 	source := filepath.Join(c.Root, "子目录", "中文 [样片]100%.mp4")

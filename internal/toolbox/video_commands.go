@@ -35,6 +35,9 @@ func VideoCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, erro
 	if err := normalizeVideoOptions(&c); err != nil {
 		return nil, err
 	}
+	if videoMuxer(it.Target) == "" {
+		return nil, errors.New("此输出封装不支持，请选择统一 MP4 并重新扫描")
+	}
 	v, err := probeCompressionVideo(ctx, c.FFprobe, it.Source)
 	if err != nil {
 		return nil, err
@@ -84,6 +87,14 @@ func VideoCommands(ctx context.Context, c Config, it Item) ([]VideoCommand, erro
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if c.VideoMode != "compatible" && !v.tenBit() && !v.hdr() {
+		backup := *s
+		backup.config.VideoMode = "compatible"
+		a := videoAttempt{"libx264"}
+		if backup.available(ctx, a, v) {
+			commands = append(commands, VideoCommand{"封装不支持 H.265 时的 H.264 / CPU 兼容备用", platformVideoCommand(c.FFmpeg, it.Target, backup.commandArgs(it.Source, it.Target, a, v, true))})
+		}
 	}
 	if len(commands) == 0 {
 		return nil, errors.New("没有可用编码器，请检查 FFmpeg 和显卡驱动")

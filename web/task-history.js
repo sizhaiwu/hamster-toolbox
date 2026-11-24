@@ -1,8 +1,8 @@
 (() => {
   window.setupTaskHistory = ({api,$,toolName,canChange,beforeOpen,restore,scan,message}) => {
     let records=[],selected='',detail=null,offset=0,total=0,loaded=null,locked=false,acting=false;
-    let listRequest=0,detailRequest=0,lastFinished='';
-    const statusName=r=>({running:'执行中',interrupted:'上次中断',cancelled:'已取消',finished:r.Result?.Failed?'部分失败':'已完成'})[r.Status]||r.Status;
+    let listRequest=0,detailRequest=0,lastObserved='',lastAutoRefresh=0,autoRefreshing=false;
+    const statusName=r=>({running:'执行中',interrupted:'上次中断',cancelled:'已取消',finished:r.Result?.Failed?(r.Result.Success?'部分失败':'失败'):!r.Result?.Success&&r.Result?.Skipped?'全部跳过':'已完成'})[r.Status]||r.Status;
     const timeName=value=>new Date(value).toLocaleString();
     const note=text=>{$('taskHistoryStatus').textContent=text;};
     function syncUI(value=locked,tool,root) {
@@ -10,10 +10,11 @@
       const match=loaded&&loaded.Tool===tool&&loaded.Config.Root.trim()===root?.trim();
       if(tool!==undefined)$('retryUnfinished').hidden=!match;
       $('retryUnfinished').disabled=locked||acting;
-      $('restoreTaskHistory').disabled=locked||acting||!detail||detail.Record.Status==='running';
-      $('retryTaskHistory').disabled=locked||acting||!detail?.CanRetry;
+      const targetLocked=detail?!canChange(detail.Record.Tool):locked;
+      $('restoreTaskHistory').disabled=targetLocked||acting||!detail||detail.Record.Status==='running';
+      $('retryTaskHistory').disabled=targetLocked||acting||!detail?.CanRetry;
       $('exportTaskHistory').disabled=acting||!detail;
-      $('clearTaskHistory').disabled=locked||acting;
+      $('clearTaskHistory').disabled=acting;
       $('taskHistoryPrevious').disabled=acting||offset===0;
       $('taskHistoryNext').disabled=acting||offset+100>=total;
     }
@@ -22,13 +23,13 @@
       if(!records.length){$('taskHistoryList').textContent='还没有执行记录。';return;}
       for(const r of records) {
         const b=document.createElement('button');b.type='button';b.className='history-record';b.setAttribute('aria-pressed',String(r.ID===selected));
-        const title=document.createElement('b');title.textContent=toolName(r.Tool)+' · '+statusName(r);
+        const title=document.createElement('b');title.textContent=toolName(r.Tool)+' · '+statusName(r)+(r.Status==='running'?' · '+(r.Done||0)+'/'+r.Total:'');
         const date=document.createElement('span');date.textContent=timeName(r.Started);
         const path=document.createElement('small');path.textContent=r.Config?.Root||'';path.title=path.textContent;
         b.append(title,date,path);b.onclick=()=>{selected=r.ID;offset=0;renderList();showDetail();};$('taskHistoryList').append(b);
       }
     }
-    async function refresh(open=false,preferInterrupted=false) {
+    async function refresh(open=false,preferInterrupted=false,quiet=false) {
       const request=++listRequest;
       try {
         const data=await api('task-history');if(request!==listRequest)return;
@@ -40,14 +41,14 @@
         if(!records.some(r=>r.ID===selected))selected='';
         if(preferInterrupted)selected=records.find(r=>r.Status==='interrupted')?.ID||selected;
         selected=selected||records[0]?.ID||'';renderList();
-        if(selected)await showDetail();else{$('taskHistoryDetail').hidden=true;$('taskHistoryEmpty').hidden=false;detail=null;}
+        if(selected)await showDetail(quiet);else{$('taskHistoryDetail').hidden=true;$('taskHistoryEmpty').hidden=false;detail=null;}
         note('自动保留最近 '+(data.Keep||50)+' 次记录；空间不足时优先清理较旧记录。');
       } catch(e) {if(open&&request===listRequest)note('读取历史失败：'+e.message);}
       finally {syncUI();}
     }
-    async function showDetail() {
-      const id=selected,request=++detailRequest;detail=null;syncUI();note('正在读取记录…');
-      $('taskHistoryDetail').hidden=true;$('taskHistoryEmpty').hidden=false;$('taskHistoryEmpty').textContent='正在读取记录…';
+    async function showDetail(quiet=false) {
+      const id=selected,request=++detailRequest;
+      if(!quiet||detail?.Record.ID!==id){detail=null;syncUI();note('正在读取记录…');$('taskHistoryDetail').hidden=true;$('taskHistoryEmpty').hidden=false;$('taskHistoryEmpty').textContent='正在读取记录…';}
       try {
         const data=await api('task-history-detail',{ID:id,Offset:offset,Filter:$('taskHistoryFilter').value});
         if(request!==detailRequest||!$('taskHistoryDialog').open||selected!==id)return;
@@ -77,13 +78,13 @@
       beforeOpen();if(!$('taskHistoryDialog').open)$('taskHistoryDialog').showModal();note('正在读取记录…');await refresh(true,preferInterrupted);
     }
     async function apply(retry) {
-      if(acting||!detail||!canChange()||detail.Record.Status==='running')return;
+      if(acting||!detail||!canChange(detail.Record.Tool)||detail.Record.Status==='running')return;
       const data=detail;acting=true;syncUI();note('正在载入设置…');
       try {
         await restore(data.Record.Config);
         loaded=data.CanRetry?data.Record:null;
         $('taskHistoryDialog').close();
-        if(retry)await scan(data.Record.ID);else message('已载入历史参数。密码需要重新填写；请核对目录与预览后再执行。');
+        if(retry)await scan(data.Record.ID);else message('已载入历史参数。请核对目录、密码与预览后再执行。');
       } catch(e) {note('载入失败：'+e.message);message(e.message,true);}
       finally {acting=false;syncUI(!canChange(),data.Record.Tool,data.Record.Config.Root);}
     }
@@ -101,10 +102,20 @@
       const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='hamster-task-'+r.ID.slice(0,8)+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
     };
     $('clearTaskHistory').onclick=async()=>{
-      if(acting||!canChange()||!confirm('清理历史记录和保存的日志？正在执行的记录会保留；源文件和处理结果不会删除。'))return;
+      if(acting||!confirm('清理历史记录和保存的日志？正在执行的记录会保留；源文件和处理结果不会删除。'))return;
       acting=true;syncUI();try{await api('task-history-clear');loaded=null;$('retryUnfinished').hidden=true;selected='';await refresh(true);note('历史已清理，资源文件保持原样。');}catch(e){note('清理失败：'+e.message);}finally{acting=false;syncUI();}
     };
     refresh();
-    return {syncUI,observe(state){if(loaded&&state.RetryOf===loaded.ID&&state.Status==='finished'&&!state.Result?.Failed){loaded=null;$('retryUnfinished').hidden=true;}const key=state.HistoryID+':'+state.Status;if(state.HistoryID&&['finished','cancelled','error'].includes(state.Status)&&key!==lastFinished){lastFinished=key;refresh($('taskHistoryDialog').open);}}};
+    return {syncUI,observe(state){
+      if(loaded&&state.RetryOf===loaded.ID&&state.Status==='finished'&&!state.Result?.Failed){loaded=null;$('retryUnfinished').hidden=true;}
+      const tasks=new Map();for(const task of [state,...(state.Tasks||[]),...(state.Completed||[])])if(task.HistoryID)tasks.set(task.HistoryID,task);
+      const signature=[...tasks.values()].map(task=>task.HistoryID+':'+task.Status).sort().join('|');
+      const changed=signature!==lastObserved,active=[...tasks.values()].some(task=>task.Status==='running')||records.some(record=>record.Status==='running');
+      const open=$('taskHistoryDialog').open;
+      if(!acting&&!autoRefreshing&&(changed||open&&active&&Date.now()-lastAutoRefresh>=2500)){
+        lastObserved=signature;lastAutoRefresh=Date.now();autoRefreshing=true;
+        refresh(open,false,true).finally(()=>{autoRefreshing=false});
+      }
+    }};
   };
 })();

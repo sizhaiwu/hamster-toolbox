@@ -25,6 +25,10 @@ var assets embed.FS
 
 type state struct {
 	Status                string
+	TaskID                string
+	Config                *toolbox.Config   `json:",omitempty"`
+	Tasks                 []toolTaskSummary `json:",omitempty"`
+	Completed             []toolTaskSummary `json:",omitempty"`
 	HistoryID, RetryOf    string
 	Error                 string
 	Total, Done           int
@@ -37,6 +41,13 @@ type state struct {
 	Operation             *toolbox.OperationProgress `json:",omitempty"`
 }
 type server struct {
+	taskOwner      *server
+	tasksMu        sync.Mutex
+	taskDispatchMu sync.Mutex
+	tasks          map[string]*server
+	completedTasks []toolTaskSummary
+	taskExecutor   taskExecutor
+	reserved       *toolbox.Config
 	browser        *fileBrowser
 	mu             sync.Mutex
 	state          state
@@ -60,6 +71,16 @@ type server struct {
 func (s *server) line(m string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.lineLocked(m)
+}
+func (s *server) lineForTask(taskID, m string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state.TaskID == taskID {
+		s.lineLocked(m)
+	}
+}
+func (s *server) lineLocked(m string) {
 	s.state.Logs = append(s.state.Logs, time.Now().Format("15:04:05")+" "+m)
 	if len(s.state.Logs) > 3000 {
 		s.state.Logs = s.state.Logs[len(s.state.Logs)-3000:]
@@ -98,6 +119,9 @@ func (s *server) guard(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 func (s *server) api(w http.ResponseWriter, r *http.Request) {
+	if s.routeToolTask(w, r) {
+		return
+	}
 	if r.Method != "POST" {
 		http.Error(w, "POST required", 405)
 		return
@@ -117,6 +141,8 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		s.dedupeAPI(w, r)
 	case "/api/passwords", "/api/password-get", "/api/password-save", "/api/password-delete":
 		s.passwordAPI(w, r)
+	case "/api/password-memory", "/api/password-memory-save":
+		s.passwordMemoryAPI(w, r)
 	case "/api/video-commands", "/api/native-commands":
 		s.videoCommands(w, r)
 	case "/api/info":
@@ -300,6 +326,8 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			snapshot.Items = nil
 		}
 		s.mu.Unlock()
+		snapshot.Tasks = s.taskSummaries()
+		snapshot.Completed = s.taskCompletions()
 		send(w, snapshot)
 	case "/api/preview":
 		s.preview(w, r)
@@ -354,17 +382,31 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		c := req.Config
 		s.mu.Lock()
-		if s.busy() || s.desktopClosing {
+		if s.busy() || s.taskRoot().desktopClosing {
 			s.mu.Unlock()
 			fail(w, fmt.Errorf("已有任务正在运行"))
 			return
 		}
+		if s.taskOwner != nil && c.Tool != s.state.Tool {
+			s.mu.Unlock()
+			fail(w, fmt.Errorf("工具与任务入口不一致"))
+			return
+		}
+		if err := s.taskConflict(c); err != nil {
+			s.mu.Unlock()
+			fail(w, err)
+			return
+		}
+		s.reserved = &c
 		ctx, cancel := context.WithCancel(context.Background())
 		s.cancel = cancel
 		s.plan = nil
-		s.state = state{Status: "scanning", Tool: c.Tool, RetryOf: req.RetryTaskID, Logs: []string{}, Items: []toolbox.Item{}}
+		s.state = state{TaskID: randomID(), Config: publicTaskConfig(c), Status: "scanning", Tool: c.Tool, RetryOf: req.RetryTaskID, Logs: []string{}, Items: []toolbox.Item{}}
+		taskID := s.state.TaskID
+		s.taskRoot().taskWait.Add(1)
 		s.mu.Unlock()
 		go func() {
+			defer s.taskRoot().taskWait.Done()
 			defer cancel()
 			var p *toolbox.Plan
 			var e error
@@ -388,6 +430,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.plan = p
+			s.reserved = &p.Config
 			s.state.Status = "ready"
 			s.state.PlanID = randomID()
 			s.state.Total = len(p.Items)
@@ -403,7 +446,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 				s.state.Items = s.state.Items[:1000]
 			}
 		}()
-		send(w, map[string]bool{"ok": true})
+		send(w, map[string]any{"ok": true, "TaskID": taskID})
 	case "/api/execute":
 		var req struct{ PlanID string }
 		if e := json.NewDecoder(r.Body).Decode(&req); e != nil {
@@ -411,12 +454,17 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		if s.busy() || s.desktopClosing || s.state.Status != "ready" || req.PlanID == "" || req.PlanID != s.state.PlanID {
+		if s.busy() || s.taskRoot().desktopClosing || s.state.Status != "ready" || req.PlanID == "" || req.PlanID != s.state.PlanID {
 			s.mu.Unlock()
 			fail(w, fmt.Errorf("请先重新预览"))
 			return
 		}
 		p := s.plan
+		if err := s.taskConflict(p.Config); err != nil {
+			s.mu.Unlock()
+			fail(w, err)
+			return
+		}
 		if e := toolbox.CheckReady(p); e != nil {
 			s.mu.Unlock()
 			fail(w, e)
@@ -436,13 +484,13 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		s.state.Status = "running"
 		s.state.Done = 0
 		s.state.Operation = nil
-		s.taskWait.Add(1)
+		s.taskRoot().taskWait.Add(1)
 		s.mu.Unlock()
 		go func() {
-			defer s.taskWait.Done()
+			defer s.taskRoot().taskWait.Done()
 			defer cancel()
 			runCtx := toolbox.WithOperationProgress(ctx, s.operationProgress)
-			res := toolbox.ExecuteObserved(runCtx, p, s.line, s.progress, journal.observe)
+			res := s.runTask(runCtx, p, s.line, s.progress, journal.observe)
 			s.mu.Lock()
 			s.state.Result = res
 			s.state.Operation = nil
@@ -453,16 +501,27 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			snapshot := s.state
 			snapshot.Logs = append([]string{}, s.state.Logs...)
 			s.mu.Unlock()
+			s.recordTaskCompletion(snapshot)
 			if e := journal.finish(snapshot); e != nil {
-				s.line("任务历史保存失败：" + e.Error())
+				s.lineForTask(snapshot.TaskID, "任务历史保存失败："+e.Error())
 			}
 			if e := s.pruneTaskHistory(false); e != nil {
-				s.line("历史记录清理失败：" + e.Error())
+				s.lineForTask(snapshot.TaskID, "历史记录清理失败："+e.Error())
 			}
 		}()
 		send(w, map[string]bool{"ok": true})
 	case "/api/cancel":
+		var req struct{ TaskID string }
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			fail(w, err)
+			return
+		}
 		s.mu.Lock()
+		if req.TaskID != "" && req.TaskID != s.state.TaskID {
+			s.mu.Unlock()
+			fail(w, fmt.Errorf("任务已改变，请刷新状态后重试"))
+			return
+		}
 		if s.cancel != nil {
 			s.cancel()
 		}

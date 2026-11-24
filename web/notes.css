@@ -100,3 +100,15 @@ body.notes-fullscreen{overflow:hidden}
  .notes-keyboard-open .writing-tools #formatTools{display:none}
  body.notes-fullscreen{height:auto;overflow-y:auto}body.notes-fullscreen #workspace{height:auto}
 }
+
+#noteImageDialog{width:min(1100px,calc(100vw - 32px));height:min(820px,calc(100dvh - 32px));max-width:none;max-height:none;padding:0;overflow:hidden;background:#151e28;color:#e8eff5}
+#noteImageDialog[open]{display:flex;flex-direction:column}
+.note-image-heading,.note-image-tools{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-shrink:0;border-bottom:1px solid #33424f}
+.note-image-heading h2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0;font-size:15px}
+#noteImageDialog button{background:#243340;color:#e8eff5;border-color:#415261;min-height:36px;min-width:36px;padding:5px 10px}
+#noteImageClose{margin-left:auto}.note-image-tools output{min-width:55px;text-align:center;font-size:13px}#noteImageSize{margin-left:auto;font-size:12px;color:#b5c4d0;white-space:nowrap}
+#noteImageStage{position:relative;flex:1;min-height:0;overflow:auto;touch-action:pan-x pan-y;overscroll-behavior:contain;cursor:grab}
+#noteImageCanvas{display:grid;place-items:center;min-width:100%;min-height:100%;padding:12px;box-sizing:border-box}
+#noteImageContent{display:block;max-width:none;max-height:none;object-fit:contain;flex-shrink:0;user-select:none;-webkit-user-drag:none}#noteImageContent[hidden]{display:none}
+#noteImageStatus{position:absolute;top:40%;left:12px;right:12px;text-align:center;color:#d2dee8;overflow-wrap:anywhere}
+@media(max-width:600px){#noteImageDialog{width:calc(100vw - 12px);height:calc(100dvh - 16px);border-radius:10px}.note-image-heading,.note-image-tools{padding:7px;gap:5px}#noteImageDialog button{min-height:40px}#noteImageSize{font-size:10px}}

@@ -207,13 +207,14 @@
 
 ## video 压缩视频
 
-保持画面尺寸和帧率，以质量等级压缩，保留原件，输出 MP4。默认输出：`<输入目录>\toolbox-output\video`，保留相对目录结构；结果没有变小时跳过输出。
+保持画面尺寸和帧率，以质量等级压缩，保留原件，默认保留原名称与封装；也可选择统一 MP4。默认输出：`<输入目录>\toolbox-output\video`，保留相对目录结构；结果没有变小时跳过输出。
 
 通用参数：`--root`、`--recursive`、`--output`。程序参数：`--ffmpeg`、`--ffprobe`。
 
 | 参数 | JSON 字段 | 默认值 | 控制什么 |
 | --- | --- | --- | --- |
 | `--video-hdr` | `VideoHDR` | `preserve` | `preserve`：保留 HLG / HDR10，输出 H.265 10-bit；含静态母版/亮度元数据时使用 CPU。`sdr`：色调映射到 BT.709，改变 HDR 显示效果以适配普通设备。`skip`：跳过 HDR。`base`：对带 Dolby Vision 信息的 HLG 视频保留 HLG 基层、移除杜比动态信息（需接受动态效果变化）；其他动态 HDR 保留原片。 |
+| `--video-container` | `VideoContainer` | `original` | `original`：保留原名称及 MP4/MOV/M4V/QT/MKV/TS 封装；暂不支持保留的格式在预览中标记跳过。`mp4`：统一输出 MP4，后缀可能改变。 |
 | `--video-mode` | `VideoMode` | `efficient` | `compatible`：H.264，播放兼容更好；`efficient`：H.265，通常更省空间；`archive`：H.265 CPU 慢速，耗时较长，适合不急于完成的任务。 |
 | `--video-acceleration` | `VideoAcceleration` | `auto` | `auto` 依次尝试 NVIDIA、Intel、AMD 后回退 CPU；`nvidia`/`intel`/`amd` 优先所选设备、失败回退 CPU；`cpu` 只用 CPU。不是 GPU 解码开关。`archive` 始终使用 CPU。 |
 | `--crf` | `CRF` | `18` | 质量等级 `0–51`，越低通常越清晰、体积越大。建议先试 `18` 清晰优先、`23` 均衡、`28` 体积优先。不同编码器会换算，不能把不同设备的同值当作相同画质。`0` 使用 CPU 的特殊质量设置，不代表工具箱承诺无损。 |

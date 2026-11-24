@@ -24,7 +24,7 @@ const terminal=(id,status='finished',result={Success:2,Failed:0,Skipped:1})=>({P
   await w.poll();assert.equal(tones,4,'polling cannot repeat sound');
   // Reload before acknowledgement preserves popup, without replaying its sound.
   let notice=w.sessionStorage.getItem(key);dom.window.close();
-  dom=createUI(15200,true,1280,w=>{audio(w);w.sessionStorage.setItem(key,notice)});w=dom.window;$=id=>w.document.getElementById(id);
+  dom=createUI(15200,true,1280,w=>{audio(w);Object.defineProperty(w.performance,'getEntriesByType',{value:()=>[{type:'reload'}]});w.sessionStorage.setItem(key,notice)});w=dom.window;$=id=>w.document.getElementById(id);
   await until(()=>$('taskResultDialog').open,'unfinished notice restored');assert.equal(tones,4);
   $('taskResultClose').click();notice=w.sessionStorage.getItem(key);await w.poll();assert(!$('taskResultDialog').open);
   dom.window.close();dom=createUI(15201,true,390,w=>{audio(w);w.sessionStorage.setItem(key,notice)});w=dom.window;$=id=>w.document.getElementById(id);

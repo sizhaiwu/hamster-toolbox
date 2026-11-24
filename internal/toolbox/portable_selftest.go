@@ -101,7 +101,10 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 			source := filepath.Join(active.Root, "metadata.jpg")
 			e = writeImage(source)
 			if e == nil {
-				_, e = run(ctx, active.Exiftool, "-overwrite_original", "-Artist=HamsterSelfTest", source)
+				// ExifTool's Windows launcher converts command-line filenames via
+				// the active code page. Keep fixture filenames relative so a
+				// Unicode TEMP/profile path never passes through that conversion.
+				_, e = runInDirectory(ctx, active.Root, active.Exiftool, "-overwrite_original", "-Artist=HamsterSelfTest", filepath.Base(source))
 			}
 		}
 		if e != nil {
@@ -131,7 +134,7 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 				return fmt.Errorf("WebP output check failed: %+v %v", info, ie)
 			}
 		case "exif":
-			out, ie := run(ctx, active.Exiftool, "-j", "-Artist", p.Items[0].Target)
+			out, ie := runInDirectory(ctx, filepath.Dir(p.Items[0].Target), active.Exiftool, "-j", "-Artist", filepath.Base(p.Items[0].Target))
 			if ie != nil || strings.Contains(string(out), "HamsterSelfTest") {
 				return fmt.Errorf("metadata cleanup check failed: %v", ie)
 			}

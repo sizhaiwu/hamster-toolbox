@@ -28,17 +28,20 @@ func desktopInstanceName(data string) string {
 }
 
 func (s *server) desktopCanExit() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state.Status != "running" && s.state.Status != "scanning"
+	r := s.taskRoot()
+	r.taskDispatchMu.Lock()
+	defer r.taskDispatchMu.Unlock()
+	return r.allTasksIdle()
 }
-
 func (s *server) beginDesktopExit() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.busy() {
+	r := s.taskRoot()
+	r.taskDispatchMu.Lock()
+	defer r.taskDispatchMu.Unlock()
+	if !r.allTasksIdle() {
 		return false
 	}
-	s.desktopClosing = true
+	r.mu.Lock()
+	r.desktopClosing = true
+	r.mu.Unlock()
 	return true
 }

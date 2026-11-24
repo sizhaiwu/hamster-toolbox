@@ -276,10 +276,9 @@ func makeThumbnailWithLog(ctx context.Context, c Config, it Item, target string,
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		frame := filepath.Join(filepath.Dir(target), "frame.png")
 		seek := thumbnailSeek(m, i, count)
 		filter := fmt.Sprintf("scale=%d:%d:flags=lanczos,setsar=1", l.CellWidth, l.CellHeight)
-		img, e := extractor.frame(ctx, frame, filter, seek)
+		img, e := extractor.frame(ctx, filter, seek)
 		if e != nil {
 			return fmt.Errorf("第 %d/%d 张画面截取失败：%w", i+1, count, e)
 		}
@@ -289,10 +288,6 @@ func makeThumbnailWithLog(ctx context.Context, c Config, it Item, target string,
 		x := c.ThumbnailGap + (i%c.ThumbnailColumns)*(l.CellWidth+c.ThumbnailGap)
 		y := l.HeaderHeight + c.ThumbnailGap + (i/c.ThumbnailColumns)*(l.CellHeight+c.ThumbnailGap)
 		draw.Draw(canvas, image.Rect(x, y, x+l.CellWidth, y+l.CellHeight), img, img.Bounds().Min, draw.Src)
-		// A failed later seek must never reuse an earlier frame.
-		if e = os.Remove(frame); e != nil {
-			return e
-		}
 	}
 	base := filepath.Join(filepath.Dir(target), "sheet.png")
 	f, e := os.Create(base)

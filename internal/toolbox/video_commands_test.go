@@ -38,7 +38,7 @@ func TestCopiedVideoCommandIntegration(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "新目录 $(1+1) ' [x]&", "output.mp4")
 	commands, err := VideoCommands(ctx, c, Item{Source: source, Target: target})
-	if err != nil || len(commands) != 1 {
+	if err != nil || len(commands) < 1 {
 		t.Fatal(commands, err)
 	}
 	script := filepath.Join(t.TempDir(), "command.ps1")

@@ -427,8 +427,8 @@ func (s *server) listTaskHistory() ([]taskRecord, error) {
 	return records, nil
 }
 func (s *server) pruneTaskHistory(clear bool) error {
-	s.historyMu.Lock()
-	defer s.historyMu.Unlock()
+	s.historyMutex().Lock()
+	defer s.historyMutex().Unlock()
 	records, err := s.listTaskHistory()
 	if err != nil {
 		return err

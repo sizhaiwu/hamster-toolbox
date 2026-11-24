@@ -1,8 +1,12 @@
 package toolbox
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -35,17 +39,27 @@ func TestThumbnailEmptyFastSeekFallsBackWithoutStaleFrame(t *testing.T) {
 	var messages []string
 	r := thumbnailFrameExtractor{program: "synthetic-ffmpeg", source: "synthetic.mp4", log: func(message string) { messages = append(messages, message) }}
 	r.run = func(ctx context.Context, exe string, args ...string) ([]byte, error) {
-		if _, err := os.Stat(frame); !os.IsNotExist(err) {
-			t.Fatal("previous frame reused", err)
+		for _, arg := range args {
+			if arg == frame {
+				t.Fatal("temporary frame file still used")
+			}
+		}
+		if args[len(args)-1] != "pipe:1" {
+			t.Fatal("frame did not use stdout pipe", args)
 		}
 		calls = append(calls, append([]string{}, args...))
 		if len(calls) < 3 {
 			return nil, nil
 		} // FFmpeg can succeed without an output frame.
-		writeThumbnailFrame(t, frame, color.RGBA{R: 255, A: 255})
-		return nil, nil
+		img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+		img.Set(0, 0, color.RGBA{R: 255, A: 255})
+		var data bytes.Buffer
+		if err := png.Encode(&data, img); err != nil {
+			t.Fatal(err)
+		}
+		return data.Bytes(), nil
 	}
-	img, err := r.frame(context.Background(), frame, "scale=2:2", 60)
+	img, err := r.frame(context.Background(), "scale=2:2", 60)
 	if err != nil || img == nil || len(calls) != 3 || !r.compatibility || len(messages) != 1 {
 		t.Fatal(len(calls), messages, err)
 	}
@@ -81,7 +95,7 @@ func TestThumbnailEmptyFastSeekFallsBackWithoutStaleFrame(t *testing.T) {
 	if len(a) != 0 || len(b) != 1 || b[0] != "60.000000" {
 		t.Fatal("accurate fallback shifted timestamp", a, b)
 	}
-	if _, err = r.frame(context.Background(), frame, "scale=2:2", 90); err != nil {
+	if _, err = r.frame(context.Background(), "scale=2:2", 90); err != nil {
 		t.Fatal(err)
 	}
 	a, b = seeks(calls[3])
@@ -90,18 +104,45 @@ func TestThumbnailEmptyFastSeekFallsBackWithoutStaleFrame(t *testing.T) {
 	}
 }
 func TestThumbnailRetryHonorsCancellationAndExplainsEmptyFrame(t *testing.T) {
-	frame := filepath.Join(t.TempDir(), "frame.png")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	calls := 0
 	r := thumbnailFrameExtractor{program: "synthetic", source: "synthetic.mp4", run: func(context.Context, string, ...string) ([]byte, error) { calls++; cancel(); return nil, nil }}
-	if _, err := r.frame(ctx, frame, "scale=2:2", 60); err != context.Canceled || calls != 1 {
+	if _, err := r.frame(ctx, "scale=2:2", 60); err != context.Canceled || calls != 1 {
 		t.Fatal("cancellation caused more decodes", calls, err)
 	}
 	r.run = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
 	r.compatibility = false
-	if _, err := r.frame(context.Background(), frame, "scale=2:2", 60); err == nil || !strings.Contains(err.Error(), "兼容定位仍未取得画面") || strings.Contains(err.Error(), "cannot find the file") {
+	if _, err := r.frame(context.Background(), "scale=2:2", 60); err == nil || !strings.Contains(err.Error(), "兼容定位仍未取得画面") || strings.Contains(err.Error(), "cannot find the file") {
 		t.Fatal("missing frame misreported as filesystem failure", err)
+	}
+}
+
+func TestThumbnailPipeRejectsCorruptOversizeAndFailedOutput(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	oversize := append([]byte(nil), encoded.Bytes()...)
+	binary.BigEndian.PutUint32(oversize[16:20], 4097)
+	binary.BigEndian.PutUint32(oversize[29:33], crc32.ChecksumIEEE(oversize[12:29]))
+	for _, tc := range []struct {
+		name   string
+		data   []byte
+		err    error
+		reason string
+	}{
+		{"corrupt", []byte("not a png"), nil, "无法解码"},
+		{"oversize", oversize, nil, "尺寸超过安全限制"},
+		{"failed-process", encoded.Bytes(), errors.New("synthetic encoder failure"), "synthetic encoder failure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			r := thumbnailFrameExtractor{run: func(context.Context, string, ...string) ([]byte, error) { calls++; return tc.data, tc.err }}
+			if img, err := r.frame(context.Background(), "scale=2:2", 60); img != nil || err == nil || !strings.Contains(err.Error(), tc.reason) || calls != 3 {
+				t.Fatal("invalid frame was accepted or compatibility retries changed", calls, err)
+			}
+		})
 	}
 }
 func TestThumbnailTransportStreamNamedMP4Integration(t *testing.T) {

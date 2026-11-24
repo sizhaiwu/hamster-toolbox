@@ -71,7 +71,7 @@ try {
         if (-not [IO.Path]::GetFullPath($path).StartsWith([IO.Path]::GetFullPath($stage)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe acceptance-test path.' }
     }
     $testExe = Join-Path $testFolder 'hamster-toolbox.exe'
-    $profile = Join-Path $stage 'empty-profile'
+    $profile = Join-Path $stage ('empty-profile-' + ([string][char]0x6D4B) + ([string][char]0x8BD5))
     $temp = Join-Path $profile 'temp'
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
     $testEnv = @{}

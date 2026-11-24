@@ -4,7 +4,11 @@
 
 测试以临时合成素材为主，不使用个人媒体。自动化覆盖不等于所有硬件、第三方解码器和系统桌面均已真机验证。
 
-缩略图定位兼容：`go test ./internal/toolbox -run 'TestThumbnailEmptyFastSeek|TestThumbnailRetry'` 覆盖 FFmpeg 成功退出但未输出图片、短区间与从头精确定位重试、截取时间保持、临时帧清除与取消；设置 `TOOLBOX_INTEGRATION=1` 后可运行 `TestThumbnailTransportStreamNamedMP4Integration`，用长 GOP 的 MPEG-TS 模拟错误的 MP4 后缀。可选 `TOOLBOX_THUMBNAIL_SAMPLE_GLOB` 仅用于本机明确选择的只读样本，验收生成物存于临时目录并清理，原视频执行前后比对 SHA256。
+笔记附件看图：`node tests/private-notes-image-check.cjs` 覆盖缓存图片重复打开、正文无引用、缩放与适应窗口、关闭/锁定资源清理、切换笔记和迟到响应隔离、重复请求合并与读取失败提示。可选 `TOOLBOX_NOTES_IMAGE_QA=<状态文件路径> go test . -run '^TestPrivateNotesImageBrowserAcceptance$' -v` 启动临时加密笔记库与公开合成 PNG，仅供浏览器验收，不读取个人笔记。
+
+打包/解压密码记忆：`go test . -run TestPassword -count=1` 验证按工具隔离、重启恢复、磁盘密文、关闭/清空、常用密码引用的编辑与删除同步、损坏文件保护与平台限制。`node tests/password-memory-check.cjs` 验证切换和刷新恢复、保留选择、关闭记忆、清空密码、保存/读取失败提示、普通设置与浏览器存储无明文，以及不支持平台的临时输入。
+
+缩略图截帧与定位：`go test ./internal/toolbox -run 'TestThumbnailEmptyFastSeek|TestThumbnailRetry|TestThumbnailPipe'` 覆盖内存管道、FFmpeg 成功退出但没有画面、损坏/超限 PNG、非零退出的部分输出拒绝、兼容定位与取消。设置 `TOOLBOX_INTEGRATION=1` 后，`TestThumbnailLockedLegacyFrameIntegration` 在 Windows 上锁住旧 `frame.png`、复现删除失败，验证新实现仍可生成完整拼图且原文件不变；`TestThumbnailIntegration` 验证 MP4/MKV 并发生成；`TestThumbnailTransportStreamNamedMP4Integration` 用长 GOP 的 MPEG-TS 模拟错误 MP4 后缀。可选 `TOOLBOX_THUMBNAIL_SAMPLE_GLOB` 仅用于本机明确选择的只读样本，验收生成物存于临时目录并清理，原视频执行前后比对 SHA256。
 
 共享首次登录：`go test . -run TestGuestLogin` 会从实际共享 HTML 提取脚本、样式和图片地址，逐项验证无会话时可加载；目录、资源与管理接口仍须认证。另验证登录设置 Cookie 后不重新 GET 页面即可读取目录。`node tests/explorer-login-check.cjs` 验证首次输入口令直接进入、错误口令、重复提交保护、会话过期后重登、Cookie 未保存与初始化错误提示；这些情况不需要手动刷新页面。
 
@@ -81,7 +85,7 @@ Remove-Item Env:TOOLBOX_HARDWARE_INTEGRATION
 
 目录大小与合并：`go test ./... -run 'TestBrowserDirectorySize|TestResourceDirectorySize|TestBrowserMerge|TestBrowserTransferConflict|TestDesktop'` 和 `node tests/explorer-properties-check.cjs`。覆盖按需统计、取消、共享边界、同名选择、替换前校验与原件备份、目标独有文件保留及移动时跳过源文件保留。Windows 无控制台与重复启动集成测试需设置 `TOOLBOX_DESKTOP_TEST_EXE` 指向新构建的 GUI EXE，再运行 `go test . -run TestDesktopGUIAndSingleInstanceIntegration`；使用独立临时数据目录，不打开浏览器。安装包构建与验收说明见[安装与托盘](installation.md)。
 
-任务历史：`go test . -run TestTaskHistory`、`go test ./internal/toolbox -run TestRemainingPlan`、`node tests/task-history-check.cjs`。覆盖中断识别、跨进程租约、密码排除、历史清理、记录损坏降级、定向重扫与筛选边界；`TOOLBOX_INTEGRATION=1 go test . -run TestTaskHistoryObservedMediaIntegration` 使用合成图片验证并发执行、失败记录与重扫仅处理未成功文件。
+任务历史：`go test . -run TestTaskHistory`、`go test ./internal/toolbox -run TestRemainingPlan`、`node tests/task-history-check.cjs`。覆盖中断识别、跨进程租约、密码排除、历史清理、记录损坏降级、定向重扫与筛选边界；界面还覆盖其他工具进度/完成自动刷新、按目标工具载入与重扫、载入前再次检查其他页面新启动的任务。`TestIndependentToolTasks` 验证并行历史各自的参数、结束状态和活动记录清理保护；`TOOLBOX_INTEGRATION=1 go test . -run TestTaskHistoryObservedMediaIntegration` 使用合成图片验证并发执行、失败记录与重扫仅处理未成功文件。
 
 常用文件图标、悬停播放、失败提示、触屏排除及共享范围：`node tests/explorer-hover-check.cjs`；后端权限与资源限制：`go test . -run 'TestBrowserHover|TestBrowserMediaRoutes'`。
 
@@ -172,3 +176,7 @@ go test . -run 'TestResource.*Properties' -count=1
 共享配置公共入口由 `node tests/shared-settings-check.cjs` 和 `go test . -run 'TestSharedSettings|TestRemoteSharedSettings'` 验证：工具箱、资源管理器、笔记的通用设置共用表单，检查目录选择、保存反馈、口令清空、配置持久化，以及普通共享访客无法调用管理接口。
 
 手机笔记的滚动与键盘定位由 `node tests/mobile-notes-scroll-check.cjs` 覆盖：Markdown 输入区、富文本光标、可视窗口偏移、手动滑动不回弹、弹窗隔离和无 VisualViewport 的布局高度变化。可选 `TestMobileNotesBrowserAcceptance` 使用临时数据和长篇合成笔记提供浏览器检查入口（设置 `TOOLBOX_MOBILE_NOTES_QA` 为输出 JSON 文件路径）；桌面浏览器缩小可见区域的验证不能代替 iPhone 真机键盘测试。
+
+多工具并行：`go test . -run "TestIndependentToolTasks|TestToolTask" -count=1` 验证两个工具同时进入运行状态、计划/日志/取消隔离、退出保护、扫描受理任务 ID、拒绝替换运行任务、执行前再次检查读写冲突与完成事件；可加 `-race` 检查并发访问。`node tests/tool-tasks-check.cjs` 验证跨工具切换、导航进度、多个页面独立排队提醒、短任务完成后被新任务替换时的补收、跨页面预览与密码核对、运行参数同步、延迟响应隔离和失败提示。
+
+侧栏已读与旧提醒：同一 UI 测试还验证关闭弹窗/进入页面隐藏结束状态、日志保留、新任务重新显示、待执行与运行状态保留、无计划 ID 的扫描错误确认，以及新窗口（包含复制的会话存储）不重放旧任务。`node tests/task-feedback-check.cjs` 验证当前页面刷新后恢复未确认提醒，各页面继续独立接收新完成事件。

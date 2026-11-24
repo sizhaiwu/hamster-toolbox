@@ -2,10 +2,27 @@
 (() => {
   const el = id => document.getElementById(id);
   const storageKey = 'hamster.toolbox.task-notices.v1';
+  const readKey='hamster.toolbox.task-badges-read.v1';
+  let readTasks=new Set();
+  let currentTaskKeys=new Set();
+  try{const stored=JSON.parse(sessionStorage.getItem(readKey)||'[]');if(Array.isArray(stored))readTasks=new Set(stored.filter(id=>typeof id==='string').slice(-512));}catch{}
+  const taskKeys=state=>[state?.TaskID&&'task:'+state.TaskID,state?.PlanID&&'plan:'+state.PlanID].filter(Boolean);
+  const isTaskRead=state=>taskKeys(state).some(id=>readTasks.has(id));
+  function markTaskRead(state){
+    const keys=taskKeys(state);if(!keys.length||keys.every(id=>readTasks.has(id)))return;
+    for(const id of keys)readTasks.add(id);
+    const kept=[...readTasks].filter(id=>currentTaskKeys.has(id)),limit=Math.max(0,512-kept.length);
+    const recent=[...readTasks].filter(id=>!currentTaskKeys.has(id));
+    readTasks=new Set([...(limit?recent.slice(-limit):[]),...kept]);
+    try{sessionStorage.setItem(readKey,JSON.stringify([...readTasks]));}catch{}
+    window.dispatchEvent(new CustomEvent('toolbox-task-read'));
+  }
+  let newNavigation=false;
+  try{newNavigation=performance.getEntriesByType?.('navigation')?.[0]?.type==='navigate';}catch{}
   let records = [];
   try {
     const stored = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
-    if (Array.isArray(stored)) records = stored.filter(r => typeof r?.id === 'string').slice(-64);
+    if (Array.isArray(stored)) records = stored.filter(r => typeof r?.id === 'string').slice(-512);
   } catch {}
   const prefs = {CloseDialogOnBackdrop:false,TaskPopup:true, TaskSound:true,BrowserAutoPlay:true,BrowserMuted:false,RememberPlayback:false,RestoreTabs:false,DefaultPlayer:"browser",FontScale:100,ThumbnailCacheMB:256};
   window.toolboxSettings=prefs;
@@ -30,16 +47,14 @@
     if(cancel){if(!cancel.disabled)cancel.click()}else pressed.dialog.close('cancel');
   },true);
   let save, label = () => '工具箱任务', initialized = false, writes = Promise.resolve();
-  let context, currentID = '', previousFocus;
+  let context, currentID = '', currentTask, previousFocus;
   const pending = new Map();
   function record(id) {
     let entry = records.find(r => r.id === id);
-    if (!entry) { entry = {id}; records.push(entry); records = records.slice(-64); }
+    if (!entry) { entry = {id}; records.push(entry); records = records.slice(-512); }
     return entry;
   }
-  function persist() { try { sessionStorage.setItem(storageKey, JSON.stringify(records)); } catch {} try{localStorage.setItem(storageKey,JSON.stringify(records))}catch{} }
-  const noticeWindow=String(Math.random())+Date.now();
-  function synchronizeNotice(id){try{const shared=JSON.parse(localStorage.getItem(storageKey)||'[]');for(const remote of shared){const own=record(remote.id);own.acknowledged ||= remote.acknowledged;own.sounded ||= remote.sounded;}const lock=JSON.parse(localStorage.getItem(storageKey+'.claim.'+id)||'null');if(lock&&lock.owner!==noticeWindow&&lock.expires>Date.now())return false;localStorage.setItem(storageKey+'.claim.'+id,JSON.stringify({owner:noticeWindow,expires:Date.now()+5000}));}catch{}return true;}
+  function persist() { try { sessionStorage.setItem(storageKey, JSON.stringify(records)); } catch {} }
   function unlockSound() {
     if (!initialized || !prefs.TaskSound) return;
     try {
@@ -87,6 +102,7 @@
     pending.delete(id);
     if (record(id).acknowledged) { displayNext(); return; }
     currentID = id;
+    currentTask=notice.state;
     const result = describe(notice.state);
     el('taskResultDialog').dataset.kind = result.kind;
     el('taskResultTitle').textContent = result.title;
@@ -98,9 +114,9 @@
     previousFocus = document.activeElement;
     el('taskResultDialog').showModal();
   }
-  function observe(state) {
+  function observeOne(state) {
     if (!initialized || !state.PlanID || !['finished','cancelled','error'].includes(state.Status)) return;
-    const id = state.PlanID;if(!synchronizeNotice(id))return;const entry = record(id);
+    const id = state.PlanID;const entry = record(id);
     if (entry.acknowledged || currentID === id || pending.has(id)) return;
     const notice = {state, soundBlocked:false};
     if (prefs.TaskSound && !entry.sounded) {
@@ -112,9 +128,33 @@
     else entry.acknowledged = true;
     persist();
   }
+  let observedSnapshot=false;
+  function observe(state) {
+    currentTaskKeys=new Set([state,...(state.Tasks||[])].flatMap(taskKeys));
+    const tasks=[state,...(state.Tasks||[]),...(state.Completed||[])];
+    if(!observedSnapshot){
+      for(const task of tasks) {
+        if(['finished','cancelled','error'].includes(task.Status)){
+          const existing=records.some(r=>r.id===task.PlanID);
+          if(newNavigation||!existing){if(task.PlanID)record(task.PlanID).acknowledged=true;markTaskRead(task);}
+        }else if(task.Status==='ready'&&(task.Total===0||task.Actionable===0))markTaskRead(task);
+      }
+      persist();
+      observedSnapshot=true;
+    }
+    // Track active plans so a reload can still report a task that finishes
+    // while this page is reconnecting, without replaying old results in new tabs.
+    let watchingChanged=false;
+    for(const task of tasks)if(task.Status==='running'&&task.PlanID&&!record(task.PlanID).watching){record(task.PlanID).watching=true;watchingChanged=true;}
+    if(watchingChanged)persist();
+    for(const task of state.Completed||[])observeOne(task);
+    for(const task of state.Tasks||[])observeOne(task);
+    observeOne(state);
+  }
   el('taskResultClose').onclick = () => el('taskResultDialog').close();
   el('taskResultDialog').addEventListener('close', () => {
     if (currentID) record(currentID).acknowledged = true;
+    markTaskRead(currentTask);currentTask=null;
     currentID = ''; persist(); previousFocus?.focus(); displayNext();
   });
   let startupRevision=0,startupBusy=false,startupEnabled=false;
@@ -178,6 +218,6 @@
       if(window.toolboxVersion)request('info').then(info=>window.toolboxVersion.init(info,request)).catch(()=>{});
       const poll=async()=>{try{observe(await request('state',{Summary:true}));}catch{}};await poll();setInterval(poll,1500);
     },
-    observe
+    observe,isTaskRead,markTaskRead
   };
 })();

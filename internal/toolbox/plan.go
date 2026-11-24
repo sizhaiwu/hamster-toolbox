@@ -41,6 +41,7 @@ type Config struct {
 	Recursive, Files, Dirs, Regex                                                                          bool
 	Quality, CRF, MinMB, MinKbps                                                                           int
 	VideoHDR                                                                                               string
+	VideoContainer                                                                                         string
 	VideoMode, VideoAcceleration                                                                           string
 	MetadataTypes                                                                                          string
 	NumberName, NumberStyle, NumberOrder, NumberFilter                                                     string
@@ -106,7 +107,7 @@ func validName(n string) bool {
 	return !regexp.MustCompile("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$").MatchString(strings.ToUpper(strings.Split(n, ".")[0]))
 }
 func DefaultConfig() Config {
-	return Config{VideoHDR: "preserve", Workers: 1, FormatDeleteMode: "recycle", ExtractDeleteMode: "recycle", DedupeProgram: DetectDedupeProgram(), ExtractConflict: "rename", ExtractLayout: "separate", SevenZip: detectSevenZip(), ArchiveMode: "pure", ArchiveSplit: "script", ArchiveVolume: "3g", ArchiveFirstVolume: "10k", ArchiveDirPrefix: "D_", ArchiveFilePrefix: "F_", ArchiveStart: 1, ArchiveDigits: 3, ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, MetadataTypes: "images", VideoMode: "efficient", VideoAcceleration: "auto", CRF: 18, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
+	return Config{VideoContainer: "original", VideoHDR: "preserve", Workers: 1, FormatDeleteMode: "recycle", ExtractDeleteMode: "recycle", DedupeProgram: DetectDedupeProgram(), ExtractConflict: "rename", ExtractLayout: "separate", SevenZip: detectSevenZip(), ArchiveMode: "pure", ArchiveSplit: "script", ArchiveVolume: "3g", ArchiveFirstVolume: "10k", ArchiveDirPrefix: "D_", ArchiveFilePrefix: "F_", ArchiveStart: 1, ArchiveDigits: 3, ThumbnailColumns: 5, ThumbnailRows: 5, ThumbnailWidth: 1024, ThumbnailGap: 5, ThumbnailQuality: 90, ThumbnailFormat: "jpg", ThumbnailBackground: "#ffffff", ThumbnailInfo: true, ThumbnailTime: true, PngMode: "lossless", PngQuality: 90, ImageFormats: defaultImageFormats(), ExampleNumber: true, ExampleAtStart: true, Recursive: true, Files: true, Dirs: true, Quality: 60, MetadataTypes: "images", VideoMode: "efficient", VideoAcceleration: "auto", CRF: 18, MinMB: 100, MinKbps: 1000, StartNumber: 1, NumberDigits: 3, NumberStyle: "dash", NumberOrder: "name", NumberKeepOriginal: true, Font: detectFont(), FFmpeg: detectProgram("ffmpeg", "ffmpeg"), FFprobe: detectProgram("ffprobe", "ffmpeg"), Magick: detectProgram("magick", "imagemagick"), Exiftool: detectProgram("exiftool", "exiftool")}
 }
 func Normalize(c Config) (Config, error) {
 	if c.Tool == "dedupe" {
@@ -473,6 +474,10 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				if !has(src, Videos) || s.Size() < int64(c.MinMB)*1024*1024 {
 					continue
 				}
+				if _, err := videoOutputPath(c, src); err != nil {
+					p.Items = append(p.Items, Item{Source: src, Conflict: err.Error(), Note: "保留原视频", Size: s.Size(), Modified: s.ModTime()})
+					continue
+				}
 				v, e := probeCompressionVideo(ctx, c.FFprobe, src)
 				if e != nil {
 					if ctx.Err() != nil {
@@ -520,7 +525,7 @@ func buildPlan(ctx context.Context, c Config, log func(string)) (*Plan, error) {
 				dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + ".webp"
 			}
 			if c.Tool == "video" {
-				dst = strings.TrimSuffix(dst, filepath.Ext(dst)) + ".mp4"
+				dst, _ = videoOutputPath(c, dst)
 			}
 			note = "保留原件，输出到新目录"
 			if c.Tool == "exif" {

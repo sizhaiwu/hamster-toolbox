@@ -41,7 +41,7 @@ const optionKeys = {
   format: ['Recursive','FormatCleanOther','FormatDeleteMode'], rename: ['Recursive', 'Files', 'Dirs', 'Find', 'Replace', 'Regex', 'Prefix', 'Suffix', 'RenameMode', 'ExampleNumber', 'ExampleAtStart'],
   number: ['NumberName', 'StartNumber', 'NumberDigits', 'NumberStyle', 'NumberOrder', 'NumberFilter', 'NumberKeepOriginal'],
   describe: ['Recursive'], exif: ['Workers','Recursive', 'Output', 'MetadataTypes'], pdf: ['Output'],
-  image: ['Workers','Recursive', 'Output', 'Quality', 'PngMode', 'PngQuality'], video: ['Workers','Recursive', 'Output', 'VideoMode', 'VideoAcceleration', 'VideoHDR', 'CRF', 'MinMB', 'MinKbps'],
+  image: ['Workers','Recursive', 'Output', 'Quality', 'PngMode', 'PngQuality'], video: ['Workers','Recursive', 'Output', 'VideoContainer', 'VideoMode', 'VideoAcceleration', 'VideoHDR', 'CRF', 'MinMB', 'MinKbps'],
   thumbnail: ['Workers','Recursive', 'Output', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality', 'ThumbnailFormat', 'ThumbnailBackground', 'ThumbnailInfo', 'ThumbnailTime']
 };
 const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recursive', 'Files', 'Dirs', 'Regex', 'NumberKeepOriginal', 'ExampleNumber', 'ExampleAtStart', 'ThumbnailInfo', 'ThumbnailTime'], numericKeys = ['Workers','ArchiveStart','ArchiveDigits','ArchiveLevel','Quality', 'CRF', 'MinMB', 'MinKbps', 'StartNumber', 'NumberDigits', 'PngQuality', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality'];
@@ -59,9 +59,16 @@ let saveTimer, checkTimer, saveRevision = 0, saveQueue = Promise.resolve(), poll
 let detectingNumbering = false;
 let dedupeAvailable=false, dedupeChecking=false, dedupeLaunching=false, dedupeRequest=0, dedupeTimer;
 let savedPasswords = [], passwordTarget = 'ArchivePassword', passwordEditID = '', passwordLoading = false, passwordVaultBusy = false;
+const passwordMemory={archive:{Supported:false,SavedID:''},extract:{Supported:false,SavedID:''}};
+const passwordMemoryPending=new Map(),passwordMemoryTimers=new Map(),passwordMemoryRevisions=new Map();
+let passwordMemoryQueue=Promise.resolve();
 let previewPlan = '', previewOffset = 0, previewTotal = 0, previewRows = [], previewRequest = 0, previewLoading = false;
 let lastActionError = '';
 let taskHistory = null;
+const toolPlanConfigs=new Map();
+const toolPlanTasks=new Map();
+let toolTaskStates=[];
+let selectedTaskID='';
 let followLogs = true;
 let expandedTerminal = null;
 const terminalFoldKey = 'hamster.terminal.fold.v1';
@@ -170,8 +177,8 @@ document.addEventListener('keydown',event=>{
   }
 },true);
 
-async function api(path, data = {}) {
-  const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Toolbox-Token': token }, body: JSON.stringify(data) });
+async function api(path, data = {}, taskTool=tool) {
+  const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Toolbox-Token': token, 'X-Toolbox-Tool': taskTool }, body: JSON.stringify(data) });
   if (!response.ok) throw Error((await response.text()).trim());
   return path === 'log' ? response.text() : response.json();
 }
@@ -185,6 +192,18 @@ function config() {
   return result;
 }
 function putValue(id, value) { const el = $(id); if (!el) return; if (el.type === 'checkbox') el.checked = Boolean(value); else el.value = value ?? ''; }
+function matchesTaskConfig(snapshot) {
+  return !snapshot || Object.entries(config()).every(([key,value])=>['ArchivePassword','ExtractPassword'].includes(key)||JSON.stringify(value)===JSON.stringify(snapshot[key]));
+}
+function showRunningTaskConfig(snapshot) {
+  for(const [key,value] of Object.entries(snapshot))if(!['ArchivePassword','ExtractPassword'].includes(key))putValue(key,value);
+  if(tool==='image')restoreImageFormats(snapshot.ImageFormats);
+  if(tool==='number')updateNumberSample();
+  updateRenameMode();updateVideoPreset();updateVideoOptions();updateThumbnailOptions();updateArchiveOptions();updateExtractOptions();
+  $('qualityValue').textContent=$('Quality').value;
+  // A task started in another page may require a different dependency set.
+  inspectDependencies(false);
+}
 function updateActions() {
   const locked = busy || switching || submitting || detectingNumbering || passwordLoading || dedupeLaunching;
   taskHistory?.syncUI(locked,tool,$('Root').value);
@@ -199,6 +218,7 @@ function updateActions() {
   $('formatDeleteOptions').hidden = !$('FormatCleanOther').checked;
   if (tool === 'archive') activeInputs.add('ArchiveSavedPassword');
   if (tool === 'extract') activeInputs.add('ExtractSavedPassword');
+  if(passwordMemory[tool]?.Supported)activeInputs.add((tool==='archive'?'Archive':'Extract')+'RememberPassword');
   $('clearExtractSource').disabled=locked;
   $('manageArchivePasswords').disabled = $('manageExtractPasswords').disabled = locked;
   if (tool === 'video') activeInputs.add('videoQuality');
@@ -229,7 +249,7 @@ function updateActions() {
   $('preview').disabled = locked || checking || !dependenciesReady || (tool === 'image' && !selectedImageFormats().length);
   $('preview').textContent = submitting ? '正在提交…' : busy ? '任务处理中…' : '扫描并预览 →';
   $('execute').disabled = locked || !planID; $('cancel').hidden = !busy;
-  for (const b of $('nav').querySelectorAll('button[data-tool]')) b.disabled = locked;
+  for (const b of $('nav').querySelectorAll('button[data-tool]')) b.disabled = switching || submitting;
   // CSS-hidden inputs still participate in native HTML form validation unless disabled.
   for (const el of $('form').querySelectorAll('input, select, textarea')) el.disabled = locked || !activeInputs.has(el.id);
   for (const el of $('form').querySelectorAll('button[data-file-key]')) el.disabled = locked;
@@ -341,6 +361,10 @@ function updateVideoOptions() {
   $('videoHDRHint').textContent = ({base:'用于带杜比信息的 HLG 视频：保留 HLG HDR，移除杜比动态效果。其他动态 HDR 仍跳过。',preserve:'HLG / HDR10 保持 HDR，使用 H.265 10-bit；含母版亮度信息时使用 CPU。',sdr:'转换亮度和色彩以适配普通屏幕；滤镜占用 CPU，建议先试压一段。',skip:'HDR 原片保留，仅压缩普通 SDR 视频。'})[$('VideoHDR').value] || '';
 
   if (tool !== 'video') return;
+  const filters=[];
+  if(Number($('MinMB').value)>0)filters.push('体积至少 '+$('MinMB').value+' MB');
+  if(Number($('MinKbps').value)>0)filters.push('原码率至少 '+$('MinKbps').value+' kbps');
+  $('videoFilterSummary').textContent=filters.length?'只扫描：'+filters.join('，')+'（高级设置可改）。':'扫描时不限制原文件体积和码率；格式、HDR 与安全检查仍然有效。';
   const mode = $('VideoMode').value, cpuOverride = mode === 'archive' || Number($('CRF').value) === 0;
   const acceleration = cpuOverride ? 'cpu' : $('VideoAcceleration').value;
   $('videoModeHint').textContent = videoModeAdvice[mode] || videoModeAdvice.efficient;
@@ -460,10 +484,11 @@ async function detectNumbering(save = true) {
 }
 async function selectTool(id, initial = false) {
   exitTerminalFullscreen(false);
-  if ((busy || switching) && !initial) return; switching = true; updateActions();
+  if (switching && !initial) return; toolPlanConfigs.set(tool,lastConfig); switching = true; updateActions();
+  let viewedTask;
   try {
-    if (!initial) await saveNow(); dependencyRequest++; clearTimeout(checkTimer); dedupeRequest++; clearTimeout(dedupeTimer); dedupeChecking=false;
-    tool = id; toolGroups.find(g=>g.tools.includes(id)).section.open=true; checking = false; planID = ''; lastConfig = '';
+    if (!initial) {await flushPasswordMemory(tool);await saveNow();} dependencyRequest++; clearTimeout(checkTimer); dedupeRequest++; clearTimeout(dedupeTimer); dedupeChecking=false;
+    tool = id; busy=false; selectedTaskID=''; toolGroups.find(g=>g.tools.includes(id)).section.open=true; checking = false; planID = ''; lastConfig = toolPlanConfigs.get(id)||'';
     resetPreview();
     const t = tools.find(t => t[0] === id);
     $('title').textContent = $('crumb').textContent = t[1]; $('description').textContent = t[2]; $('tool-number').textContent = String(tools.indexOf(t) + 1).padStart(2, '0');
@@ -499,6 +524,9 @@ async function selectTool(id, initial = false) {
     putValue('Workers',workspaces[id]?.Workers|| (id==='video'?1:defaults.Workers||2));
     const active = { ...defaults, ...(workspaces[id] || {}), Tool: id };
     if (!workspaces[id] && !initial) active.Root = $('Root').value;
+    const liveTask=await api('state',{Summary:true});
+    viewedTask=liveTask;
+    if(liveTask.Tool===id&&['scanning','running'].includes(liveTask.Status)&&liveTask.Config)Object.assign(active,liveTask.Config);
     for (const [key, value] of Object.entries(active)) putValue(key, value);
     if (id === 'rename') {
       putValue('RenameMode', active.RenameMode || (active.Regex ? 'regex' : 'text'));
@@ -512,10 +540,11 @@ async function selectTool(id, initial = false) {
       putValue('VideoMode', active.VideoMode || (workspaces[id] ? 'compatible' : 'efficient'));
       putValue('VideoAcceleration', active.VideoAcceleration || 'auto');
       putValue('VideoHDR', active.VideoHDR || 'preserve');
+      putValue('VideoContainer', active.VideoContainer || 'original');
       updateVideoOptions();
     }
     // Blank outputs on a new tool; they must not leak from another workspace.
-    if (!workspaces[id]) putValue('Output', '');
+    if (!workspaces[id] && !(liveTask.Tool===id&&['scanning','running'].includes(liveTask.Status)&&liveTask.Config)) putValue('Output', '');
     $('qualityValue').textContent = $('Quality').value; updateVideoPreset(); $('message').textContent = '';
     updateRenameMode();
     updateThumbnailOptions();
@@ -528,8 +557,9 @@ async function selectTool(id, initial = false) {
       updateNumberSample();
     }
     await queueSave(config());
+    if(id==='archive'||id==='extract')await loadPasswordMemory(id);
   } catch (e) { dependenciesReady = false; $('message').textContent = e.message; }
-  finally { switching = false; updateActions(); await poll(); }
+  finally { switching = false; updateActions(); await poll();if(tool===id&&viewedTask?.Tool===id&&dismissibleTaskBadge(viewedTask))window.toolboxFeedback?.markTaskRead(viewedTask); }
 }
 const toolGroups=[
  {id:'workspace',label:'工作空间',tools:[]},
@@ -547,8 +577,27 @@ for(const group of toolGroups){
 toolGroups[0].body.append($('openFiles'),$('openNotes'));
 for (const t of tools) {
   const b = document.createElement('button'); b.type = 'button'; b.dataset.tool = t[0];
-  const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2]; b.append(icon, document.createTextNode(t[1])); b.onclick = () => selectTool(t[0]); toolGroups.find(g=>g.tools.includes(t[0])).body.append(b);
+  const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2];const name=document.createElement('span');name.className='tool-nav-label';name.textContent=t[1];const status=document.createElement('span');status.className='tool-task-badge';status.hidden=true;status.setAttribute('aria-live','off');b.append(icon,name,status); b.onclick = () => selectTool(t[0]); toolGroups.find(g=>g.tools.includes(t[0])).body.append(b);
 }
+function dismissibleTaskBadge(task){return ['finished','cancelled','error'].includes(task.Status)||task.Status==='ready'&&(task.Total===0||task.Actionable===0);}
+function renderToolTasks(states) {
+ toolTaskStates=states;
+ for(const group of toolGroups){const count=states.filter(s=>group.tools.includes(s.Tool)&&['running','scanning'].includes(s.Status)).length;let badge=group.section.querySelector('.tool-group-status');if(!badge){badge=document.createElement('span');badge.className='tool-group-status';group.section.querySelector('summary').append(badge)}badge.hidden=!count;badge.textContent=count?count+' 运行':'';}
+ for(const button of $('nav').querySelectorAll('button[data-tool]')) {
+  const task=states.find(s=>s.Tool===button.dataset.tool&&s.Status!=='idle');const badge=button.querySelector('.tool-task-badge');
+  badge.hidden=!task;button.dataset.taskStatus=task?.Status==='finished'&&task.Result?.Failed?'error':task?.Status||'idle';
+  if(task&&dismissibleTaskBadge(task)&&window.toolboxFeedback?.isTaskRead(task)){badge.hidden=true;badge.textContent='';button.dataset.taskStatus='idle';button.title=tools.find(t=>t[0]===button.dataset.tool)?.[2]||'';continue;}
+  if(!task) {button.title=tools.find(t=>t[0]===button.dataset.tool)?.[2]||'';continue}
+  let text=({scanning:'扫描中',ready:'待执行',finished:'已完成',cancelled:'已取消',error:'失败'})[task.Status]||'运行中';
+  if(task.Status==='ready'&&task.Total===0){text='无项目';button.dataset.taskStatus='empty';}
+  else if(task.Status==='ready'&&task.Actionable===0){text='全跳过';button.dataset.taskStatus='skipped';}
+  if(task.Status==='finished'&&task.Result?.Failed)text=task.Result.Success?'部分失败':'失败';
+  if(task.Status==='running') text=task.Tool==='video'&&task.Total===1&&task.Operation?.PercentKnown?'运行 '+Math.round(task.Operation.Percent)+'%':`${task.Done||0}/${task.Total||0}`;
+  const detail=task.Status==='ready'?text+' · 共 '+(task.Total||0)+' 项'+(Number.isFinite(task.Actionable)?'，可执行 '+task.Actionable+' 项，跳过 '+(task.Conflicts||0)+' 项':''):(task.Status==='finished'?text:statuses[task.Status]||task.Status)+' · '+(task.Done||0)+'/'+(task.Total||0);
+  badge.textContent=text;button.title=(tools.find(t=>t[0]===task.Tool)?.[1]||task.Tool)+' · '+detail+(task.Error?' · '+task.Error:'');
+ }
+}
+window.addEventListener('toolbox-task-read',()=>renderToolTasks(toolTaskStates));
 $('openFiles').firstElementChild.replaceChildren(toolNavIcon('files'));
 for (const [index, ext] of imageFormatExtensions.entries()) {
   const label = document.createElement('label'); label.className = 'check';
@@ -561,7 +610,7 @@ for (const el of $('form').querySelectorAll('input, textarea')) el.addEventListe
   $('qualityValue').textContent = $('Quality').value; if (el.id === 'CRF') updateVideoPreset(); changed();
 });
 for (const id of ['NumberStyle', 'NumberOrder']) $(id).addEventListener('change', () => changed());
-for (const id of ['VideoMode', 'VideoAcceleration', 'VideoHDR']) $(id).addEventListener('change', () => changed());
+for (const id of ['VideoMode', 'VideoAcceleration', 'VideoHDR', 'VideoContainer']) $(id).addEventListener('change', () => changed());
 for (const id of ['ArchiveMode','ArchiveSplit','ArchiveLevel','ExtractConflict','ExtractLayout','ExtractDeleteMode','FormatDeleteMode']) $(id).addEventListener('change', () => changed());
 $('addArchiveExtra').onclick = () => openPicker('ArchiveExtras');
 // Archive secrets are not website credentials. Native password controls make
@@ -585,8 +634,47 @@ async function refreshSavedPasswords() {
     const select = $(key+'SavedPassword'); select.replaceChildren();
     const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = savedPasswords.length ? '选择常用密码…' : '暂无常用密码，请点击管理添加'; select.append(placeholder);
     for (const choice of savedPasswords) { const option = document.createElement('option'); option.value = choice.ID; option.textContent = choice.Name; select.append(option); }
+    const remembered=passwordMemory[key==='Archive'?'archive':'extract'];
+    if(remembered.SavedID&&!savedPasswords.some(choice=>choice.ID===remembered.SavedID)){remembered.SavedID='';putValue(key+'Password','');if(tool===(key==='Archive'?'archive':'extract'))changed();}
+    select.value=remembered.SavedID||'';
   }
   renderSavedPasswords();
+}
+function passwordPrefix(id){return id==='archive'?'Archive':'Extract';}
+function passwordMemoryStatus(id,text,bad=false){const status=$(passwordPrefix(id)+'PasswordMemoryStatus');status.textContent=text;status.classList.toggle('bad',bad);}
+async function loadPasswordMemory(id){
+  const prefix=passwordPrefix(id);passwordMemoryStatus(id,'正在读取密码记忆…');
+  try{
+    const memory=await api('password-memory',{Tool:id},id);passwordMemory[id]={Supported:memory.Supported,Remember:memory.Remember,SavedID:memory.SavedID||''};
+    $(prefix+'RememberPassword').checked=Boolean(memory.Remember);
+    if(memory.Remember){putValue(prefix+'Password',memory.Password);$(prefix+'SavedPassword').value=memory.SavedID||'';}
+    $(prefix+'Password').dataset.secretHidden='true';if(!supportsSecretMask)$(prefix+'Password').type='password';
+    $('toggle'+prefix+'Password').textContent='显示密码';$('toggle'+prefix+'Password').setAttribute('aria-pressed','false');$('toggle'+prefix+'Password').setAttribute('aria-label','显示'+(id==='archive'?'压缩包密码':'解压密码'));
+    passwordMemoryStatus(id,!memory.Supported?'当前平台暂不支持本机加密记忆，仅在本次页面保留密码。':memory.Remember?(memory.Password?'已恢复上次密码；后续修改会加密记住。':'已开启记忆，输入或选择密码后自动保存。'):'未开启记忆；临时密码不保存到磁盘。');
+  }catch(error){passwordMemory[id]={Supported:false,SavedID:''};$(prefix+'RememberPassword').checked=false;passwordMemoryStatus(id,'密码记忆读取失败：'+error.message,true);}
+}
+function schedulePasswordMemory(id,immediate=false){
+  if(!passwordMemory[id]?.Supported)return Promise.resolve();
+  const prefix=passwordPrefix(id),remember=$(prefix+'RememberPassword').checked;
+  if(!remember&&passwordMemory[id].Remember===false)return Promise.resolve();
+  passwordMemory[id].Remember=remember;
+  passwordMemoryPending.set(id,{Tool:id,Remember:remember,Password:remember?$(prefix+'Password').value:'',SavedID:remember?passwordMemory[id].SavedID||'':''});
+  clearTimeout(passwordMemoryTimers.get(id));
+  passwordMemoryStatus(id,'正在保存密码记忆…');
+  if(immediate)return flushPasswordMemory(id);
+  passwordMemoryTimers.set(id,setTimeout(()=>flushPasswordMemory(id),400));
+  return Promise.resolve();
+}
+function flushPasswordMemory(id){
+  clearTimeout(passwordMemoryTimers.get(id));passwordMemoryTimers.delete(id);
+  const snapshot=passwordMemoryPending.get(id);
+  if(snapshot){
+    passwordMemoryPending.delete(id);const revision=(passwordMemoryRevisions.get(id)||0)+1;passwordMemoryRevisions.set(id,revision);
+    passwordMemoryQueue=passwordMemoryQueue.catch(()=>{}).then(()=>api('password-memory-save',snapshot,id)).then(()=>{
+      if(passwordMemoryRevisions.get(id)===revision&&!passwordMemoryPending.has(id))passwordMemoryStatus(id,!snapshot.Remember?'已关闭记忆并清除对应密码；常用密码列表保留。':snapshot.Password?'已加密记住，下次自动填入。':'已清空记忆密码。');
+    }).catch(error=>{if(passwordMemoryRevisions.get(id)===revision)passwordMemoryStatus(id,'密码记忆未保存：'+error.message,true);});
+  }
+  return passwordMemoryQueue;
 }
 function setPasswordVaultBusy(value) {
   passwordVaultBusy = value;
@@ -598,7 +686,8 @@ function resetPasswordEditor() {
 async function useSavedPassword(id,key) {
   passwordLoading = true; updateActions();
   try {
-    const data = await api('password-get',{ID:id}); putValue(key,data.Password); changed();
+    const data = await api('password-get',{ID:id}); putValue(key,data.Password);
+    const target=key==='ArchivePassword'?'archive':'extract';passwordMemory[target].SavedID=id;$(passwordPrefix(target)+'SavedPassword').value=id;changed();await schedulePasswordMemory(target,true);
     if ($('passwordDialog').open) $('passwordDialog').close();
   } finally { passwordLoading = false; updateActions(); }
 }
@@ -614,14 +703,18 @@ function renderSavedPasswords() {
   }
 }
 for (const key of ['Archive','Extract']) {
-  $(key+'SavedPassword').onchange=async()=>{const id=$(key+'SavedPassword').value;if(!id||busy||switching)return;try{await useSavedPassword(id,key+'Password');}catch(e){showMessage(e.message,true);}finally{$(key+'SavedPassword').value='';}};
+  const target=key==='Archive'?'archive':'extract';
+  $(key+'SavedPassword').onchange=async()=>{const id=$(key+'SavedPassword').value;if(!id||busy||switching)return;try{await useSavedPassword(id,key+'Password');}catch(e){showMessage(e.message,true);}};
+  $(key+'Password').addEventListener('input',()=>{passwordMemory[target].SavedID='';$(key+'SavedPassword').value='';schedulePasswordMemory(target);});
+  $(key+'Password').addEventListener('change',()=>flushPasswordMemory(target));
+  $(key+'RememberPassword').addEventListener('change',()=>schedulePasswordMemory(target,true));
   $('manage'+key+'Passwords').onclick=async()=>{if(busy||switching)return;passwordTarget=key+'Password';resetPasswordEditor();$('passwordError').textContent='';$('passwordDialog').showModal();setPasswordVaultBusy(true);try{await refreshSavedPasswords();}catch(e){$('passwordError').textContent=e.message;}finally{setPasswordVaultBusy(false);}};
 }
 $('closePasswordDialog').onclick=()=>$('passwordDialog').close();
 $('newPassword').onclick=()=>resetPasswordEditor();
 $('savePassword').onclick=async()=>{
   if(passwordVaultBusy)return;setPasswordVaultBusy(true);$('passwordError').textContent='';
-  try {const password=$('PasswordValue').value;await api('password-save',{ID:passwordEditID,Name:$('PasswordName').value,Password:password});await refreshSavedPasswords();putValue(passwordTarget,password);changed();$('passwordDialog').close();}
+  try {const password=$('PasswordValue').value,name=$('PasswordName').value.trim();await api('password-save',{ID:passwordEditID,Name:name,Password:password});await refreshSavedPasswords();const id=savedPasswords.find(choice=>choice.Name===name)?.ID;if(id)await useSavedPassword(id,passwordTarget);else{putValue(passwordTarget,password);changed();await schedulePasswordMemory(passwordTarget==='ArchivePassword'?'archive':'extract',true);}$('passwordDialog').close();}
   catch(e){$('passwordError').textContent=e.message;}finally{setPasswordVaultBusy(false);}
 };
 $('passwordForm').onsubmit=event=>{event.preventDefault();$('savePassword').click();};
@@ -665,8 +758,10 @@ async function startPreview(retryTaskID='') {
   if (!$('form').checkValidity()) { showMessage('请检查当前工具的参数是否在允许范围内。', true); if (tool === 'video') $('videoAdvanced').open = true; $('form').reportValidity(); return; }
   submitting = true; planID = ''; lastActionError = ''; showMessage('正在扫描目录，请稍候…'); updateActions();
   try {
-    const snapshot = config(); await saveNow(); lastConfig = JSON.stringify(snapshot);
-    await api('plan', retryTaskID?{...snapshot,RetryTaskID:retryTaskID}:snapshot); busy = true;
+    const snapshot = config(); await flushPasswordMemory(tool);await saveNow(); lastConfig = JSON.stringify(snapshot);
+    const accepted=await api('plan', retryTaskID?{...snapshot,RetryTaskID:retryTaskID}:snapshot);
+    if(accepted.TaskID)toolPlanTasks.set(tool,accepted.TaskID);else toolPlanTasks.delete(tool);
+    busy = true;
   } catch (e) { busy = false; lastConfig = ''; showMessage('无法开始扫描：' + e.message, true); }
   finally { submitting = false; updateActions(); }
   await poll();
@@ -681,7 +776,7 @@ $('execute').onclick = async () => {
   finally { submitting = false; updateActions(); }
   await poll();
 };
-$('cancel').onclick = async () => { try { await api('cancel'); } catch (e) { $('message').textContent = e.message; } };
+$('cancel').onclick = async () => { try { await api('cancel',{TaskID:selectedTaskID}); } catch (e) { $('message').textContent = e.message; } };
 $('download').onclick = async () => {
   try { const text = await api('log'), a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' })); a.download = 'toolbox-log.txt'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
   catch (e) { $('message').textContent = e.message; }
@@ -846,28 +941,41 @@ function renderExtractProgress(state,sameTool){
 }
 async function poll() {
   if (pollPending) return; pollPending = true;
+  const requestedTool=tool;
   try {
-    const state = await api('state', { Summary: true }); if (submitting) return;
+    const state = await api('state', { Summary: true });
     window.toolboxFeedback?.observe(state);
+    renderToolTasks(state.Tasks||[state]);
+    if(submitting||switching||requestedTool!==tool) return;
     taskHistory?.observe(state);
-    busy = ['scanning', 'running'].includes(state.Status); const sameTool = state.Tool === tool;
+    const sameTool = state.Tool === tool;busy = sameTool && ['scanning', 'running'].includes(state.Status);
+    if(busy&&state.Config&&(selectedTaskID!==state.TaskID||!matchesTaskConfig(state.Config))) {
+      showRunningTaskConfig(state.Config);lastConfig=JSON.stringify(config());lastActionError='';
+    }
+    selectedTaskID=sameTool?(state.TaskID||''):'';
+    const matchesSnapshot=sameTool&&matchesTaskConfig(state.Config);
+    const secretPlan=['archive','extract'].includes(tool);
+    if(matchesSnapshot&&state.Status==='ready'&&!toolPlanTasks.has(tool)&&!secretPlan&&state.TaskID)toolPlanTasks.set(tool,state.TaskID);
+    const matchesTask=!state.TaskID||toolPlanTasks.get(tool)===state.TaskID;
+    if(matchesSnapshot&&matchesTask&&!lastConfig&&state.Config&&!secretPlan)lastConfig=JSON.stringify(config());
     $('statusBadge').textContent = sameTool ? statuses[state.Status] : '等待开始'; $('count').firstChild.textContent = (sameTool ? state.Total || 0 : 0) + ' ';
     $('statusBadge').dataset.status=sameTool?state.Status:'idle';
     $('progress').max = sameTool ? state.Total || 1 : 1; $('progress').value = sameTool ? state.Done || 0 : 0;
     $('progress').setAttribute('aria-label',tool==='extract'?'整个任务已完成的压缩包数量':'任务已完成项目数量');
     renderExtractProgress(state,sameTool);
-    if (sameTool && state.Status === 'ready' && JSON.stringify(config()) === lastConfig && state.Actionable > 0) planID = state.PlanID;
-    else if (!sameTool || state.Status !== 'ready') planID = '';
+    planID=matchesSnapshot&&matchesTask&&state.Status==='ready'&&JSON.stringify(config())===lastConfig&&state.Actionable>0?state.PlanID:'';
     $('statusText').textContent = !sameTool ? '选择目录后，点击“扫描并预览”。' :
       state.Status === 'running' ? '已处理 ' + state.Done + ' / ' + state.Total :
       state.Status === 'ready' ? '可执行 ' + state.Actionable + ' 项，冲突 ' + state.Conflicts + ' 项。' :
       state.Status === 'finished' ? '任务结束，可在下方查看或导出日志。' :
       state.Status === 'scanning' ? '正在读取目录和媒体信息…' :
       state.Status === 'cancelled' ? '任务已取消，已完成的项目会保留。' : '选择目录与参数，先预览处理结果。';
-    const matchingConfig = sameTool && lastConfig && JSON.stringify(config()) === lastConfig;
+    const matchingConfig = matchesSnapshot && matchesTask && lastConfig && JSON.stringify(config()) === lastConfig;
+    if(sameTool&&state.Status==='ready'&&!matchesSnapshot&&!lastActionError)showMessage('当前参数与服务端预览不同，请重新扫描后再执行。',true);
+    else if(sameTool&&state.Status==='ready'&&!matchesTask&&!lastActionError)showMessage(secretPlan?'此预览来自其他页面或刷新前。请核对密码并重新扫描后再执行。':'此工具的预览已在其他页面更新，请重新扫描后再执行。',true);
     if (matchingConfig && !lastActionError) {
       if (state.Status === 'scanning') showMessage('正在扫描目录，请稍候…');
-      else if (state.Status === 'ready') showMessage(state.Total === 0 ? (tool === 'number' ? '扫描完成，没有待编号目录。请检查直接子目录是否已符合所选编号格式，或调整筛选条件。' : '扫描完成，没有需要修改的项目。名称可能已符合规则，或查找内容没有匹配。') : '扫描完成：可执行 ' + state.Actionable + ' 项，冲突 ' + state.Conflicts + ' 项。请查看下方预览。');
+      else if (state.Status === 'ready') showMessage(state.Total === 0 ? ({number:'扫描完成，没有待编号目录。请检查直接子目录是否已符合所选编号格式，或调整筛选条件。',video:'扫描完成，没有符合条件的视频。请检查目录、包含子目录开关，以及高级设置的体积和原码率筛选；两个门槛设为 0 可取消这两项筛选。',image:'扫描完成，没有选定格式的待压缩图片。请检查目录、包含子目录开关和处理哪些格式。'})[tool]||'扫描完成，没有需要修改的项目。请核对目录、筛选条件与工具设置。' : '扫描完成：可执行 ' + state.Actionable + ' 项，冲突 ' + state.Conflicts + ' 项。请查看下方预览。');
       else if (state.Status === 'error') showMessage('扫描失败：' + state.Error, true);
       else if (state.Status === 'cancelled') showMessage('任务已取消。');
       else if (state.Status === 'finished') showMessage('处理完成：成功 ' + (state.Result?.Success || 0) + ' 项，跳过 ' + (state.Result?.Skipped || 0) + ' 项，失败 ' + (state.Result?.Failed || 0) + ' 项。');
@@ -875,6 +983,7 @@ async function poll() {
     for (const [id, key] of [['success', 'Success'], ['failed', 'Failed'], ['skipped', 'Skipped']]) $(id).textContent = sameTool ? state.Result?.[key] || 0 : 0;
     if (sameTool && state.PlanID) { if (previewPlan !== state.PlanID && !previewLoading) await loadPreview(state.PlanID); }
     else { if (previewPlan) resetPreview(); renderItems([], 0, sameTool ? state.Status : 'idle'); }
+    if(requestedTool!==tool||switching)return;
     const text = sameTool ? (state.Logs || []).join('\n') : '';
     const videoLine = sameTool && tool === 'video' && state.Status === 'running'
       ? [...(state.Logs || [])].reverse().find(line => /视频进度：|正在压缩视频：|正在回退：|正在重试：|视频编码完成：/.test(line)) : '';
@@ -882,8 +991,8 @@ async function poll() {
     $('videoProgress').textContent = videoLine || '';
     if (text !== lastLogs || displayTool !== tool) { lastLogs = text; displayTool = tool; renderLogs(text); }
     updateActions();
-  } catch (e) { $('message').textContent = '连接失败：' + e.message + '。请确认工具箱程序仍在运行。'; }
-  finally { pollPending = false; }
+  } catch (e) { if(requestedTool===tool&&!switching)$('message').textContent = '连接失败：' + e.message + '。请确认工具箱程序仍在运行。'; }
+  finally { pollPending = false;if(requestedTool!==tool&&!switching)void poll(); }
 }
 function choosePath(path) {
   if(!browseConfirmed){$('browseError').textContent='请先点击前往，确认当前目录。';return}
@@ -999,10 +1108,18 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.bo
 window.addEventListener('resize',()=>{if(window.innerWidth>760)document.body.classList.remove('nav-open');setToolboxSidebar(toolboxSidebarCollapsed)});
 
 // History restores parameters only; every execution still requires a fresh preview.
+function canConfigureTaskTool(id=tool){return !switching&&!submitting&&!(id===tool&&busy)&&!toolTaskStates.some(state=>state.Tool===id&&['running','scanning'].includes(state.Status));}
 taskHistory=window.setupTaskHistory?.({api,$,toolName:id=>tools.find(t=>t[0]===id)?.[1]||id,
-  canChange:()=>!busy&&!switching&&!submitting,
+  canChange:canConfigureTaskTool,
   beforeOpen:()=>exitTerminalFullscreen(false),
-  restore:async c=>{if(busy||switching||submitting)throw Error('当前任务尚未结束');await saveNow();workspaces[c.Tool]={...c,ArchivePassword:'',ExtractPassword:''};await selectTool(c.Tool,true);lastConfig='';planID='';updateActions();},
+  restore:async c=>{
+    if(!canConfigureTaskTool(c.Tool))throw Error('目标工具正在处理任务，请等待完成或先取消');
+    const live=await api('state',{Summary:true},c.Tool);
+    if(live.Tool===c.Tool&&['running','scanning'].includes(live.Status))throw Error('目标工具已在其他页面开始任务，请等待完成或先取消');
+    await saveNow();workspaces[c.Tool]={...c,ArchivePassword:'',ExtractPassword:''};await selectTool(c.Tool,true);
+    if(busy)throw Error('目标工具已开始任务，已显示实际运行参数，未替换正在执行的任务');
+    lastConfig='';planID='';updateActions();
+  },
   scan:id=>startPreview(id),
   message:(text,error=false)=>showMessage(text,error)
 });

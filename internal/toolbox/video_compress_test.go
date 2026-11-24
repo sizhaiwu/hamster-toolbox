@@ -61,7 +61,7 @@ func TestVideoFallbackOrderAndZeroQualityCPU(t *testing.T) {
 	v := compressionVideo{Video: compressionStream{PixelFormat: "yuv420p10le"}}
 	for _, encoder := range []string{"libx265", "hevc_nvenc", "hevc_qsv", "hevc_amf"} {
 		s.config = c
-		args := strings.Join(s.encoderArgs(videoAttempt{encoder}, v), " ")
+		args := strings.Join(s.commandArgs("source.mov", "output.mov", videoAttempt{encoder}, v, false), " ")
 		if !strings.Contains(args, "-tag:v hvc1") || (!strings.Contains(args, "p010le") && !strings.Contains(args, "yuv420p10le")) {
 			t.Fatal(args)
 		}

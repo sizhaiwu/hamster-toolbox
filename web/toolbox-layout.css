@@ -155,6 +155,11 @@ body:is([data-font-scale="110"],[data-font-scale="125"]) .settings .input-row bu
 /* Enlarge the original terminal, retaining its live state and event handlers. */
 body.terminal-view-open{overflow:hidden}
 .terminal-panel-placeholder{flex-shrink:0;pointer-events:none}
+.tool-nav-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tool-task-badge{flex-shrink:0;font-size:11px;line-height:1.6;padding:1px 5px;border-radius:5px;background:#e8f1ed;color:#28775e;font-variant-numeric:tabular-nums}
+[data-task-status=running] .tool-task-badge,[data-task-status=scanning] .tool-task-badge{background:#dcedff;color:#245c92}
+[data-task-status=error] .tool-task-badge{background:#fff0e7;color:#aa4e26}
+[data-task-status=empty] .tool-task-badge,[data-task-status=skipped] .tool-task-badge{background:#eef1f4;color:#697989}
 .card.terminal-panel.terminal-panel-collapsed:not(.terminal-panel-expanded){min-height:0;max-height:none}
 .terminal-panel-collapsed:not(.terminal-panel-expanded)>:not(.terminal-title){display:none!important}
 .terminal-panel-collapsed:not(.terminal-panel-expanded)>.terminal-title{border-bottom:0}
@@ -202,3 +207,5 @@ body.terminal-view-open{overflow:hidden}
 #nav .tool-nav-items>a:hover{background:#edf0f3;color:#356951}
 #nav .tool-nav-items>a>span:first-child{display:flex;width:22px;height:22px;flex-shrink:0}
 #nav .tool-nav-items>a svg{width:21px;height:21px;flex-shrink:0}
+
+.tool-group-status{float:right;margin-left:auto;font-size:11px;color:#27765d}.tool-nav-group[open] .tool-group-status{display:none}

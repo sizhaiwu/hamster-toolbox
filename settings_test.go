@@ -172,6 +172,7 @@ func TestRetiredCompressionSettingsAreMigrated(t *testing.T) {
 			expectedVideo.VideoMode, expectedVideo.VideoAcceleration = "compatible", "auto"
 			expectedVideo.Workers = 1
 			expectedVideo.VideoHDR = "preserve"
+			expectedVideo.VideoContainer = "original"
 			if !reflect.DeepEqual(image, expected) || !reflect.DeepEqual(got.Workspaces["video"], expectedVideo) {
 				t.Fatal("other settings changed", got)
 			}

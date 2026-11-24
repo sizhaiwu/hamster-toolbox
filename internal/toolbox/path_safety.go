@@ -14,6 +14,10 @@ import (
 
 type protectedPath struct{ path, reason string }
 
+// CanonicalResourcePath resolves existing ancestors and Windows path aliases
+// for coordinating tasks; it does not create or modify the resource.
+func CanonicalResourcePath(path string) (string, error) { return canonicalPath(path) }
+
 var extraProtectedPaths struct {
 	sync.RWMutex
 	paths []protectedPath

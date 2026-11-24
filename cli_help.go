@@ -32,6 +32,7 @@ var cliFieldHelp = map[string]string{
 	"PngMode":             "PNG 方案：lossless 无损（默认）、webp-png WebP 编码保留 .png 名、webp 转 .webp",
 	"PngQuality":          "PNG 转 WebP 的画质 1–100，默认 90；无损 PNG 模式忽略",
 	"VideoHDR":            "HDR 处理：preserve 保留 HLG/HDR10（默认）、sdr 转普通 BT.709、skip 跳过、base 保留 HLG 基层并移除杜比动态信息",
+	"VideoContainer":      "输出封装：original 保留原名称和封装（默认）；mp4 统一输出 MP4。不支持保留的格式在预览中跳过",
 	"VideoMode":           "视频模式：compatible H.264、efficient H.265（默认）、archive H.265 CPU 慢速",
 	"VideoAcceleration":   "视频编码加速：auto 自动（默认）、nvidia、intel、amd、cpu；不可用回退 CPU",
 	"CRF":                 "视频质量等级 0–51，默认 18，越低越清晰且通常越大；不同编码器会换算",

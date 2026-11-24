@@ -22,6 +22,7 @@ let browseHook=null;
 let state = { Status: 'idle', Tool: '', Items: [], Logs: [], Result: {}, Total: 0 };
 const saved = [], requests = [], failures = [], passwordVault = [];
 let copiedCommand = "";
+const passwordMemories={};
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test, label) { for (let i=0;i<120;i++) { if (test()) return; await delay(25); } throw Error('Timed out: '+label); }
 function createUI(port, supportsMask = true, width=1024, prepare=()=>{}) {
@@ -45,6 +46,8 @@ function createUI(port, supportsMask = true, width=1024, prepare=()=>{}) {
     else if(path==='password-get') value={Password:passwordVault.find(x=>x.ID===body.ID).Password};
     else if(path==='password-save') {const at=passwordVault.findIndex(x=>x.ID===body.ID);const record={...body,ID:body.ID||'test-password-'+passwordVault.length};if(at>=0)passwordVault[at]=record;else passwordVault.push(record);value={ok:true};}
     else if(path==='password-delete') {passwordVault.splice(passwordVault.findIndex(x=>x.ID===body.ID),1);value={ok:true};}
+    else if(path==='password-memory') {value={Supported:true,Remember:true,Password:'',SavedID:'',...passwordMemories[body.Tool]};if(value.SavedID){const saved=passwordVault.find(p=>p.ID===value.SavedID);value.Password=saved?.Password||'';if(!saved)value.SavedID='';}}
+    else if(path==='password-memory-save') {passwordMemories[body.Tool]={...body,Password:body.Remember&&!body.SavedID?body.Password:'',SavedID:body.Remember?body.SavedID:''};value={ok:true};}
     else if(path==='cli-commands') value={Preview:'toolbox cli '+body.Tool,Execute:'toolbox cli '+body.Tool+' --execute',Notice:'PowerShell 命令，仅预览默认不执行'};
     else if(path==='video-commands'||path==='native-commands') value=[{Label:'hevc_nvenc',PowerShell:"& 'ffmpeg.exe' '-i' 'source.mp4' 'target.mp4'"},{Label:'libx265（备用）',PowerShell:"& 'ffmpeg.exe' '-c:v' 'libx265' 'target.mp4'"}];
     else if(path==='browse'){if(browseHook){const response=await browseHook(body);if(response)return response;}value={Path:body.Path||'',Parent:'',Dirs:[],Files:[]};}
@@ -140,6 +143,7 @@ if(require.main===module)(async()=>{
   for(const a of w.document.querySelectorAll('.dependency-links a'))assert.equal(a.rel,'noopener noreferrer');
   input('Output','E:/视频输出');$('videoQuality').value='28';$('videoQuality').dispatchEvent(new w.Event('change'));assert.equal($('CRF').value,'28');
   assert.equal($('VideoHDR').value,'preserve');assert.match($('videoHDRHint').textContent,/10-bit/);
+  assert.equal($('VideoContainer').value,'original');assert.equal(w.config().VideoContainer,'original');$('VideoContainer').value='mp4';$('VideoContainer').dispatchEvent(new w.Event('change'));assert.equal(w.config().VideoContainer,'mp4');
   $('VideoHDR').value='sdr';$('VideoHDR').dispatchEvent(new w.Event('change'));assert.match($('videoHDRHint').textContent,/CPU/);
   $('VideoHDR').value='base';$('VideoHDR').dispatchEvent(new w.Event('change'));assert.match($('videoHDRHint').textContent,/移除杜比/);
   assert.equal($('VideoMode').value,'efficient');assert.match($('videoModeHint').textContent,/H.265/);
@@ -220,7 +224,7 @@ if(require.main===module)(async()=>{
   await switchTool('pdf');assert.equal($('thumbnailOptions').hidden,true);assert.equal($('ThumbnailWidth').disabled,true);
   assert.equal($('Output').value,'');assert.equal($('recursiveOption').hidden,true);assert.ok($('Font'));assert.equal($('outputLabel').textContent,'保存为 PDF 文件');
   await switchTool('video');assert.equal($('Output').value,'E:/视频输出');assert.equal($('CRF').value,'28');assert.equal($('FFprobe').value,'C:/special/ffprobe.exe');
-  assert.equal($('VideoMode').value,'compatible');assert.equal($('VideoAcceleration').value,'intel');assert.equal($('VideoHDR').value,'base');
+  assert.equal($('VideoMode').value,'compatible');assert.equal($('VideoAcceleration').value,'intel');assert.equal($('VideoHDR').value,'base');assert.equal($('VideoContainer').value,'mp4');
   assert.equal(saved.filter(c=>c.Tool==='image').some(c=>'VideoMode' in c||'VideoHDR' in c),false);
   await switchTool('describe');assert.equal($('FFprobe').value,defaults.FFprobe);assert.equal($('FFmpeg'),null);
   await switchTool('exif');assert.equal($('preview').disabled,true);assert.ok($('Exiftool'));assert.equal($('Magick'),null);
@@ -300,7 +304,7 @@ if(require.main===module)(async()=>{
   assert.equal(archiveRequest.Tool,'archive');assert.equal(archiveRequest.ArchivePassword,'Private-Session!');assert.equal(archiveRequest.ArchiveMode,'extras');assert.equal(archiveRequest.SevenZip,'C:/tools/sevenzip/7za.exe');assert.equal('FFmpeg' in archiveRequest,false);assert.equal('Recursive' in archiveRequest,false);
   await delay(550);dom.window.close();dom=createUI(30003);w=dom.window;$=id=>w.document.getElementById(id);
   await until(()=>$('title').textContent==='打包资源'&&!$('preview').disabled,'restart archive workspace');
-  assert.equal($('ArchivePassword').value,'');assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('ArchiveMode').value,'extras');
+  assert.equal($('ArchivePassword').value,'Private-Session!');assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('ArchiveMode').value,'extras');
   assert.match($('description').textContent,/7-Zip/);
   $('manageArchivePasswords').click();await until(()=>$('passwordDialog').open&&!$('savePassword').disabled,'password manager');
   input('PasswordName','共享密码');input('PasswordValue','Vault-Only-Secret!');$('savePassword').click();

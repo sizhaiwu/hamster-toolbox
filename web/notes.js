@@ -249,19 +249,56 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLower
 async function flushBeforeIdleLock(){let timer;try{await Promise.race([flush(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('保存等待超时')),2500)})])}finally{clearTimeout(timer)}}
 
 
-function clearAttachmentViews(){attachmentGeneration++;for(const entry of attachmentURLs.values())URL.revokeObjectURL(entry.URL);attachmentURLs.clear();attachmentBytes=0;$('noteAttachments').replaceChildren();$('noteAttachments').hidden=true;}
+let noteImageRequest=0,noteImageURL='',noteImageZoom=1,noteImageDrag=null;
+const attachmentImageLoads=new Map();
+function resetNoteImage(){noteImageRequest++;noteImageDrag=null;$('noteImageContent').onload=$('noteImageContent').onerror=null;$('noteImageContent').removeAttribute('src');$('noteImageContent').alt='';$('noteImageContent').hidden=true;$('noteImageContent').style.width=$('noteImageContent').style.height='';$('noteImageCanvas').style.width=$('noteImageCanvas').style.height='';$('noteImageTitle').textContent='查看图片';$('noteImageSize').textContent='';$('noteImageStatus').textContent='';if(noteImageURL)URL.revokeObjectURL(noteImageURL);noteImageURL='';}
+function closeNoteImage(){if($('noteImageDialog').open)$('noteImageDialog').close();else resetNoteImage();}
+function zoomNoteImage(value=noteImageZoom){
+ const image=$('noteImageContent'),stage=$('noteImageStage');noteImageZoom=Math.max(.25,Math.min(8,value));$('noteImageZoom').textContent=Math.round(noteImageZoom*100)+'%';$('noteImageZoomOut').disabled=noteImageZoom<=.25;$('noteImageZoomIn').disabled=noteImageZoom>=8;
+ if(!image.naturalWidth||!image.naturalHeight)return;
+ const fit=Math.min(1,Math.max(1,stage.clientWidth-24)/image.naturalWidth,Math.max(1,stage.clientHeight-24)/image.naturalHeight),width=image.naturalWidth*fit*noteImageZoom,height=image.naturalHeight*fit*noteImageZoom;
+ image.style.width=width+'px';image.style.height=height+'px';$('noteImageCanvas').style.width=Math.max(stage.clientWidth,width+24)+'px';$('noteImageCanvas').style.height=Math.max(stage.clientHeight,height+24)+'px';
+}
+async function openNoteImage(note,a,generation=attachmentGeneration){
+ if(current?.ID!==note.ID||generation!==attachmentGeneration)return;
+ closeNoteImage();const request=++noteImageRequest;$('noteImageTitle').textContent=a.Name;$('noteImageStatus').hidden=false;$('noteImageStatus').textContent='正在读取图片…';zoomNoteImage(1);$('noteImageDialog').showModal();
+ try{
+  const entry=await attachmentImage(note,a,generation);
+  if(request!==noteImageRequest||!$('noteImageDialog').open||generation!==attachmentGeneration||current?.ID!==note.ID||!entry)return;
+  const image=$('noteImageContent');noteImageURL=URL.createObjectURL(entry.Blob);image.alt=a.Name;
+  image.onload=()=>{if(request!==noteImageRequest)return;image.hidden=false;$('noteImageStatus').hidden=true;$('noteImageSize').textContent=image.naturalWidth+' × '+image.naturalHeight;zoomNoteImage(1);};
+  image.onerror=()=>{if(request!==noteImageRequest)return;image.hidden=true;$('noteImageStatus').hidden=false;$('noteImageStatus').textContent='浏览器无法显示这张图片，可关闭后下载并使用本地软件打开。';};
+  image.src=noteImageURL;
+ }catch(error){if(request===noteImageRequest&&$('noteImageDialog').open){$('noteImageStatus').hidden=false;$('noteImageStatus').textContent='图片加载失败：'+error.message;}}
+}
+$('noteImageClose').onclick=closeNoteImage;$('noteImageDialog').addEventListener('close',resetNoteImage);
+$('noteImageZoomOut').onclick=()=>zoomNoteImage(noteImageZoom/1.25);$('noteImageZoomIn').onclick=()=>zoomNoteImage(noteImageZoom*1.25);$('noteImageFit').onclick=()=>{zoomNoteImage(1);$('noteImageStage').scrollTop=$('noteImageStage').scrollLeft=0;};
+$('noteImageStage').addEventListener('wheel',event=>{if(!$('noteImageDialog').open||$('noteImageContent').hidden)return;event.preventDefault();zoomNoteImage(noteImageZoom*(event.deltaY<0?1.15:1/1.15));},{passive:false});
+$('noteImageStage').addEventListener('pointerdown',event=>{if(event.button!==0||event.pointerType==='touch')return;noteImageDrag={id:event.pointerId,x:event.clientX,y:event.clientY,left:$('noteImageStage').scrollLeft,top:$('noteImageStage').scrollTop};try{$('noteImageStage').setPointerCapture(event.pointerId)}catch{}event.preventDefault();});
+$('noteImageStage').addEventListener('pointermove',event=>{if(noteImageDrag?.id!==event.pointerId)return;$('noteImageStage').scrollLeft=noteImageDrag.left+noteImageDrag.x-event.clientX;$('noteImageStage').scrollTop=noteImageDrag.top+noteImageDrag.y-event.clientY;});
+for(const type of ['pointerup','pointercancel','lostpointercapture'])$('noteImageStage').addEventListener(type,()=>{noteImageDrag=null;});
+window.addEventListener('resize',()=>{if($('noteImageDialog').open)zoomNoteImage();});
+function clearAttachmentViews(){closeNoteImage();attachmentGeneration++;attachmentImageLoads.clear();for(const entry of attachmentURLs.values())URL.revokeObjectURL(entry.URL);attachmentURLs.clear();attachmentBytes=0;$('noteAttachments').replaceChildren();$('noteAttachments').hidden=true;}
 function noteImageMime(mime){return /^image\/(png|jpeg|gif|webp|bmp|avif)$/.test(mime||'')}
 function previewWithAttachments(html){const doc=new DOMParser().parseFromString(html,'text/html');for(const image of doc.querySelectorAll('img[data-note-attachment]')){const entry=attachmentURLs.get(image.dataset.noteAttachment);if(entry){image.src=entry.PreviewURL;image.className='notes-attachment-preview'}}return '<!doctype html>'+doc.documentElement.outerHTML}
 async function fetchNoteAttachment(note,id){const data=await api('attachment-read',{Note:{ID:note.ID},AttachmentID:id});const bytes=decodeBytes(data.Content);return {Attachment:data.Attachment,Blob:new Blob([bytes],{type:data.Attachment.Mime||'application/octet-stream'})}}
+async function attachmentImage(note,a,generation=attachmentGeneration){
+ if(generation!==attachmentGeneration||current?.ID!==note.ID)return;
+ if(attachmentURLs.has(a.ID))return attachmentURLs.get(a.ID);
+ const key=generation+':'+a.ID;if(attachmentImageLoads.has(key))return attachmentImageLoads.get(key);
+ const load=(async()=>{const result=await fetchNoteAttachment(note,a.ID);if(generation!==attachmentGeneration||current?.ID!==note.ID)return;
+  const previewURL=await noteImagePreviewURL(result.Blob);if(generation!==attachmentGeneration||current?.ID!==note.ID)return;
+  while(attachmentURLs.size>=8||attachmentBytes+result.Blob.size>64*1024*1024){const first=attachmentURLs.keys().next().value;if(first==null)break;const entry=attachmentURLs.get(first);URL.revokeObjectURL(entry.URL);attachmentBytes-=entry.Size;attachmentURLs.delete(first)}
+  const entry={URL:URL.createObjectURL(result.Blob),PreviewURL:previewURL,Blob:result.Blob,Size:result.Blob.size};attachmentURLs.set(a.ID,entry);attachmentBytes+=result.Blob.size;return entry;
+ })();attachmentImageLoads.set(key,load);try{return await load}finally{if(attachmentImageLoads.get(key)===load)attachmentImageLoads.delete(key)}
+}
 async function showAttachmentImage(note,a,generation=attachmentGeneration){
- if(attachmentURLs.has(a.ID))return;const result=await fetchNoteAttachment(note,a.ID);if(generation!==attachmentGeneration||current?.ID!==note.ID)return;
- while(attachmentURLs.size>=8||attachmentBytes+result.Blob.size>64*1024*1024){const first=attachmentURLs.keys().next().value;if(first==null)break;const entry=attachmentURLs.get(first);URL.revokeObjectURL(entry.URL);attachmentBytes-=entry.Size;attachmentURLs.delete(first)}
- const previewURL=await noteImagePreviewURL(result.Blob);if(generation!==attachmentGeneration||current?.ID!==note.ID)return;attachmentURLs.set(a.ID,{URL:URL.createObjectURL(result.Blob),PreviewURL:previewURL,Size:result.Blob.size});attachmentBytes+=result.Blob.size;window.hamsterRichEditor?.refreshAttachments();if(editorMode!=='edit')await renderPreview();
+ const entry=await attachmentImage(note,a,generation);if(!entry||generation!==attachmentGeneration||current?.ID!==note.ID)return;window.hamsterRichEditor?.refreshAttachments();if(editorMode!=='edit')await renderPreview();return entry;
 }
 async function loadAttachmentViews(note){
  clearAttachmentViews();if(!note?.Attachments?.length)return;const generation=attachmentGeneration,fragment=document.createDocumentFragment();$('noteAttachments').hidden=false;
  for(const a of note.Attachments){const row=document.createElement('div'),name=document.createElement('span'),downloadButton=document.createElement('button');row.className='attachment-card';name.textContent=a.Name+' · '+(a.Size/1024/1024>=1?(a.Size/1024/1024).toFixed(1)+' MB':Math.ceil(a.Size/1024)+' KB');downloadButton.textContent='下载';downloadButton.title='下载解密后的文件';downloadButton.onclick=()=>run(async()=>{const data=await fetchNoteAttachment(note,a.ID);if(current?.ID!==note.ID)return;download(a.Name,data.Blob,'application/octet-stream');say('已下载解密后的文件，请妥善保管')});row.append(name);
- if(noteImageMime(a.Mime)){const view=document.createElement('button');view.textContent='查看图片';view.onclick=()=>run(()=>showAttachmentImage(note,a,generation));row.append(view)}
+ if(noteImageMime(a.Mime)){const view=document.createElement('button');view.textContent='查看图片';view.onclick=()=>run(()=>openNoteImage(note,a,generation));row.append(view)}
  row.append(downloadButton);if(!note.Locked){const remove=document.createElement('button');remove.textContent='移除';remove.title='历史版本和已有备份中的附件仍会保留';remove.onclick=()=>run(async()=>{if(noteLockPending||!confirm('从当前笔记移除此附件？历史版本和已有备份中的副本仍会保留。'))return;await flush();const data=await api('attachment-remove',{Note:current,AttachmentID:a.ID});notes=notes.map(n=>n.ID===data.Note.ID?data.Note:n);choose(data.Note)});row.append(remove)}fragment.append(row)}
  $('noteAttachments').append(fragment);
  let bytes=0,count=0;for(const a of note.Attachments){if(generation!==attachmentGeneration)break;if(noteImageMime(a.Mime)&&a.Size<=5*1024*1024&&bytes+a.Size<=20*1024*1024&&count<8){bytes+=a.Size;count++;try{await showAttachmentImage(note,a,generation)}catch(e){if(generation===attachmentGeneration)say('图片附件未能加载，可点击重试：'+a.Name,true)}}}

@@ -257,6 +257,7 @@ func ScopeConfig(c Config) Config {
 		r.Output = c.Output
 		r.VideoMode, r.VideoAcceleration = c.VideoMode, c.VideoAcceleration
 		r.VideoHDR = c.VideoHDR
+		r.VideoContainer = c.VideoContainer
 		r.FFmpeg = c.FFmpeg
 		r.FFprobe = c.FFprobe
 		r.CRF = c.CRF

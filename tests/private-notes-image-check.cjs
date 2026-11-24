@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict');
+const {setup,wait,unlock}=require('./private-notes-check.cjs');
+const opened=[];
+const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+function fixture(lazy=false){
+ const t=setup(true);opened.push(t);t.data.notes[0].Attachments=[{ID:'abcdef0123456789abcdef0123456789',Name:'image.png',Mime:'image/png',Size:lazy?6*1024*1024:68}];t.data.attachmentContent=png;
+ t.created=[];t.revoked=[];t.w.URL.createObjectURL=blob=>{const url='blob:fixture-'+t.created.length;t.created.push({url,blob});return url};t.w.URL.revokeObjectURL=url=>t.revoked.push(url);
+ t.view=()=>[...t.$('noteAttachments').querySelectorAll('button')].find(button=>button.textContent==='查看图片');return t;
+}
+(async()=>{
+ const t=fixture();await unlock(t);await wait(()=>t.created.length===1,'attachment preloaded');assert(!t.$('markdown').value.includes('attachment:'),'image can be viewed without a Markdown reference');
+ const reads=()=>t.calls.filter(c=>c.action==='attachment-read').length;
+ t.view().click();await wait(()=>t.$('noteImageDialog').open&&t.$('noteImageContent').hasAttribute('src'),'cached image opens in a dialog');assert.equal(reads(),1,'cached image is not downloaded twice');assert.equal(t.$('noteImageTitle').textContent,'image.png');
+ const image=t.$('noteImageContent'),stage=t.$('noteImageStage');Object.defineProperties(image,{naturalWidth:{value:1200},naturalHeight:{value:800}});Object.defineProperties(stage,{clientWidth:{value:800},clientHeight:{value:500}});image.dispatchEvent(new t.w.Event('load'));assert(!image.hidden);assert.equal(t.$('noteImageSize').textContent,'1200 × 800');
+ const fit=parseFloat(image.style.width);t.$('noteImageZoomIn').click();assert(parseFloat(image.style.width)>fit);assert.equal(t.$('noteImageZoom').textContent,'125%');t.$('noteImageFit').click();assert.equal(parseFloat(image.style.width),fit);
+ const wheel=new t.w.WheelEvent('wheel',{deltaY:-100,cancelable:true});stage.dispatchEvent(wheel);assert(wheel.defaultPrevented);assert(parseFloat(image.style.width)>fit);
+ const url=image.src;t.$('noteImageClose').click();assert(!t.$('noteImageDialog').open);assert(!image.hasAttribute('src'));assert.equal(image.alt,'');assert(t.revoked.includes(url));assert(!t.revoked.includes(t.created[0].url),'closing viewer leaves inline cache intact');
+ t.view().click();await wait(()=>image.hasAttribute('src'),'cached image reopens');assert.notEqual(image.src,url);assert.equal(reads(),1);t.$('lock').click();await wait(()=>t.$('workspace').hidden,'lock vault');assert(!t.$('noteImageDialog').open);assert(!image.hasAttribute('src'));assert(t.created.every(entry=>t.revoked.includes(entry.url)),'locking revokes viewer and cache URLs');
+ const slow=fixture(true);slow.data.notes.push({...slow.data.notes[0],ID:'n2',Title:'Other note',Attachments:[]});const fetch=slow.w.fetch;let release;
+ slow.w.fetch=async(url,options)=>url.endsWith('/attachment-read')?new Promise(resolve=>{release=()=>fetch(url,options).then(resolve)}):fetch(url,options);
+ await unlock(slow);await wait(()=>Boolean(slow.view()),'lazy attachment button');slow.view().click();slow.view().click();await wait(()=>Boolean(release),'image request pending');assert(slow.$('noteImageDialog').open);slow.$('noteImageClose').click();[...slow.$('notesList').children].find(b=>b.textContent.includes('Other note')).click();await wait(()=>slow.$('noteTitle').value==='Other note','switch note while image request is pending');release();await new Promise(r=>setTimeout(r,30));assert(!slow.$('noteImageDialog').open);assert(!slow.$('noteImageContent').hasAttribute('src'));assert.equal(slow.created.length,0,'late decrypted image cannot populate another note');assert.equal(slow.calls.filter(c=>c.action==='attachment-read').length,1,'rapid repeated clicks share one attachment request');
+ const failure=fixture(true);const original=failure.w.fetch;failure.w.fetch=async(url,options)=>url.endsWith('/attachment-read')?{ok:false,status:404,text:async()=>'synthetic missing attachment'}:original(url,options);await unlock(failure);await wait(()=>Boolean(failure.view()),'missing image button');failure.view().click();await wait(()=>failure.$('noteImageStatus').textContent.includes('加载失败'),'attachment read error visible inside viewer');assert(failure.$('noteImageDialog').open);assert(!failure.$('noteImageContent').hasAttribute('src'));failure.$('noteImageClose').click();
+ assert(opened.every(t=>t.errors.length===0));console.log('PASS: attachment image viewer, cached/repeated opens, fit/zoom/wheel, resource cleanup, no Markdown requirement, lock/note-change isolation, in-flight deduplication and visible errors');
+})().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>{for(const t of opened)t.dom.window.close()});

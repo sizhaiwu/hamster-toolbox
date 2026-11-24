@@ -18,6 +18,12 @@ import (
 )
 
 func normalizeVideoOptions(c *Config) error {
+	if c.VideoContainer == "" {
+		c.VideoContainer = "original"
+	}
+	if c.VideoContainer != "original" && c.VideoContainer != "mp4" {
+		return errors.New("请选择有效的视频输出格式")
+	}
 	if c.VideoHDR == "" {
 		c.VideoHDR = "preserve"
 	}
@@ -49,7 +55,11 @@ func videoPlanNote(c Config) string {
 	if mode == "" {
 		mode = "兼容模式 H.264"
 	}
-	return mode + "；不缩放、不降帧，保留原件；硬件失败自动尝试 CPU"
+	container := "保留原名称和封装"
+	if c.VideoContainer == "mp4" {
+		container = "统一 MP4，后缀可能改变"
+	}
+	return mode + "；" + container + "；不缩放、不降帧，保留原件；硬件失败自动尝试 CPU"
 }
 
 type compressionStream struct {
@@ -176,7 +186,17 @@ func (s *videoSession) outputArgs(target string) []string {
 	} else {
 		args = append(args, "-vsync", "0")
 	}
-	args = append(args, "-movflags", "+faststart", "-progress", "pipe:1")
+	muxer := videoMuxer(target)
+	if muxer == "mov" || muxer == "mp4" {
+		args = append(args, "-movflags", "+faststart")
+		if s.config.VideoMode != "compatible" {
+			args = append(args, "-tag:v", "hvc1")
+		}
+	}
+	if muxer != "" {
+		args = append(args, "-f", muxer)
+	}
+	args = append(args, "-progress", "pipe:1")
 	if s.cli == nil || s.cli.statsPeriod {
 		args = append(args, "-stats_period", "1")
 	}
@@ -347,9 +367,6 @@ func (s *videoSession) encoderArgs(a videoAttempt, v compressionVideo) []string 
 		filter += ",sidedata=mode=delete:type=DOVI_RPU_BUFFER,sidedata=mode=delete:type=DOVI_METADATA"
 	}
 	args = append(args, "-vf", filter, "-pix_fmt", pixel)
-	if s.config.VideoMode != "compatible" {
-		args = append(args, "-tag:v", "hvc1")
-	}
 	for _, color := range []struct{ key, value string }{{"color_trc", colors.Transfer}, {"color_primaries", colors.Primaries}, {"colorspace", colors.Space}, {"color_range", colors.Range}} {
 		if color.value != "" && color.value != "unknown" && color.value != "unspecified" {
 			args = append(args, "-"+color.key, color.value)
@@ -439,6 +456,9 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 	if e := normalizeVideoOptions(&s.config); e != nil {
 		return e
 	}
+	if videoMuxer(target) == "" {
+		return fmt.Errorf("输出封装不支持，保留原视频；请选择统一 MP4")
+	}
 	v, e := probeCompressionVideo(ctx, s.config.FFprobe, source)
 	if e != nil {
 		return e
@@ -508,6 +528,17 @@ func (s *videoSession) compress(ctx context.Context, source, target string) erro
 			s.log("当前编码失败：" + label + " · " + CleanText(e.Error()))
 			if videoOptionError(e) {
 				return fmt.Errorf("FFmpeg 参数不兼容，请使用随包 FFmpeg 或升级所选程序：%w", e)
+			}
+			if videoContainerCodecError(e) && s.config.VideoMode != "compatible" {
+				if v.tenBit() || v.hdr() {
+					return fmt.Errorf("当前封装不支持 H.265；为保留位深和 HDR 不自动降级，原件保留：%w", e)
+				}
+				if s.config.VideoMode == "archive" {
+					s.config.VideoAcceleration = "cpu"
+				}
+				s.config.VideoMode = "compatible"
+				s.log("封装兼容回退：保持输出名称与后缀，改用 H.264；显卡不可用时回退 CPU")
+				return s.compress(ctx, source, target)
 			}
 			copying := false
 			for _, stream := range v.Audio {
@@ -629,12 +660,16 @@ func runVideoProgress(ctx context.Context, exe string, args []string, duration f
 		case "speed":
 			speed = strings.TrimSpace(value)
 		case "progress":
+			if duration > 0 && seconds >= 0 {
+				reportOperationProgress(ctx, OperationProgress{Tool: "video", Phase: "encoding", Percent: math.Min(100, math.Max(0, seconds/duration*100)), PercentKnown: true})
+			}
 			if time.Since(last) >= 10*time.Second && duration > 0 && seconds >= 0 {
 				percent := math.Min(99.9, 100*seconds/duration)
 				message := fmt.Sprintf("视频进度：%.1f%% · 速度 %s", percent, speed)
 				if x, err := strconv.ParseFloat(strings.TrimSuffix(speed, "x"), 64); err == nil && x > 0 && seconds < duration {
 					message += fmt.Sprintf(" · 预计剩余 %s", (time.Duration((duration-seconds)/x) * time.Second).Round(time.Second))
 				}
+
 				log(message)
 				last = time.Now()
 			}

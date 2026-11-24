@@ -2,16 +2,17 @@
 
 [文档目录](../README.md) · [仓库首页](../../README.md)
 
-截图覆盖主要界面，新增远程与手机场景对应 v0.2.4；旧截图只用于说明未改变的操作，具体按钮以当前程序为准。截图使用临时笔记库、虚构标题及仓库 `samples` 合成素材，不使用私人资源、真实账号密码、动态码、会话链接或个人数据目录。图片只截取页面内容，不保留浏览器地址栏。
+截图覆盖主要界面，工作台和附件独立看图对应 v0.2.6，远程与手机场景对应 v0.2.4；旧截图只用于说明未改变的操作，具体按钮以当前程序为准。截图使用临时笔记库、虚构标题及仓库 `samples` 合成素材，不使用私人资源、真实账号密码、动态码、会话链接或个人数据目录。图片只截取页面内容，不保留浏览器地址栏。
 
 | 场景 | 截图 |
 | --- | --- |
-| 工具分组和处理工作台 | [工具导航](toolbox-groups.png) |
+| 工具分组和处理工作台 | [当前工作台](toolbox-current.jpg) |
 | 当前富文本与实时预览 | [笔记电脑界面](private-notes-desktop-current.jpg) |
 | Markdown 配色和预览 | [源码编辑](private-notes-markdown.png) |
 | 当前手机布局 | [笔记手机界面](private-notes-mobile-current.jpg) |
 | 全屏、折叠后的工作区 | [笔记全屏](private-notes-fullscreen.png) |
 | 图片与文件附件 | [附件演示](private-notes-attachments.png) |
+| 附件图片独立查看与缩放 | [附件看图窗口](private-notes-image-viewer.jpg) |
 | 历史快照 | [历史版本](private-notes-history.png) |
 | 刷新恢复、空闲锁定与备份入口 | [安全与备份](private-notes-settings.png) |
 | 笔记库锁定后的入口 | [解锁页](private-notes-lock.png) |
