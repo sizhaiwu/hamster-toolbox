@@ -1,6 +1,115 @@
 'use strict';
 let previewPagingAbort=null,previewPageBusy=false,resourceClipboard=null,transferAction='move',transferController=null;
 const uploadRelativePaths=new WeakMap();
+let quickExtract=null,quickExtractSequence=0,quickExtractInitialized=false;
+async function quickExtractAPI(route,body={},signal){
+ if(!local||!boot?.ToolboxURL)throw Error('只有本机或管理员工作台可以直接解压');
+ const token=new URL(boot.ToolboxURL,location.href).searchParams.get('session');
+ const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();const timeout=setTimeout(()=>controller.abort(),15000);
+ try{const response=await fetch('/api/'+route,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Toolbox-Token':token,'X-Toolbox-Tool':'extract'},body:JSON.stringify(body),signal:controller.signal});
+ if(!response.ok){const error=Error((await response.text()).trim());error.status=response.status;throw error}return await response.json();
+ }catch(e){if(e.name==='AbortError'&&!signal?.aborted)throw Error('请求超时；已开始的任务可能仍在运行，可重新打开窗口查看。');throw e}finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort)}
+}
+function quickExtractCurrent(context){return context===quickExtract}
+function quickExtractLocked(){return Boolean(quickExtract?.loading||quickExtract?.request||['scanning','running'].includes(quickExtract?.status))}
+function updateQuickExtractControls(){
+ const ctx=quickExtract,locked=quickExtractLocked();
+ for(const id of ['quickExtractOutput','quickExtractLayout','quickExtractConflict','quickExtractPassword','quickExtractProgram','quickExtractSaved'])$(id).disabled=locked;
+ $('quickExtractRemember').disabled=locked||!ctx?.memorySupported;
+ $('quickExtractScan').disabled=!ctx||locked;$('quickExtractRun').disabled=!ctx?.planID||ctx.status!=='ready'||locked;
+ $('quickExtractAdvanced').disabled=!ctx||locked;$('quickExtractCancel').hidden=!ctx?.taskID||!['scanning','running'].includes(ctx.status);$('quickExtractCancel').disabled=Boolean(ctx?.request);
+}
+function invalidateQuickExtract(){const ctx=quickExtract;if(!ctx)return;ctx.planID='';ctx.target='';ctx.secretRevision++;$('quickExtractError').textContent='';$('quickExtractPreview').hidden=true;$('quickExtractStatus').textContent='参数已修改，请重新扫描预览。';updateQuickExtractControls()}
+async function openArchiveExtraction(item){
+ if(!local||!item||item.Dir||item.Kind!=='archive'||!item.Version||loading||mutating)return;
+ if(quickExtractLocked()){ $('quickExtractDialog').showModal();return }
+ if(quickExtract){clearTimeout(quickExtract.timer);quickExtract.controller.abort()}
+ const at=Math.max(item.Path.lastIndexOf('\\'),item.Path.lastIndexOf('/'));if(at<0)return;
+ const ctx={sequence:++quickExtractSequence,item:{...item},parent:item.Path.slice(0,at+1),root,controller:new AbortController(),loading:true,status:'idle',secretRevision:0};quickExtract=ctx;
+ $('quickExtractName').textContent=item.Name;$('quickExtractName').title=item.Path;$('quickExtractOutput').value='';$('quickExtractLayout').value='separate';$('quickExtractConflict').value='rename';$('quickExtractPassword').value='';$('quickExtractSaved').replaceChildren(new Option('手动输入或不使用密码',''));$('quickExtractProgram').value='';
+ $('quickExtractError').textContent='';$('quickExtractStatus').textContent='正在读取解压设置…';$('quickExtractPreview').hidden=$('quickExtractProgress').hidden=$('quickExtractLogDetails').hidden=$('quickExtractOpenOutput').hidden=true;$('quickExtractLogs').textContent='';setQuickExtractSecret(false);$('quickExtractDialog').showModal();updateQuickExtractControls();
+ const results=await Promise.allSettled(['defaults','settings','passwords','password-memory','state'].map(route=>quickExtractAPI(route,route==='password-memory'?{Tool:'extract'}:route==='state'?{Summary:true}:{},ctx.controller.signal)));
+ if(!quickExtractCurrent(ctx))return;
+ const [defaults,settings,passwords,memory,active]=results;
+ ctx.memorySupported=memory.status==='fulfilled'&&memory.value.Supported;$('quickExtractRemember').checked=Boolean(ctx.memorySupported&&memory.value.Remember);
+ $('quickExtractRemember').parentElement.hidden=!ctx.memorySupported;
+ if(defaults.status==='fulfilled')$('quickExtractProgram').value=defaults.value.SevenZip||'';
+ if(settings.status==='fulfilled')$('quickExtractProgram').value=settings.value.Workspaces?.extract?.SevenZip||$('quickExtractProgram').value;
+ if(passwords.status==='fulfilled'&&Array.isArray(passwords.value))for(const entry of passwords.value)$('quickExtractSaved').append(new Option(entry.Name,entry.ID));
+ if(memory.status==='fulfilled'&&memory.value.Remember&&$('quickExtractDialog').open){$('quickExtractPassword').value=memory.value.Password||'';$('quickExtractSaved').value=memory.value.SavedID||''}
+ ctx.loading=false;$('quickExtractStatus').textContent='先扫描核对输出位置，再开始解压。默认保留原压缩包。';
+ if(defaults.status==='rejected')$('quickExtractError').textContent='无法读取组件设置：'+defaults.reason.message;
+ const existing=active.status==='fulfilled'?active.value:null;
+ if(existing?.TaskID&&['scanning','running','ready'].includes(existing.Status)&&existing.Config?.ExtractSource&&sameBrowserPath(existing.Config.ExtractSource,item.Path)){
+  ctx.taskID=existing.TaskID;ctx.status=existing.Status;$('quickExtractOutput').value=existing.Config.Output||'';$('quickExtractLayout').value=existing.Config.ExtractLayout||'separate';$('quickExtractConflict').value=existing.Config.ExtractConflict==='skip'?'skip':'rename';
+  // Only reattach to the safe operation this dialog can represent.
+  if(existing.Config.ExtractDeleteSource||existing.Config.ExtractConflict==='overwrite'){ctx.status='external';ctx.taskID='';$('quickExtractError').textContent='此压缩包正在使用高级解压选项，请通过“完整工具”查看和控制。'}else await pollQuickExtract(ctx);
+ }
+ updateQuickExtractControls();
+}
+function setQuickExtractSecret(visible){const field=$('quickExtractPassword'),eye=$('quickExtractEye'),start=field.selectionStart,end=field.selectionEnd;field.dataset.secretHidden=String(!visible);field.type=window.CSS?.supports?.('-webkit-text-security','disc')||visible?'text':'password';eye.textContent=visible?'隐藏':'显示';eye.setAttribute('aria-pressed',String(visible));eye.setAttribute('aria-label',(visible?'隐藏':'显示')+'解压密码');try{field.setSelectionRange(start,end)}catch{}}
+function scheduleQuickExtract(ctx){clearTimeout(ctx.timer);if(quickExtractCurrent(ctx)&&['scanning','running'].includes(ctx.status))ctx.timer=setTimeout(()=>pollQuickExtract(ctx),900)}
+async function pollQuickExtract(ctx){
+ if(!quickExtractCurrent(ctx)||ctx.polling)return;ctx.polling=true;
+ try{
+  const state=await quickExtractAPI('state',{Summary:true},ctx.controller.signal);if(!quickExtractCurrent(ctx))return;
+  if(state.TaskID!==ctx.taskID){ctx.status='changed';ctx.planID='';$('quickExtractError').textContent='解压任务已在其他页面更新，请重新扫描。';return}
+  ctx.status=state.Status;const operation=state.Operation,progress=$('quickExtractProgress');progress.hidden=!['scanning','running'].includes(state.Status);
+  const phase=({extract:'正在解压',validate:'检查解压结果',publish:'写入输出文件',cleanup:'清理原压缩包',complete:'本包处理完成'})[operation?.Phase]||'正在解压';
+  if(operation?.PercentKnown&&Number.isFinite(operation.Percent)){progress.value=Math.max(0,Math.min(100,operation.Percent));$('quickExtractStatus').textContent=phase+' · '+Math.round(operation.Percent)+'%'+(operation.FilesDone?' · '+operation.FilesDone+' 个文件':'')}
+  else{progress.removeAttribute('value');$('quickExtractStatus').textContent=state.Status==='scanning'?'正在扫描压缩包…':state.Status==='running'?phase+'，请稍候…':state.Status==='ready'?'预览就绪，请核对后点击“开始解压”。':''}
+  if(state.Logs?.length){$('quickExtractLogDetails').hidden=false;$('quickExtractLogs').textContent=state.Logs.slice(-100).join('\n')}
+  let preview;
+  if(state.PlanID&&(state.Status==='ready'||!ctx.target)){preview=await quickExtractAPI('preview',{PlanID:state.PlanID,Limit:100},ctx.controller.signal);if(!quickExtractCurrent(ctx))return;ctx.target=preview.Items?.[0]?.Target||''}
+  if(state.Status==='ready'){
+   ctx.target=preview.Items?.[0]?.Target||'';ctx.planID=state.Actionable>0&&state.Conflicts===0?state.PlanID:'';
+   $('quickExtractPreview').hidden=false;$('quickExtractPreview').textContent=(preview.Items||[]).map(item=>'压缩包：'+item.Source+'\n解压到：'+item.Target+'\n'+(item.Conflict||item.Note||'')).join('\n\n');
+   if(!ctx.planID)$('quickExtractError').textContent=state.Conflicts?'存在无法解压的项目，请检查预览中的密码、分卷或格式提示。':'没有可解压的项目。';
+  }
+  if(['finished','cancelled','error'].includes(state.Status)){
+   ctx.planID='';progress.hidden=true;const result=state.Result||{};
+   $('quickExtractStatus').textContent=(state.Status==='cancelled'?'已停止':state.Status==='error'?'解压失败':'任务完成')+' · 成功 '+(result.Success||0)+' · 跳过 '+(result.Skipped||0)+' · 失败 '+(result.Failed||0);
+   if(state.Error)$('quickExtractError').textContent=state.Error;
+   $('quickExtractOpenOutput').hidden=!(ctx.target&&(result.Success||result.Skipped));
+   if(!ctx.notified){ctx.notified=true;if(sameBrowserPath(path,ctx.parent)&&root===ctx.root)await navigate(path,{remember:false,page:offset,force:true});if(!$('quickExtractDialog').open)say($('quickExtractStatus').textContent,Boolean(result.Failed||state.Error));}
+  }
+ }catch(e){if(quickExtractCurrent(ctx)&&e.name!=='AbortError'){if(e.status===401||e.status===403){ctx.status='expired';ctx.planID=''}$('quickExtractError').textContent='状态读取失败：'+e.message+'；已开始的任务会继续运行，可稍后重试或在任务历史查看。'}}
+ finally{ctx.polling=false;if(quickExtractCurrent(ctx)){updateQuickExtractControls();scheduleQuickExtract(ctx)}}
+}
+async function scanQuickExtract(){
+ const ctx=quickExtract;if(!ctx||quickExtractLocked())return;
+ const config={Tool:'extract',Root:ctx.parent,ExtractSource:ctx.item.Path,Output:$('quickExtractOutput').value.trim(),SevenZip:$('quickExtractProgram').value.trim(),Recursive:false,ExtractLayout:$('quickExtractLayout').value,ExtractConflict:$('quickExtractConflict').value,ExtractPassword:$('quickExtractPassword').value,ExtractDeleteSource:false};
+ const memory={Tool:'extract',Remember:$('quickExtractRemember').checked,Password:config.ExtractPassword,SavedID:$('quickExtractSaved').value};
+ ctx.request=true;ctx.planID='';ctx.target='';ctx.notified=false;$('quickExtractError').textContent='';$('quickExtractOpenOutput').hidden=true;updateQuickExtractControls();
+ try{
+  await api('properties',{Path:ctx.item.Path,Version:ctx.item.Version},ctx.root,ctx.controller.signal);
+  if(!quickExtractCurrent(ctx))return;
+  if(ctx.memorySupported)await quickExtractAPI('password-memory-save',memory,ctx.controller.signal);
+  if(!quickExtractCurrent(ctx))return;
+  const accepted=await quickExtractAPI('plan',config,ctx.controller.signal);if(!quickExtractCurrent(ctx))return;
+  if(typeof accepted.TaskID!=='string'||!accepted.TaskID)throw Error('未收到有效任务编号，请重新打开窗口查看状态。');
+  ctx.taskID=accepted.TaskID;ctx.status='scanning';await pollQuickExtract(ctx);
+ }catch(e){if(quickExtractCurrent(ctx)&&e.name!=='AbortError')$('quickExtractError').textContent=e.message}
+ finally{if(quickExtractCurrent(ctx)){ctx.request=false;updateQuickExtractControls()}}
+}
+function initializeQuickExtraction(){
+ if(quickExtractInitialized)return;quickExtractInitialized=true;
+ $('quickExtractClose').onclick=()=>$('quickExtractDialog').close();$('quickExtractDialog').addEventListener('close',()=>{$('quickExtractPassword').value='';$('quickExtractSaved').value='';setQuickExtractSecret(false)});
+ $('quickExtractEye').onclick=()=>setQuickExtractSecret($('quickExtractPassword').dataset.secretHidden==='true');
+ for(const id of ['quickExtractOutput','quickExtractProgram','quickExtractPassword'])$(id).oninput=()=>{if(id==='quickExtractPassword')$('quickExtractSaved').value='';invalidateQuickExtract()};
+ for(const id of ['quickExtractLayout','quickExtractConflict'])$(id).onchange=invalidateQuickExtract;
+ $('quickExtractRemember').onchange=invalidateQuickExtract;
+ $('quickExtractSaved').onchange=async()=>{const ctx=quickExtract,id=$('quickExtractSaved').value;if(!ctx)return;invalidateQuickExtract();const revision=ctx.secretRevision;
+  if(!id){$('quickExtractPassword').value='';return}
+  ctx.request=true;updateQuickExtractControls();try{const saved=await quickExtractAPI('password-get',{ID:id},ctx.controller.signal);if(quickExtractCurrent(ctx)&&revision===ctx.secretRevision&&$('quickExtractDialog').open){$('quickExtractPassword').value=saved.Password||'';setQuickExtractSecret(false)}}catch(e){if(quickExtractCurrent(ctx))$('quickExtractError').textContent=e.message}finally{if(quickExtractCurrent(ctx)){ctx.request=false;updateQuickExtractControls()}}
+ };
+ $('quickExtractScan').onclick=scanQuickExtract;
+ $('quickExtractRun').onclick=async()=>{const ctx=quickExtract;if(!ctx?.planID||quickExtractLocked())return;ctx.request=true;updateQuickExtractControls();$('quickExtractError').textContent='';try{await quickExtractAPI('execute',{PlanID:ctx.planID},ctx.controller.signal);if(quickExtractCurrent(ctx)){ctx.status='running';ctx.planID='';await pollQuickExtract(ctx)}}catch(e){if(quickExtractCurrent(ctx))$('quickExtractError').textContent=e.message}finally{if(quickExtractCurrent(ctx)){ctx.request=false;updateQuickExtractControls()}}};
+ $('quickExtractCancel').onclick=async()=>{const ctx=quickExtract;if(!ctx?.taskID||ctx.request)return;ctx.request=true;updateQuickExtractControls();try{await quickExtractAPI('cancel',{TaskID:ctx.taskID},ctx.controller.signal);if(quickExtractCurrent(ctx))await pollQuickExtract(ctx)}catch(e){if(quickExtractCurrent(ctx))$('quickExtractError').textContent=e.message}finally{if(quickExtractCurrent(ctx)){ctx.request=false;updateQuickExtractControls()}}};
+ $('quickExtractOpenOutput').onclick=()=>{const ctx=quickExtract;if(!ctx?.target)return;$('quickExtractDialog').close();navigate(ctx.target,{remember:true})};
+ $('quickExtractAdvanced').onclick=()=>{if(quickExtract?.item)openFullArchiveExtraction(quickExtract.item)};
+ window.addEventListener('pagehide',()=>{if(quickExtract){clearTimeout(quickExtract.timer);quickExtract.controller.abort()}});
+}
 function canPreviewPage(step){return step<0?offset>0:offset+rows.length<total}
 async function previewBeyondPage(step){
  if(previewPageBusy||!canPreviewPage(step))return;
@@ -36,7 +145,7 @@ function showToolboxLauncher(folder){
   const b=document.createElement('a'),url=new URL(boot.ToolboxURL,location.href);url.searchParams.set('tool',id);url.searchParams.set('root',folder);b.href=url.href;b.className='button-link';b.textContent=name;$('toolboxLaunchTools').append(b)
  }$('toolboxLaunchDialog').showModal();
 }
-function openArchiveExtraction(item){
+function openFullArchiveExtraction(item){
  if(!local||!item||item.Dir||item.Kind!=='archive'||!item.Version||loading||mutating)return;
  const at=Math.max(item.Path.lastIndexOf('\\'),item.Path.lastIndexOf('/'));if(at<0)return;
  const url=new URL(boot.ToolboxURL,location.href);url.searchParams.set('tool','extract');url.searchParams.set('root',item.Path.slice(0,at+1));url.searchParams.set('extract-source',item.Path);
@@ -107,6 +216,7 @@ async function uploadResumableFiles(files,directories=[]){
  finally{mutating=false;uploadRequest=null;transferController=null;$('uploadProgress').hidden=true;$('uploadInput').value='';$('uploadFolderInput').value='';await navigate(folder,{remember:false,force:true});say('上传完成 '+completed+' 项'+(failed.length?'；未完成 '+failed.length+' 项：'+failed.slice(0,5).join('；')+(failed.length>5?'；其余项目请重新选择后续传':''):''),Boolean(failed.length));actions()}
 }
 function initializeExplorerUpgrades(){
+ initializeQuickExtraction();
  $('copy').onclick=()=>copySelectedResources('copy');$('cut').onclick=()=>copySelectedResources('move');$('paste').onclick=()=>pasteSelectedResources();syncResourceClipboard();
  $('cancelSearch').onclick=()=>{navigationAbort?.abort();say('已取消读取；当前目录保留。')};$('searchRecursive').onchange=()=>navigate(path,{remember:false,force:true});
  $('toolboxLaunchClose').onclick=()=>$('toolboxLaunchDialog').close();

@@ -14,6 +14,35 @@ import (
 	"time"
 )
 
+func TestArchiveStartingNumbersMigrationAndPersistence(t *testing.T) {
+	s := &server{dataDir: t.TempDir()}
+	c := toolbox.DefaultConfig()
+	c.Tool, c.ArchiveStart = "archive", 29
+	if _, err := s.saveWorkspace(c); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.loadPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = p.Workspaces["archive"]
+	if c.ArchiveDirStart != 29 || c.ArchiveFileStart != 29 {
+		t.Fatal(c)
+	}
+	c.ArchiveDirStart, c.ArchiveFileStart = 99, 1
+	if _, err := s.saveWorkspace(c); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &server{dataDir: s.dataDir}
+	p, err = restarted.loadPreferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Workspaces["archive"]; got.ArchiveDirStart != 99 || got.ArchiveFileStart != 1 {
+		t.Fatal(got)
+	}
+}
+
 func TestArchivePasswordIsNeverPersisted(t *testing.T) {
 	s := &server{dataDir: t.TempDir()}
 	c := toolbox.DefaultConfig()

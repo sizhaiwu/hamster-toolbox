@@ -30,6 +30,7 @@ type Config struct {
 	SevenZip, ArchiveMode, ArchivePassword, ArchiveExtras, ArchiveSplit, ArchiveVolume, ArchiveFirstVolume string
 	ArchiveDirPrefix, ArchiveFilePrefix                                                                    string
 	ArchiveStart, ArchiveDigits, ArchiveLevel                                                              int
+	ArchiveDirStart, ArchiveFileStart                                                                      int
 	ArchiveMarker                                                                                          bool
 	ThumbnailColumns, ThumbnailRows, ThumbnailWidth, ThumbnailGap, ThumbnailQuality                        int
 	ThumbnailFormat, ThumbnailBackground                                                                   string
@@ -118,7 +119,7 @@ func Normalize(c Config) (Config, error) {
 		return c, errors.New("请选择输入目录")
 	}
 	if _, e := configRootPath(c); e != nil {
-		return c, e
+		return c, fmt.Errorf("输入路径：%w", e)
 	}
 	var e error
 	c.Root, e = filepath.Abs(c.Root)
@@ -260,6 +261,15 @@ func Normalize(c Config) (Config, error) {
 				c.Output = filepath.Join(c.Root, "视频预览图")
 			}
 		}
+		// UI users enter folder names such as "south". Resolve those inside
+		// the selected input directory, never against the launcher's working
+		// directory (which is commonly the protected application directory).
+		if !filepath.IsAbs(c.Output) {
+			if filepath.VolumeName(c.Output) != "" || runtime.GOOS == "windows" && strings.HasPrefix(c.Output, `\`) {
+				return c, errors.New("输出路径：请填写完整绝对路径，或相对于输入目录的文件夹名")
+			}
+			c.Output = filepath.Join(c.Root, c.Output)
+		}
 		c.Output, e = filepath.Abs(c.Output)
 		if e != nil {
 			return c, e
@@ -274,7 +284,7 @@ func Normalize(c Config) (Config, error) {
 	if c.Output != "" {
 		output, e := safePath(c.Output)
 		if e != nil {
-			return c, e
+			return c, fmt.Errorf("输出路径 %q：%w", c.Output, e)
 		}
 		root, e := configRootPath(c)
 		if e != nil {

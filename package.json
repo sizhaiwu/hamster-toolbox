@@ -7,10 +7,30 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test:ui": "node tests/ui-check.cjs && node tests/password-memory-check.cjs && node tests/tool-tasks-check.cjs && node tests/explorer-check.cjs && node tests/explorer-tabs-check.cjs && node tests/explorer-enhancements-check.cjs && node tests/explorer-review-check.cjs && node tests/explorer-preferences-check.cjs && node tests/explorer-selection-check.cjs && node tests/explorer-filmstrip-check.cjs && node tests/explorer-location-labels-check.cjs && node tests/explorer-playback-check.cjs && node tests/explorer-navigation-check.cjs && node tests/explorer-layout-check.cjs && node tests/explorer-open-with-check.cjs && node tests/explorer-hover-check.cjs && node tests/explorer-floating-check.cjs && node tests/explorer-native-check.cjs && node tests/explorer-shortcut-check.cjs && node tests/explorer-interaction-check.cjs && node tests/explorer-quick-access-check.cjs && node tests/explorer-media-details-check.cjs && node tests/explorer-reorder-check.cjs && node tests/explorer-share-feedback-check.cjs && node tests/task-feedback-check.cjs && node tests/explorer-upgrades-check.cjs && node tests/task-history-check.cjs && node tests/explorer-properties-check.cjs && node tests/explorer-clipboard-check.cjs && node tests/autostart-check.cjs && node tests/version-info-check.cjs && node tests/extract-progress-check.cjs && node tests/explorer-login-check.cjs && node tests/explorer-extract-check.cjs && node tests/explorer-shortcuts-check.cjs && node tests/dialog-backdrop-check.cjs && node tests/private-notes-check.cjs && node tests/private-notes-features-check.cjs && node tests/private-notes-image-check.cjs && node tests/private-notes-experience-check.cjs && node tests/toolbox-nav-groups-check.cjs && node tests/private-notes-save-time-check.cjs && node tests/private-notes-resume-check.cjs && node tests/private-notes-layout-check.cjs && node tests/remote-workspace-check.cjs && node tests/shared-settings-check.cjs && node tests/private-notes-secret-check.cjs && node tests/mobile-notes-remote-check.cjs && node tests/remote-playback-session-check.cjs && node tests/mobile-notes-scroll-check.cjs && node tests/floating-audio-check.cjs",
-    "build:notes-editor": "node scripts/build-notes-editor.cjs"
+    "test:ui": "node tests/ui-check.cjs && node tests/password-memory-check.cjs && node tests/tool-tasks-check.cjs && node tests/explorer-check.cjs && node tests/explorer-editor-check.cjs && node tests/explorer-text-preview-check.cjs && node tests/file-code-editor-check.cjs && node tests/explorer-editor-tree-check.cjs && node tests/explorer-editor-tabs-check.cjs && node tests/explorer-editor-window-check.cjs && node tests/explorer-editor-performance-check.cjs && node tests/explorer-create-check.cjs && node tests/explorer-tabs-check.cjs && node tests/explorer-enhancements-check.cjs && node tests/explorer-image-layout-check.cjs && node tests/explorer-media-performance-check.cjs && node tests/explorer-review-check.cjs && node tests/explorer-preferences-check.cjs && node tests/explorer-selection-check.cjs && node tests/explorer-filmstrip-check.cjs && node tests/explorer-location-labels-check.cjs && node tests/explorer-playback-check.cjs && node tests/explorer-navigation-check.cjs && node tests/explorer-layout-check.cjs && node tests/explorer-open-with-check.cjs && node tests/explorer-hover-check.cjs && node tests/explorer-floating-check.cjs && node tests/explorer-native-check.cjs && node tests/explorer-native-controls-check.cjs && node tests/explorer-shortcut-check.cjs && node tests/explorer-interaction-check.cjs && node tests/explorer-quick-access-check.cjs && node tests/explorer-media-details-check.cjs && node tests/explorer-reorder-check.cjs && node tests/explorer-share-feedback-check.cjs && node tests/task-feedback-check.cjs && node tests/explorer-upgrades-check.cjs && node tests/task-history-check.cjs && node tests/explorer-properties-check.cjs && node tests/explorer-clipboard-check.cjs && node tests/autostart-check.cjs && node tests/version-info-check.cjs && node tests/extract-progress-check.cjs && node tests/explorer-login-check.cjs && node tests/explorer-extract-check.cjs && node tests/explorer-quick-extract-check.cjs && node tests/explorer-shortcuts-check.cjs && node tests/dialog-backdrop-check.cjs && node tests/private-notes-check.cjs && node tests/private-notes-features-check.cjs && node tests/private-notes-image-check.cjs && node tests/private-notes-experience-check.cjs && node tests/toolbox-nav-groups-check.cjs && node tests/private-notes-save-time-check.cjs && node tests/private-notes-resume-check.cjs && node tests/private-notes-layout-check.cjs && node tests/remote-workspace-check.cjs && node tests/shared-settings-check.cjs && node tests/private-notes-secret-check.cjs && node tests/mobile-notes-remote-check.cjs && node tests/remote-playback-session-check.cjs && node tests/mobile-notes-scroll-check.cjs && node tests/floating-audio-check.cjs",
+    "build:notes-editor": "node scripts/build-notes-editor.cjs",
+    "build:file-editor": "node scripts/build-file-code-editor.cjs"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-css": "6.3.1",
+    "@codemirror/lang-go": "6.0.1",
+    "@codemirror/lang-html": "6.4.12",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/lang-php": "6.0.2",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/lang-xml": "6.1.0",
+    "@codemirror/lang-yaml": "6.1.3",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
+    "codemirror": "6.0.2",
     "esbuild": "^0.28.2",
     "jsdom": "26.1.0",
     "markdown-it": "^15.0.3",

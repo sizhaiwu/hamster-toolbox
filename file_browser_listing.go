@@ -91,7 +91,7 @@ func (b *fileBrowser) readDirectoryListing(r *http.Request, path string, scope *
 				if err != nil || (!st.IsDir() && !st.Mode().IsRegular()) || dirs && !st.IsDir() {
 					continue
 				}
-				items = append(items, browserEntry{Name: d.Name(), Path: display, Dir: st.IsDir(), Kind: browserKind(d.Name()), Size: st.Size(), Modified: st.ModTime()})
+				items = append(items, browserEntry{Name: d.Name(), Path: display, Dir: st.IsDir(), Kind: browserPathKind(child, st), Size: st.Size(), Modified: st.ModTime()})
 			}
 			if readErr == io.EOF {
 				break

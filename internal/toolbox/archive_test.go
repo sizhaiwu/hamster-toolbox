@@ -33,6 +33,90 @@ func writeArchiveFixture(t *testing.T, path string, data []byte) {
 	}
 }
 
+func TestArchiveIndependentStartingNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name                                   string
+		dirStart, fileStart, wantDir, wantFile int
+	}{
+		{"legacy", 0, 0, 29, 29},
+		{"independent", 99, 3, 99, 3},
+		{"directory override", 99, 0, 99, 29},
+		{"file override", 0, 3, 29, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := archiveFixture(t)
+			c.ArchiveStart, c.ArchiveDirStart, c.ArchiveFileStart = 29, tc.dirStart, tc.fileStart
+			for _, name := range []string{"album2/item.txt", "album10/item.txt", "file2.txt", "file10.txt"} {
+				writeArchiveFixture(t, filepath.Join(c.Root, name), []byte("fixture"))
+			}
+			p, err := BuildPlan(context.Background(), ScopeConfig(c), func(string) {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{
+				"album2":     fmt.Sprintf("D_%03d.7z.001", tc.wantDir),
+				"album10":    fmt.Sprintf("D_%03d.7z.001", tc.wantDir+1),
+				"file2.txt":  fmt.Sprintf("F_%03d.7z.001", tc.wantFile),
+				"file10.txt": fmt.Sprintf("F_%03d.7z.001", tc.wantFile+1),
+			}
+			if len(p.Items) != len(want) {
+				t.Fatal(p.Items)
+			}
+			for _, item := range p.Items {
+				if item.Conflict != "" || filepath.Base(item.Target) != want[filepath.Base(item.Source)] {
+					t.Fatal(item)
+				}
+			}
+		})
+	}
+	for _, field := range []string{"dir", "file"} {
+		for _, value := range []int{-1, 1000000000} {
+			c := archiveFixture(t)
+			if field == "dir" {
+				c.ArchiveDirStart = value
+			} else {
+				c.ArchiveFileStart = value
+			}
+			if _, err := BuildPlan(context.Background(), c, func(string) {}); err == nil {
+				t.Fatalf("accepted invalid %s start %d", field, value)
+			}
+		}
+	}
+}
+
+func TestArchiveIndependentStartingNumbersIntegration(t *testing.T) {
+	if os.Getenv("TOOLBOX_INTEGRATION") == "" {
+		t.Skip("set TOOLBOX_INTEGRATION=1")
+	}
+	c := archiveFixture(t)
+	c.SevenZip, _ = filepath.Abs(filepath.Join("..", "..", "tools", "sevenzip", "7za.exe"))
+	if _, err := os.Stat(c.SevenZip); err != nil {
+		t.Skip("bundled 7-Zip unavailable")
+	}
+	c.ArchiveDirStart, c.ArchiveFileStart, c.ArchiveSplit = 99, 3, "none"
+	writeArchiveFixture(t, filepath.Join(c.Root, "album", "inside.txt"), []byte("directory fixture"))
+	writeArchiveFixture(t, filepath.Join(c.Root, "item.txt"), []byte("file fixture"))
+	p, err := BuildPlan(context.Background(), c, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := Execute(context.Background(), p, func(message string) { t.Log(message) }, func(int, int) {})
+	if result.Success != 2 || result.Failed != 0 {
+		t.Fatal(result)
+	}
+	for _, name := range []string{"D_099.7z", "F_003.7z"} {
+		if _, err := run(context.Background(), c.SevenZip, "t", filepath.Join(p.Config.Output, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, want := range map[string]string{"album/inside.txt": "directory fixture", "item.txt": "file fixture"} {
+		data, err := os.ReadFile(filepath.Join(c.Root, name))
+		if err != nil || string(data) != want {
+			t.Fatal("source changed", name, err)
+		}
+	}
+}
+
 func TestArchivePlanNumberingAndConflicts(t *testing.T) {
 	c := archiveFixture(t)
 	c.ArchiveStart = 99

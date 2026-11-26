@@ -37,14 +37,14 @@ function toolNavIcon(kind){
 const optionKeys = {
   dedupe: ['DedupeProgram'],
   extract: ['ExtractSource','Recursive','Output','ExtractConflict','ExtractLayout','ExtractPassword','ExtractDeleteSource','ExtractDeleteMode'],
-  archive: ['Output','Files','Dirs','ArchiveMode','ArchivePassword','ArchiveExtras','ArchiveMarker','ArchiveSplit','ArchiveFirstVolume','ArchiveVolume','ArchiveDirPrefix','ArchiveFilePrefix','ArchiveStart','ArchiveDigits','ArchiveLevel'],
+  archive: ['Output','Files','Dirs','ArchiveMode','ArchivePassword','ArchiveExtras','ArchiveMarker','ArchiveSplit','ArchiveFirstVolume','ArchiveVolume','ArchiveDirPrefix','ArchiveFilePrefix','ArchiveDirStart','ArchiveFileStart','ArchiveDigits','ArchiveLevel'],
   format: ['Recursive','FormatCleanOther','FormatDeleteMode'], rename: ['Recursive', 'Files', 'Dirs', 'Find', 'Replace', 'Regex', 'Prefix', 'Suffix', 'RenameMode', 'ExampleNumber', 'ExampleAtStart'],
   number: ['NumberName', 'StartNumber', 'NumberDigits', 'NumberStyle', 'NumberOrder', 'NumberFilter', 'NumberKeepOriginal'],
   describe: ['Recursive'], exif: ['Workers','Recursive', 'Output', 'MetadataTypes'], pdf: ['Output'],
   image: ['Workers','Recursive', 'Output', 'Quality', 'PngMode', 'PngQuality'], video: ['Workers','Recursive', 'Output', 'VideoContainer', 'VideoMode', 'VideoAcceleration', 'VideoHDR', 'CRF', 'MinMB', 'MinKbps'],
   thumbnail: ['Workers','Recursive', 'Output', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality', 'ThumbnailFormat', 'ThumbnailBackground', 'ThumbnailInfo', 'ThumbnailTime']
 };
-const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recursive', 'Files', 'Dirs', 'Regex', 'NumberKeepOriginal', 'ExampleNumber', 'ExampleAtStart', 'ThumbnailInfo', 'ThumbnailTime'], numericKeys = ['Workers','ArchiveStart','ArchiveDigits','ArchiveLevel','Quality', 'CRF', 'MinMB', 'MinKbps', 'StartNumber', 'NumberDigits', 'PngQuality', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality'];
+const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recursive', 'Files', 'Dirs', 'Regex', 'NumberKeepOriginal', 'ExampleNumber', 'ExampleAtStart', 'ThumbnailInfo', 'ThumbnailTime'], numericKeys = ['Workers','ArchiveDirStart','ArchiveFileStart','ArchiveDigits','ArchiveLevel','Quality', 'CRF', 'MinMB', 'MinKbps', 'StartNumber', 'NumberDigits', 'PngQuality', 'ThumbnailColumns', 'ThumbnailRows', 'ThumbnailWidth', 'ThumbnailGap', 'ThumbnailQuality'];
 const imageFormatExtensions = '.jpg .jpeg .jpe .jfif .png .webp'.split(' ');
 const jpegFormats = ['.jpg', '.jpeg', '.jpe', '.jfif'];
 const token = new URLSearchParams(location.search).get('session');
@@ -403,8 +403,9 @@ function updateArchiveOptions() {
   $('archiveVolumeOptions').hidden = split === 'none';
   $('archiveFirstVolumeOption').hidden = split !== 'script';
   const digits = Math.max(1, Math.min(9, Number($('ArchiveDigits').value) || 3));
-  const n = String($('ArchiveStart').value || 1).padStart(digits, '0');
-  $('archiveSummary').textContent = '文件夹 → ' + $('ArchiveDirPrefix').value + n + '.7z' + (split === 'none' ? '' : '.001') + '；文件 → ' + $('ArchiveFilePrefix').value + n + '.7z' + (split === 'none' ? '' : '.001') + '。' + (split === 'script' ? '首卷 ' + $('ArchiveFirstVolume').value + '，后续每卷 ' + $('ArchiveVolume').value + '。' : split === 'uniform' ? '每卷 ' + $('ArchiveVolume').value + '。' : '不分卷。');
+  const dirN = String($('ArchiveDirStart').value || 1).padStart(digits, '0');
+  const fileN = String($('ArchiveFileStart').value || 1).padStart(digits, '0');
+  $('archiveSummary').textContent = '文件夹 → ' + $('ArchiveDirPrefix').value + dirN + '.7z' + (split === 'none' ? '' : '.001') + '；文件 → ' + $('ArchiveFilePrefix').value + fileN + '.7z' + (split === 'none' ? '' : '.001') + '。' + (split === 'script' ? '首卷 ' + $('ArchiveFirstVolume').value + '，后续每卷 ' + $('ArchiveVolume').value + '。' : split === 'uniform' ? '每卷 ' + $('ArchiveVolume').value + '。' : '不分卷。');
 }
 function updateThumbnailOptions() {
   if (tool !== 'thumbnail') return;
@@ -511,7 +512,7 @@ async function selectTool(id, initial = false) {
     $('thumbnailOptions').hidden = id !== 'thumbnail';
     $('imageOptions').hidden = id !== 'image'; $('videoOptions').hidden = id !== 'video'; $('numberOptions').hidden = id !== 'number'; $('recursiveOption').hidden = ['pdf', 'number', 'archive'].includes(id);
     $('outputLabel').textContent = id === 'pdf' ? '保存为 PDF 文件' : '输出目录';
-	$('outputHint').textContent = id === 'pdf' ? '填写完整 PDF 文件路径，或留空自动生成。已有同名文件时会提示冲突。' : '留空即可：自动生成输出文件夹，保留原文件与目录结构。';
+	$('outputHint').textContent = id === 'pdf' ? '填写以 .pdf 结尾的文件路径，或留空自动生成。已有同名文件时会提示冲突。' : '留空即可：自动生成输出文件夹，保留原文件与目录结构。';
     if (id === 'thumbnail') $('outputHint').textContent = '留空保存到输入目录下的“视频预览图”，也可自定义目录。命名为“视频名.mp4.jpg”，保留视频扩展名，避免不同格式重名。已有结果会跳过。';
     $('Output').placeholder = id === 'pdf' ? '留空自动生成 toolbox-output/目录索引.pdf' : '留空自动输出到 toolbox-output/' + id;
     if (id === 'thumbnail') $('Output').placeholder = '留空保存到输入目录下的 视频预览图';
@@ -523,6 +524,10 @@ async function selectTool(id, initial = false) {
     $('workerOptions').hidden=!['image','video','exif','thumbnail'].includes(id);$('Workers').max=id==='video'?'3':'8';
     putValue('Workers',workspaces[id]?.Workers|| (id==='video'?1:defaults.Workers||2));
     const active = { ...defaults, ...(workspaces[id] || {}), Tool: id };
+    if(id==='archive'){
+      active.ArchiveDirStart=active.ArchiveDirStart||active.ArchiveStart||1;
+      active.ArchiveFileStart=active.ArchiveFileStart||active.ArchiveStart||1;
+    }
     if (!workspaces[id] && !initial) active.Root = $('Root').value;
     const liveTask=await api('state',{Summary:true});
     viewedTask=liveTask;

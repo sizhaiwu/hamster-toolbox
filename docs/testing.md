@@ -4,6 +4,16 @@
 
 测试以临时合成素材为主，不使用个人媒体。自动化覆盖不等于所有硬件、第三方解码器和系统桌面均已真机验证。
 
+图片首次显示与操作栏：`node tests/explorer-image-layout-check.cjs` 验证未知尺寸不绘制、解码与布局就绪、兼容图片和迟到解码隔离、已有缩放保留、失败降级与关闭释放；同时验证图片控件移到顶部后保留节点与事件、底栏隐藏、提示面板外部点击/Esc 关闭，以及退出或切换文本后还原状态栏。可选 `TOOLBOX_IMAGE_QA=<状态文件路径> go test . -run '^TestImagePreviewBrowserAcceptance$' -count=1` 启动临时合成横/竖 PNG 与延迟响应，用真实浏览器逐帧检查首次可见的宽高比和尺寸，并检查窄屏顶部按钮、关闭入口和提示面板不溢出；不读取个人图片。
+
+前置数据 ZIP：`go test ./internal/toolbox -run TestExtractPrefixedZIPRecognition` 验证超过默认搜索范围的前缀、尾部杂项、普通 ZIP 快速路径，以及伪造目录、文件头、分卷和 ZIP64 标记不会误启用扩大搜索。设置 `TOOLBOX_INTEGRATION=1` 后运行 `go test ./internal/toolbox -run TestExtractPrefixedZIP`，使用真实 7-Zip 验证普通及 AES-256 合成包完整解压、密码提示、两种平台命令导出、原包哈希不变和路径穿越拦截。
+
+相对输出目录：`go test ./internal/toolbox -run 'TestRelativeOutput|TestOutputResolution'` 验证全部七个输出工具以输入目录为基准解析、PDF 相对文件名、绝对路径保留和重复规范化稳定，不创建输出目录；同时检查输入/输出错误区分、程序与系统目录拦截、输出等于输入/上级目录的拒绝以及 Windows 模糊路径拒绝。
+
+列表目录大小：`node tests/explorer-properties-check.cjs` 覆盖按需按钮、不嵌套交互控件、不打开或选中目录、图标/列表切换、重复统计限制、停止与重试、部分结果、迟到响应和导航取消，以及只读共享范围。复用目录属性的只读统计接口，不增加自动扫描。
+
+Windows 托盘驻留：`go test . -run TestDesktopNativePointerLifetime -count=10` 验证原生调用跨同步回调时地址不随 Go 栈增长而变化；旧实现可安全复现地址变化。交互桌面可额外设置 `TOOLBOX_DESKTOP_TRAY_TEST=1`，运行 `go test . -run TestDesktopTraySurvivesGCAndTaskbarRecreation -count=3`，验证真实托盘消息循环在频繁 GC 和图标重建通知下持续提供 HTTP 服务，并能正常退出。测试只使用临时窗口、图标和数据目录，不重启系统资源管理器，不广播消息，不关闭已有工具箱。这些短时压力测试不能替代数小时驻留观察。
+
 笔记附件看图：`node tests/private-notes-image-check.cjs` 覆盖缓存图片重复打开、正文无引用、缩放与适应窗口、关闭/锁定资源清理、切换笔记和迟到响应隔离、重复请求合并与读取失败提示。可选 `TOOLBOX_NOTES_IMAGE_QA=<状态文件路径> go test . -run '^TestPrivateNotesImageBrowserAcceptance$' -v` 启动临时加密笔记库与公开合成 PNG，仅供浏览器验收，不读取个人笔记。
 
 打包/解压密码记忆：`go test . -run TestPassword -count=1` 验证按工具隔离、重启恢复、磁盘密文、关闭/清空、常用密码引用的编辑与删除同步、损坏文件保护与平台限制。`node tests/password-memory-check.cjs` 验证切换和刷新恢复、保留选择、关闭记忆、清空密码、保存/读取失败提示、普通设置与浏览器存储无明文，以及不支持平台的临时输入。
@@ -180,3 +190,27 @@ go test . -run 'TestResource.*Properties' -count=1
 多工具并行：`go test . -run "TestIndependentToolTasks|TestToolTask" -count=1` 验证两个工具同时进入运行状态、计划/日志/取消隔离、退出保护、扫描受理任务 ID、拒绝替换运行任务、执行前再次检查读写冲突与完成事件；可加 `-race` 检查并发访问。`node tests/tool-tasks-check.cjs` 验证跨工具切换、导航进度、多个页面独立排队提醒、短任务完成后被新任务替换时的补收、跨页面预览与密码核对、运行参数同步、延迟响应隔离和失败提示。
 
 侧栏已读与旧提醒：同一 UI 测试还验证关闭弹窗/进入页面隐藏结束状态、日志保留、新任务重新显示、待执行与运行状态保留、无计划 ID 的扫描错误确认，以及新窗口（包含复制的会话存储）不重放旧任务。`node tests/task-feedback-check.cjs` 验证当前页面刷新后恢复未确认提醒，各页面继续独立接收新完成事件。
+
+文件编辑：`go test . ./internal/toolbox -run 'TestBrowserEditor|TestBrowserText'` 验证共享写入/撤销、CSRF 与本机认证、共享越界、修改冲突（包含同大小同时间内容变化）、原文件备份、连续保存、只读与受保护文件、UTF-8/BOM/UTF-16 和换行保留、二进制/超限/链接拒绝及取消。`node tests/explorer-editor-check.cjs` 验证安全文本、保存快捷键、失败草稿保留、备份信息、查找替换、字号记忆、全屏、未保存确认、延迟读取清理与访客权限。测试仅使用合成内容和临时目录。
+
+新建文件：`go test . -run TestBrowserCreateFile` 验证本机、共享根目录和无扩展名文件创建、只读权限、同名文件/目录保护、越界和非法名称拒绝、CSRF 与数据目录保护；`node tests/explorer-create-check.cjs` 验证菜单图标、Enter 提交、防止重复提交、创建后打开编辑器与失败保留名称。
+
+代码编辑器与目录栏：`node tests/file-code-editor-check.cjs` 使用真实离线 CodeMirror 验证高亮节点、行号、折叠、语言、只读状态、快捷键、独立撤销/光标会话、深浅主题、CSP nonce 和释放；`node tests/explorer-editor-tree-check.cjs` 验证目录按需展开、分页、当前文件标识、未保存标签切换、折叠与共享范围。`TestCodeEditorCSPNonceAndStaticAssets` 验证每页样式 nonce 独立生成，脚本仍只允许本站资源，登录前可加载公开代码组件。`npm run build:file-editor` 同时更新随包第三方许可；组件无需 CDN。
+
+多文件编辑：`node tests/explorer-editor-tabs-check.cjs` 验证各文件草稿、光标/滚动/语言独立、同名区分、重复打开复用、全部保存部分失败与重试、关闭非当前标签、重新读取、整个编辑器未保存确认、离开提醒、无明文持久化、延迟读取/保存隔离、保存期间继续输入，以及不同共享目录同名文件的写入权限和范围隔离。真实浏览器验收应同时打开 JSON、JavaScript 和 Markdown，切换并撤销、全部保存后核对磁盘内容和备份，再在手机宽度检查工具栏、设置弹层和目录抽屉。
+
+源码与视频同后缀：`go test . -run TestBrowserTypeScript` 验证 TS/TSX/MTS/CTS、空文件、UTF-8/BOM/UTF-16、188/192/204 字节传输流、前置数据、伪同步标记和保留文件偏移；覆盖本机与共享列表、属性、文本编辑，以及源码拒绝缩略图、悬停、兼容播放、媒体探测和原生播放。代码组件测试另验证光标处补空格、多行 Tab/Shift+Tab、只读拒绝、TypeScript 自动/手动提示、Tab 采纳和切换文件清理提示。
+
+文本预览布局与隔离：`node tests/explorer-text-preview-check.cjs` 验证顶部操作不挤占正文、编码与复制全文、换行记忆、只读/空文件、媒体布局恢复、请求取消及过期/失败响应隔离。代码组件测试验证真实只读 CodeMirror 的行号、高亮、换行、恶意文字安全和释放；真实浏览器应检查桌面、手机布局与长行滚动。
+
+编辑器窗口：`node tests/explorer-editor-window-check.cjs` 验证拖动/缩放边界、Esc 回退、工具按钮不误触拖动、最小化草稿/光标保留、继续浏览与后台保存、大小位置还原、异步 close 事件不清空恢复后的编辑区，以及共享退出/过期时的草稿和会话清理。真实浏览器应验证鼠标标题栏拖动、右下角缩放、最小化后打开其他目录再恢复，以及手机可视区域变化。
+
+大文件编辑性能：`node tests/explorer-editor-performance-check.cjs` 使用 1.68 MB 合成文档、3 个标签和 200 项目录，验证连续输入不写入完整隐藏文本、不扫描目录树、标签节点不重建、光标定位与撤销至原内容的未保存状态；另覆盖按需保存/查找、保存期间继续编辑、最小化和释放。采用操作次数断言，不以固定耗时作为 CI 成败条件。`TestBrowserEditorReadsDoNotWaitForTransfers` 验证读取不受长传输写锁阻塞，`TestBrowserEditorSaveResponseDoesNotEchoFullText` 验证保存内容准确且不回传全文，修订与备份仍保留。
+
+文件编辑集中备份：`TestBrowserTextHistoryIsCentralAndBounded` 验证连续 25 次保存最多保留 20 个版本、无变化不新增、同名文件隔离、原目录无临时残留且旧备份不变；`TestBrowserTextHistoryFailureKeepsSource` 验证备份目录不可写及移动原文件后取消时恢复内容。编辑 API 测试同时核对本机备份实际位于数据目录、远程响应不泄漏服务端路径。
+
+轻量原生媒体优化：`go test . -run 'TestNativeWindow|TestNativePlayer'` 验证图片/视频尺寸分别持久化、开关与预设重置、全屏/最大化不覆盖、旧窗口迟到写入隔离、窗口操作确认与部分失败、音量范围和操作白名单。`node tests/explorer-native-controls-check.cjs` 验证每个视频的进度/音量、图片缩放、批量操作、稳定控件及设置失败恢复。设置 `TOOLBOX_NATIVE_MEDIA_QA=1` 后运行 `go test . -run '^TestNativeMediaWindowIntegration$' -count=1 -v`，仅打开仓库合成图片和临时生成的静音视频，实测滚轮缩放、720×500 尺寸记忆、错开不缩放、平铺和视频独立控制；测试退出只关闭自身创建的 mpv。该实测需要图形桌面、随包 mpv 和 FFmpeg，不能代替其他操作系统的真机验证。
+
+网页图片缓存：`node tests/explorer-media-performance-check.cjs` 验证前后切换复用、下一张低优先级预读、24 MiB/6 项上限、对象 URL 释放、取消和迟到响应不回写、跨共享隔离与会话过期清理。真实浏览器使用 `TestImagePreviewBrowserAcceptance` 的合成图片检查 blob 解码、缩放和窄屏布局；没有用用户的资源做性能或画质修改。
+
+资源管理器内解压：`node tests/explorer-quick-extract-check.cjs` 验证无跳转、组件/密码恢复、参数与计划隔离、预览冲突、任务编号绑定、阶段进度、关闭不取消、重新连接及完成刷新。`TOOLBOX_INTEGRATION=1 go test . -run TestExplorerInlineExtractionWorkflow` 使用合成 ZIP 与实际 7-Zip 验证授权、仅选中包、预览、执行、同名保留、原包不变和历史记录。设置 `TOOLBOX_QUICK_EXTRACT_QA` 为输出 JSON 路径后运行 `TestQuickExtractBrowserAcceptance` 可启动仅使用合成压缩包的浏览器验收服务，结束时创建 JSON 中的 StopFile。

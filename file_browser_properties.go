@@ -102,10 +102,11 @@ func (b *fileBrowser) resourceProperties(w http.ResponseWriter, r *http.Request,
 	if !local && display == "" {
 		name = "共享根目录"
 	}
-	result := map[string]any{"Name": name, "Path": display, "Kind": browserKind(st.Name()), "Dir": st.IsDir(), "Size": st.Size(), "Modified": st.ModTime(), "Permissions": st.Mode().String()}
+	kind := browserFileKind(f, st)
+	result := map[string]any{"Name": name, "Path": display, "Kind": kind, "Dir": st.IsDir(), "Size": st.Size(), "Modified": st.ModTime(), "Permissions": st.Mode().String()}
 	addNativeFileProperties(f, result)
 	if st.Mode().IsRegular() {
-		switch browserKind(st.Name()) {
+		switch kind {
 		case "image":
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 			defer cancel()

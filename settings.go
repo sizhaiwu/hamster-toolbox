@@ -50,6 +50,18 @@ func (s *server) loadPreferences() (preferences, error) {
 		p.Workspaces["image"] = c
 	}
 	for key, c := range p.Workspaces {
+		if key == "archive" {
+			start := c.ArchiveStart
+			if start == 0 {
+				start = 1
+			}
+			if c.ArchiveDirStart == 0 {
+				c.ArchiveDirStart = start
+			}
+			if c.ArchiveFileStart == 0 {
+				c.ArchiveFileStart = start
+			}
+		}
 		if c.Workers == 0 && (key == "image" || key == "video" || key == "exif" || key == "thumbnail") {
 			c.Workers = 1
 		}

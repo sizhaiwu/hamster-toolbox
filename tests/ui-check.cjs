@@ -290,6 +290,9 @@ if(require.main===module)(async()=>{
   assert.equal('ArchiveAdvancedOpen' in w.config(),false,'presentation state does not change the execution config');
   assert.equal($('archiveOptions').hidden,false);assert.equal($('entryOptions').hidden,false);assert.equal($('recursiveOption').hidden,true);
   assert.equal($('SevenZip').value,'C:/tools/sevenzip/7za.exe');assert.equal($('ArchiveExtras').disabled,true);assert.match($('archiveSummary').textContent,/D_001\.7z\.001/);assert.match($('outputHint').textContent,/0utput_7z/);assert.match($('outputHint').textContent,/目录\.txt/);assert.match($('Output').placeholder,/0utput_7z/);
+  assert.equal($('ArchiveDirStart').value,'1');assert.equal($('ArchiveFileStart').value,'1');
+  input('ArchiveDirStart','99');input('ArchiveFileStart','3');
+  assert.match($('archiveSummary').textContent,/D_099\.7z\.001/);assert.match($('archiveSummary').textContent,/F_003\.7z\.001/);
   input('ArchivePassword','Private-Session!');
   $('ArchiveMode').value='extras';$('ArchiveMode').dispatchEvent(new w.Event('change'));
   input('ArchiveExtras','C:/sample/info.txt');assert.equal($('ArchiveExtras').disabled,false);
@@ -301,10 +304,13 @@ if(require.main===module)(async()=>{
   const archivePlanCount=requests.filter(r=>r.path==='plan').length;$('preview').click();
   await until(()=>requests.filter(r=>r.path==='plan').length===archivePlanCount+1&&!$('preview').disabled,'archive preview');
   const archiveRequest=requests.filter(r=>r.path==='plan').at(-1).body;
+  assert.equal(archiveRequest.ArchiveDirStart,99);assert.equal(archiveRequest.ArchiveFileStart,3);
+  assert.equal($('ArchiveDirStart').value,'99');assert.equal($('ArchiveFileStart').value,'3');
   assert.equal(archiveRequest.Tool,'archive');assert.equal(archiveRequest.ArchivePassword,'Private-Session!');assert.equal(archiveRequest.ArchiveMode,'extras');assert.equal(archiveRequest.SevenZip,'C:/tools/sevenzip/7za.exe');assert.equal('FFmpeg' in archiveRequest,false);assert.equal('Recursive' in archiveRequest,false);
   await delay(550);dom.window.close();dom=createUI(30003);w=dom.window;$=id=>w.document.getElementById(id);
   await until(()=>$('title').textContent==='打包资源'&&!$('preview').disabled,'restart archive workspace');
   assert.equal($('ArchivePassword').value,'Private-Session!');assert.equal($('ArchiveExtras').value,'C:/sample/info.txt');assert.equal($('ArchiveMode').value,'extras');
+  assert.equal($('ArchiveDirStart').value,'99');assert.equal($('ArchiveFileStart').value,'3');
   assert.match($('description').textContent,/7-Zip/);
   $('manageArchivePasswords').click();await until(()=>$('passwordDialog').open&&!$('savePassword').disabled,'password manager');
   input('PasswordName','共享密码');input('PasswordValue','Vault-Only-Secret!');$('savePassword').click();

@@ -144,6 +144,7 @@ function contextMenuButton(label,run,enabled=true,kind=contextMenuIcon(label)){c
 function initializeExplorerIcons(){
   for(const [id,kind] of [['back','back'],['forward','forward'],['up','up'],['refresh','refresh'],['newTab','plus'],['sidebarToggle','sidebar'],['toggleNav','menu']])$(id).replaceChildren(controlIcon(kind));
   for(const [id,kind] of [['openSelected','folderOpen'],['openLocal','external'],['newFolder','folder'],['upload','upload'],['paste','paste'],['copy','copy'],['cut','cut'],['uploadFolder','upload'],['copyTo','copy'],['move','move'],['rename','edit'],['remove','trash'],['download','download'],['openFolderTab','plus'],['selectAll','select'],['clearSelection','close'],['browserHelp','info']]){const element=$(id),text=element.textContent.replace(/^[＋↑]\s*/,'');element.replaceChildren(controlIcon(kind),document.createTextNode(text));element.classList.add('icon-label-button')}
+  $('newFile').replaceChildren(controlIcon('text'),document.createTextNode('新建文件'));$('newFile').classList.add('icon-label-button');
   $('backToolbox').replaceChildren(controlIcon('back'),document.createTextNode('返回工具箱'));
 }
 function updateListSortHeaders(){for(const b of document.querySelectorAll('[data-sort-key]')){const active=b.dataset.sortKey===$('sort').value;b.classList.toggle('active',active);b.setAttribute('aria-label','按'+({name:'名称',size:'大小',modified:'修改时间'}[b.dataset.sortKey])+'排序'+(active?'，当前'+($('order').value==='asc'?'正序':'倒序'):''));b.querySelector('.sort-mark').textContent=active?($('order').value==='asc'?'↑':'↓'):''}}
@@ -247,6 +248,7 @@ function showContextMenu(event,item=null){
   if(item){
     const items=selected(),one=items.length<=1;
     add(item.Dir?'打开目录':item.Kind==='shortcut'?'打开目标文件夹':'预览文件',()=>activateResource(item),one,explorerIconKind(item));
+    if(!item.Dir&&writable()&&!['image','video','audio','pdf','archive','shortcut','drive'].includes(item.Kind))add('编辑文件',()=>openTextEditor(item),one&&!mutating,'text');
     if(local&&!item.Dir&&item.Kind==='archive'&&typeof openArchiveExtraction==='function')add('解压资源…',()=>openArchiveExtraction(item),one&&Boolean(item.Version));
     if(local&&item.Dir&&typeof showToolboxLauncher==='function')add('使用工具箱处理…',()=>showToolboxLauncher(item.Path),one);
     if(writable()&&item.Kind!=='drive'&&typeof copySelectedResources==='function'){add('复制',()=>copySelectedResources('copy'));add('剪切',()=>copySelectedResources('move'));add('复制到…',()=>openTransferPicker('copy'));}
@@ -261,7 +263,7 @@ function showContextMenu(event,item=null){
     add(local?'复制完整路径':'复制共享内路径',()=>copyResourcePath(item.Path),one);
     add('属性',()=>showResourceProperties(item),one);
   }else{
-    if(writable()){add('新建文件夹',()=>$('newFolder').click(),!$('newFolder').disabled);add('上传文件',()=>$('upload').click(),!$('upload').disabled)}
+    if(writable()){add('新建文件',()=>$('newFile').click(),!$('newFile').disabled,'text');add('新建文件夹',()=>$('newFolder').click(),!$('newFolder').disabled);add('上传文件',()=>$('upload').click(),!$('upload').disabled)}
     if(local&&path&&typeof showToolboxLauncher==='function')add('使用工具箱处理当前目录…',()=>showToolboxLauncher(path));
     if(writable()&&typeof pasteSelectedResources==='function')add('粘贴',()=>pasteSelectedResources(),canPasteResources());
     add('刷新当前目录',()=>$('refresh').click());add('选择本页项目',selectPage,rows.some(row=>row.Kind!=='drive'));

@@ -37,7 +37,7 @@ func securityBrowserHeaders(w http.ResponseWriter) {
 // This includes only embedded UI assets, never configuration or file APIs.
 func browserStaticAsset(path string) bool {
 	switch path {
-	case "", "explorer.html", "version-info.js", "network-settings.js", "network-settings.css", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
+	case "", "explorer.html", "file-code-editor.js", "explorer-editor-window.js", "version-info.js", "network-settings.js", "network-settings.css", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
 		return true
 	}
 	return brandContentType(path) != ""
@@ -65,6 +65,9 @@ func (b *fileBrowser) static(w http.ResponseWriter, r *http.Request, path string
 	}
 	w.Header().Set("Content-Type", contentType)
 	if path == "explorer.html" {
+		nonce := randomID()
+		data = bytes.ReplaceAll(data, []byte("__FILE_EDITOR_NONCE__"), []byte(nonce))
+		w.Header().Set("Content-Security-Policy", strings.Replace(w.Header().Get("Content-Security-Policy"), "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1))
 		data = sharedSettingsHTML(data)
 		b.mu.Lock()
 		enabled := b.config.WorkspaceEnabled
@@ -109,7 +112,7 @@ func browserKind(name string) string {
 	if ext == ".lnk" {
 		return "shortcut"
 	}
-	for kind, list := range map[string]string{"image": ".jpg .jpeg .jpe .jfif .png .webp .gif .bmp .avif .heic .heif .tif .tiff", "video": ".mp4 .m4v .mov .mkv .webm .avi .ts .mts .m2ts .mpg .mpeg .mpe .wmv .flv .f4v .3gp .3g2 .vob .m2v .asf .rm .rmvb .ogv .divx .mxf", "audio": ".mp3 .wav .m4a .aac .ogg .flac .opus", "text": ".txt .md .json .csv .log .xml .yaml .yml .ini .srt .ass .vtt .html .htm .svg .css .js .go .py .ps1 .bat .cmd", "pdf": ".pdf"} {
+	for kind, list := range map[string]string{"image": ".jpg .jpeg .jpe .jfif .png .webp .gif .bmp .avif .heic .heif .tif .tiff", "video": ".mp4 .m4v .mov .mkv .webm .avi .m2ts .mpg .mpeg .mpe .wmv .flv .f4v .3gp .3g2 .vob .m2v .asf .rm .rmvb .ogv .divx .mxf", "audio": ".mp3 .wav .m4a .aac .ogg .flac .opus", "text": ".txt .md .json .csv .log .xml .yaml .yml .ini .srt .ass .vtt .html .htm .svg .css .js .jsx .mjs .cjs .ts .tsx .mts .cts .go .py .ps1 .bat .cmd", "pdf": ".pdf"} {
 		if strings.Contains(" "+list+" ", " "+ext+" ") {
 			return kind
 		}
@@ -169,8 +172,13 @@ func (b *fileBrowser) dispatch(w http.ResponseWriter, r *http.Request, local boo
 	if path == "api/preferences" {
 		bodyLimit = 512 * 1024
 	}
+	if path == "api/text-save" {
+		bodyLimit = 16 << 20
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 	switch path {
+	case "api/text-open", "api/text-save":
+		b.editText(w, r, local, path == "api/text-save")
 	case "api/transfer":
 		b.transfer(w, r, local)
 	case "api/cache-clear":
@@ -412,12 +420,13 @@ func (b *fileBrowser) mutate(w http.ResponseWriter, r *http.Request, local bool)
 	}
 	// Resolve the selected item for writes except when creating a child inside
 	// a shared root, whose identity itself must remain immutable.
-	p, _, e := b.resolve(r, local, req.Action != "mkdir", req.Path)
+	creating := req.Action == "mkdir" || req.Action == "create"
+	p, _, e := b.resolve(r, local, !creating, req.Path)
 	if e != nil {
 		browserFail(w, local, e)
 		return
 	}
-	if req.Action != "mkdir" {
+	if !creating {
 		b.mu.Lock()
 		ref, ok := b.references[req.Version]
 		b.mu.Unlock()
@@ -431,9 +440,9 @@ func (b *fileBrowser) mutate(w http.ResponseWriter, r *http.Request, local bool)
 		}
 	}
 	switch req.Action {
-	case "mkdir":
+	case "mkdir", "create":
 		if !toolbox.BrowserName(req.Name) {
-			e = errors.New("文件夹名称不合法")
+			e = errors.New("名称不合法，请不要包含路径或特殊字符")
 			break
 		}
 		target := filepath.Join(req.Path, req.Name)
@@ -446,7 +455,15 @@ func (b *fileBrowser) mutate(w http.ResponseWriter, r *http.Request, local bool)
 			e = err
 			break
 		}
-		e = toolbox.BrowserMkdir(dst)
+		if req.Action == "create" {
+			e = toolbox.BrowserUpload(r.Context(), dst, strings.NewReader(""))
+			if e == nil {
+				send(w, map[string]any{"OK": true, "Path": target, "Kind": browserKind(req.Name)})
+				return
+			}
+		} else {
+			e = toolbox.BrowserMkdir(dst)
+		}
 	case "rename":
 		if !toolbox.BrowserName(req.Name) {
 			e = errors.New("名称不合法")
@@ -557,7 +574,7 @@ func (b *fileBrowser) content(w http.ResponseWriter, r *http.Request, local bool
 	n, _ := f.Read(head)
 	f.Seek(0, 0)
 	detected := http.DetectContentType(head[:n])
-	kind := browserKind(st.Name())
+	kind := browserFileKind(f, st)
 	contentType := mime.TypeByExtension(filepath.Ext(st.Name()))
 	inline := false
 	if kind == "image" {
@@ -600,6 +617,11 @@ func (b *fileBrowser) content(w http.ResponseWriter, r *http.Request, local bool
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 }
 func (b *fileBrowser) thumbnail(w http.ResponseWriter, r *http.Request, f *os.File, st os.FileInfo) {
+	kind := browserFileKind(f, st)
+	if kind != "image" && kind != "video" {
+		http.Error(w, "无缩略图", http.StatusNotFound)
+		return
+	}
 	key, state := browserMediaKey(f, st), b.mediaState()
 	if cached, ok := state.thumbnails.get(key); ok {
 		w.Header().Set("Content-Type", "image/jpeg")
@@ -624,7 +646,7 @@ func (b *fileBrowser) thumbnail(w http.ResponseWriter, r *http.Request, f *os.Fi
 		return
 	}
 	var data []byte
-	if browserKind(st.Name()) == "image" && st.Size() <= 128<<20 {
+	if kind == "image" && st.Size() <= 128<<20 {
 		cfg, _, e := image.DecodeConfig(f)
 		f.Seek(0, 0)
 		if e == nil && st.Size() <= 32<<20 && cfg.Width > 0 && cfg.Height > 0 && int64(cfg.Width)*int64(cfg.Height) <= 24_000_000 {
@@ -664,7 +686,7 @@ func (b *fileBrowser) thumbnail(w http.ResponseWriter, r *http.Request, f *os.Fi
 				<-state.imageSlots
 			}
 		}
-	} else if browserKind(st.Name()) == "video" {
+	} else if kind == "video" {
 		program := b.thumbnailProgram()
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()

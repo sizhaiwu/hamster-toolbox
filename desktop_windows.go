@@ -24,6 +24,14 @@ const desktopOpenEvent = 0x8002
 const desktopServerStopped = 0x8003
 
 func desktopUTF16(s string) *uint16 { p, _ := windows.UTF16PtrFromString(s); return p }
+
+// Like LazyProc.Call, this wrapper receives native pointers disguised as
+// uintptr. Keep their objects alive and off the movable Go stack for the whole
+// call, including synchronous Windows callbacks and a blocking GetMessageW.
+// Without the directive a callback can grow the stack while user32 still holds
+// the old MSG address, causing delayed memory corruption in an idle tray.
+//
+//go:uintptrescapes
 func desktopCall(name string, args ...uintptr) uintptr {
 	r, _, _ := desktopUser.NewProc(name).Call(args...)
 	return r

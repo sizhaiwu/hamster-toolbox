@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [安装与更新](installation.md) · [发布检查](release-readiness.md)
 
-打包脚本只生成本地分发文件，不提交源码、不推送 Git、不创建 GitHub Release。版本默认读取 `VERSION`；当前版本说明见 [v0.2.6](releases/0.2.6.md)。正式操作前以维护者明确授权为准。
+打包脚本只生成本地分发文件，不提交源码、不推送 Git、不创建 GitHub Release。版本默认读取 `VERSION`；当前版本说明见 [v0.2.7](releases/0.2.7.md)。正式操作前以维护者明确授权为准。
 
 ## 构建环境
 
@@ -31,20 +31,20 @@
 生成完整便携 ZIP 和程序更新 ZIP：
 
 ```powershell
-.\package.ps1 -Version 0.2.6
+.\package.ps1 -Version 0.2.7
 ```
 
 同时生成安装包：
 
 ```powershell
-.\package.ps1 -Version 0.2.6 -Installer
+.\package.ps1 -Version 0.2.7 -Installer
 # 编译器不在默认位置时
-.\package.ps1 -Version 0.2.6 -Installer -ISCC 'D:\build-tools\Inno Setup\ISCC.exe'
+.\package.ps1 -Version 0.2.7 -Installer -ISCC 'D:\build-tools\Inno Setup\ISCC.exe'
 ```
 
 也可双击 `package.cmd` / `package-installer.cmd`，默认读取 `VERSION`。当前 `-Installer` 会在 ZIP 之外增加安装 EXE，不是仅安装器模式；`-UpdateOnly` 只省略完整 ZIP，更新包仍不含 `tools`。
 
-测试包可显式使用 `-Version 0.2.6-dev`。正式发行须从包含全部修复的源码重新构建，使用正式版本号，不重命名旧测试包冒充正式包。
+测试包可显式使用 `-Version 0.2.7-dev`。正式发行须从包含全部修复的源码重新构建，使用正式版本号，不重命名旧测试包冒充正式包。
 
 ## 组件与构建流程
 
@@ -87,6 +87,6 @@
 
 维护者授权后再提交并推送所有应公开的源码、网页、脚本、文档、测试和品牌素材；组件 `tools`、安装包 `dist`、本地验收 `work` 及私人数据不进入 Git。
 
-正式标签与 `VERSION` 一致。GitHub Release 的附件包括完整 ZIP、更新 ZIP、安装 EXE（本版构建时）及各自 SHA256；下载说明区分三种用途，并附本版更新与限制。发布说明以[对应版本说明](releases/0.2.6.md)为基础。CI 只运行检查，不会自动提交、推送或上传 Release。
+正式标签与 `VERSION` 一致。GitHub Release 的附件包括完整 ZIP、更新 ZIP、安装 EXE（本版构建时）及各自 SHA256；下载说明区分三种用途，并附本版更新与限制。发布说明以[对应版本说明](releases/0.2.7.md)为基础。CI 只运行检查，不会自动提交、推送或上传 Release。
 
 当前程序和安装器未签名；如另行配置签名，应在签名后重新生成 SHA256。最终附件和新测试机验收状态记录到[发布检查](release-readiness.md)。

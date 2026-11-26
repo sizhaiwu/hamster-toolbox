@@ -12,7 +12,7 @@ import (
 )
 
 func (b *fileBrowser) hoverBrowserVideo(w http.ResponseWriter, r *http.Request, f *os.File, st os.FileInfo, local bool) {
-	if browserKind(st.Name()) != "video" {
+	if browserFileKind(f, st) != "video" {
 		fail(w, errors.New("请选择视频文件"))
 		return
 	}

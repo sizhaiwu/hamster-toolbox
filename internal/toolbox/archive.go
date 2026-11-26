@@ -54,8 +54,22 @@ func normalizeArchiveOptions(c *Config) error {
 			return errors.New("分卷大小请填写如 10k、500m、3g（不含小数）")
 		}
 	}
-	if c.ArchiveStart < 1 || c.ArchiveStart > 999999999 || c.ArchiveDigits < 1 || c.ArchiveDigits > 9 {
-		return errors.New("起始编号须为 1–999999999，编号位数为 1–9")
+	// Zero means unset for older settings/CLI configurations. Explicit per-kind
+	// starts take precedence over the legacy shared starting number.
+	if c.ArchiveDirStart == 0 {
+		c.ArchiveDirStart = c.ArchiveStart
+	}
+	if c.ArchiveFileStart == 0 {
+		c.ArchiveFileStart = c.ArchiveStart
+	}
+	if c.ArchiveDirStart < 1 || c.ArchiveDirStart > 999999999 {
+		return errors.New("文件夹起始编号须为 1–999999999")
+	}
+	if c.ArchiveFileStart < 1 || c.ArchiveFileStart > 999999999 {
+		return errors.New("文件起始编号须为 1–999999999")
+	}
+	if c.ArchiveDigits < 1 || c.ArchiveDigits > 9 {
+		return errors.New("编号位数须为 1–9")
 	}
 	if c.ArchiveLevel != 0 && c.ArchiveLevel != 1 && c.ArchiveLevel != 5 && c.ArchiveLevel != 9 {
 		return errors.New("请选择有效的压缩强度")
@@ -202,7 +216,7 @@ func buildArchivePlan(ctx context.Context, c Config, log func(string)) (*Plan, e
 		return naturalLess(entries[i].Name(), entries[j].Name())
 	})
 	p := &Plan{Config: c, Created: time.Now(), Items: []Item{}}
-	dirN, fileN := c.ArchiveStart, c.ArchiveStart
+	dirN, fileN := c.ArchiveDirStart, c.ArchiveFileStart
 	targets := map[string]bool{}
 	for _, d := range entries {
 		if ctx.Err() != nil {

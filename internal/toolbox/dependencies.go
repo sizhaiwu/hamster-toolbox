@@ -204,6 +204,7 @@ func ScopeConfig(c Config) Config {
 		r.ArchiveSplit, r.ArchiveVolume, r.ArchiveFirstVolume = c.ArchiveSplit, c.ArchiveVolume, c.ArchiveFirstVolume
 		r.ArchiveDirPrefix, r.ArchiveFilePrefix = c.ArchiveDirPrefix, c.ArchiveFilePrefix
 		r.ArchiveStart, r.ArchiveDigits, r.ArchiveLevel = c.ArchiveStart, c.ArchiveDigits, c.ArchiveLevel
+		r.ArchiveDirStart, r.ArchiveFileStart = c.ArchiveDirStart, c.ArchiveFileStart
 		r.ArchiveMarker = c.ArchiveMarker
 		r.Recursive = false
 	case "thumbnail":

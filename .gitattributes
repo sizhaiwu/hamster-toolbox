@@ -13,3 +13,6 @@
 *.7z binary
 /samples/assets/*.7z.* binary
 /samples/assets/note.txt -text whitespace=cr-at-eol
+
+# Preserve intentional trailing indentation inside bundled language snippets.
+/web/file-code-editor.js whitespace=-blank-at-eol

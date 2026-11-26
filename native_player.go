@@ -23,37 +23,62 @@ import (
 	"github.com/sizhaiwu/hamster-toolbox/internal/toolbox"
 )
 
-type nativePlayerConfig struct{ Program, WindowSize string }
+type nativeWindowMemory struct{ Width, Height int }
+type nativePlayerConfig struct {
+	Program, WindowSize string
+	RememberWindows     *bool
+	Windows             map[string]nativeWindowMemory
+}
 type nativePlaybackView struct {
-	ID, Name, Kind, Decoder, Codec  string
-	Connected, Paused, Muted, OnTop bool
-	Time, Duration                  float64
+	ID, Name, Kind, Decoder, Codec, Path string
+	Connected, Paused, Muted, OnTop      bool
+	Time, Duration                       float64
+	Volume                               float64
+	Width, Height                        int
 }
 type nativePlayback struct {
-	mu                sync.Mutex
-	write             sync.Mutex
-	view              nativePlaybackView
-	cmd               *exec.Cmd
-	conn              net.Conn
-	endpoint, tempDir string
+	mu                    sync.Mutex
+	write                 sync.Mutex
+	view                  nativePlaybackView
+	cmd                   *exec.Cmd
+	conn                  net.Conn
+	endpoint, tempDir     string
+	pending               map[int]chan error
+	nextRequest           int
+	fullscreen, maximized bool
+	memoryTimer           *time.Timer
+	memoryEpoch           uint64
+	windowDirty           bool
+	memorySuppressedUntil time.Time
 }
 type nativePlayerManager struct {
 	mu                                      sync.Mutex
 	configuration                           sync.Mutex
 	program, dataDir, lastError, windowSize string
 	sessions                                map[string]*nativePlayback
+	rememberWindows                         bool
+	windowMemory                            map[string]nativeWindowMemory
+	memoryEpoch                             uint64
 }
 
 func (b *fileBrowser) nativePlayer() *nativePlayerManager {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.native == nil {
-		b.native = &nativePlayerManager{dataDir: b.dataDir, windowSize: "compact", sessions: map[string]*nativePlayback{}}
+		b.native = &nativePlayerManager{dataDir: b.dataDir, windowSize: "compact", rememberWindows: true, windowMemory: map[string]nativeWindowMemory{}, sessions: map[string]*nativePlayback{}}
 		data, err := os.ReadFile(filepath.Join(b.dataDir, "native-player.json"))
 		if err == nil {
 			var c nativePlayerConfig
 			if json.Unmarshal(data, &c) == nil {
 				b.native.program = c.Program
+				if c.RememberWindows != nil {
+					b.native.rememberWindows = *c.RememberWindows
+				}
+				for kind, size := range c.Windows {
+					if (kind == "image" || kind == "video") && validNativeWindowMemory(size) {
+						b.native.windowMemory[kind] = size
+					}
+				}
 				if c.WindowSize == "medium" || c.WindowSize == "large" {
 					b.native.windowSize = c.WindowSize
 				}
@@ -90,7 +115,7 @@ func resolveNativePlayer(configured string) string {
 }
 func (m *nativePlayerManager) status() map[string]any {
 	m.mu.Lock()
-	program, lastError, windowSize := m.program, m.lastError, m.windowSize
+	program, lastError, windowSize, remember := m.program, m.lastError, m.windowSize, m.rememberWindows
 	sessions := make([]*nativePlayback, 0, len(m.sessions))
 	for _, session := range m.sessions {
 		sessions = append(sessions, session)
@@ -109,7 +134,7 @@ func (m *nativePlayerManager) status() map[string]any {
 		return views[i].Name < views[j].Name
 	})
 	resolved := resolveNativePlayer(program)
-	return map[string]any{"Available": resolved != "", "Program": resolved, "WindowSize": windowSize, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
+	return map[string]any{"Available": resolved != "", "Program": resolved, "WindowSize": windowSize, "RememberWindows": remember, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
 }
 func (m *nativePlayerManager) configure(program string) error {
 	m.configuration.Lock()
@@ -156,13 +181,24 @@ func (m *nativePlayerManager) setWindowSize(size string) error {
 
 // Called under configuration, so changing size and program cannot lose each other's updates.
 func (m *nativePlayerManager) saveConfiguration(program, size string) error {
+	m.mu.Lock()
+	remember := m.rememberWindows
+	windows := cloneNativeWindowMemory(m.windowMemory)
+	reset := size != m.windowSize
+	if reset {
+		windows = map[string]nativeWindowMemory{}
+	}
+	m.mu.Unlock()
+	return m.saveWindowConfiguration(program, size, remember, windows, reset)
+}
+func (m *nativePlayerManager) saveWindowConfiguration(program, size string, remember bool, windows map[string]nativeWindowMemory, reset bool) error {
 	if size == "" {
 		size = "compact"
 	}
 	if err := os.MkdirAll(m.dataDir, 0700); err != nil {
 		return err
 	}
-	data, _ := json.MarshalIndent(nativePlayerConfig{Program: program, WindowSize: size}, "", "  ")
+	data, _ := json.MarshalIndent(nativePlayerConfig{Program: program, WindowSize: size, RememberWindows: &remember, Windows: windows}, "", "  ")
 	tmp, e := os.CreateTemp(m.dataDir, ".native-player-*.tmp")
 	if e != nil {
 		return e
@@ -181,6 +217,11 @@ func (m *nativePlayerManager) saveConfiguration(program, size string) error {
 	m.mu.Lock()
 	m.program = program
 	m.windowSize = size
+	m.rememberWindows = remember
+	m.windowMemory = windows
+	if reset {
+		m.memoryEpoch++
+	}
 	m.lastError = ""
 	m.mu.Unlock()
 	return nil
@@ -219,10 +260,11 @@ func nativePlayerArgs(file, endpoint string, index int, size string) []string {
 	args = append(args, fmt.Sprintf("--geometry=+%d+%d", 40+(index%5)*24, 40+(index%5)*24), "--", file)
 	return args
 }
-func (m *nativePlayerManager) open(file string) error {
+func (m *nativePlayerManager) open(file, kind string) error {
 	m.mu.Lock()
 	program := resolveNativePlayer(m.program)
 	windowSize := m.windowSize
+	memory, remember, epoch := m.windowMemory[kind], m.rememberWindows, m.memoryEpoch
 	index := len(m.sessions)
 	m.mu.Unlock()
 	if program == "" {
@@ -233,12 +275,16 @@ func (m *nativePlayerManager) open(file string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(program, nativePlayerArgs(file, endpoint, index, windowSize)...)
+	args := nativePlayerArgs(file, endpoint, index, windowSize)
+	if remember && validNativeWindowMemory(memory) {
+		args = replaceNativeFit(args, memory)
+	}
+	cmd := exec.Command(program, args...)
 	prepareNativePlayerCommand(cmd)
 	diagnostics := &nativePlayerBuffer{}
 	cmd.Stderr = diagnostics
 	cmd.Stdout = io.Discard
-	s := &nativePlayback{view: nativePlaybackView{ID: id, Name: filepath.Base(file), Kind: browserKind(file), Muted: false, OnTop: true}, cmd: cmd, endpoint: endpoint, tempDir: dir}
+	s := &nativePlayback{view: nativePlaybackView{ID: id, Name: filepath.Base(file), Path: file, Kind: kind, Muted: false, OnTop: true, Volume: 100}, cmd: cmd, endpoint: endpoint, tempDir: dir, memoryEpoch: epoch}
 	if err = cmd.Start(); err != nil {
 		if dir != "" {
 			os.Remove(dir)
@@ -275,7 +321,7 @@ func (m *nativePlayerManager) open(file string) error {
 		}
 		m.mu.Unlock()
 	}()
-	go s.monitor(ctx)
+	go s.monitor(ctx, m)
 	return nil
 }
 func (s *nativePlayback) send(command []any) error {
@@ -290,7 +336,7 @@ func (s *nativePlayback) send(command []any) error {
 	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	return json.NewEncoder(conn).Encode(map[string]any{"command": command})
 }
-func (s *nativePlayback) monitor(parent context.Context) {
+func (s *nativePlayback) monitor(parent context.Context, manager *nativePlayerManager) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	var conn net.Conn
@@ -314,6 +360,12 @@ func (s *nativePlayback) monitor(parent context.Context) {
 	s.view.Connected = true
 	s.mu.Unlock()
 	defer func() {
+		s.mu.Lock()
+		if s.memoryTimer != nil {
+			s.memoryTimer.Stop()
+		}
+		s.mu.Unlock()
+		manager.rememberWindow(s)
 		conn.Close()
 		s.mu.Lock()
 		if s.conn == conn {
@@ -322,9 +374,14 @@ func (s *nativePlayback) monitor(parent context.Context) {
 		}
 		s.mu.Unlock()
 	}()
-	for index, name := range []string{"hwdec-current", "video-codec", "time-pos", "duration", "pause", "mute", "ontop"} {
+	for index, name := range []string{"hwdec-current", "video-codec", "time-pos", "duration", "pause", "mute", "ontop", "volume", "fullscreen", "window-maximized", "osd-dimensions"} {
 		if s.send([]any{"observe_property", index + 1, name}) != nil {
 			return
+		}
+	}
+	if s.view.Kind == "image" {
+		for _, binding := range [][2]string{{"WHEEL_UP", "add video-zoom 0.15"}, {"WHEEL_DOWN", "add video-zoom -0.15"}, {"0", "set video-zoom 0; set video-pan-x 0; set video-pan-y 0"}} {
+			_ = s.send([]any{"keybind", binding[0], binding[1]})
 		}
 	}
 	scanner := bufio.NewScanner(conn)
@@ -333,8 +390,29 @@ func (s *nativePlayback) monitor(parent context.Context) {
 		var message struct {
 			Event, Name string
 			Data        json.RawMessage
+			RequestID   int `json:"request_id"`
+			Error       string
 		}
-		if json.Unmarshal(scanner.Bytes(), &message) != nil || message.Event != "property-change" {
+		if json.Unmarshal(scanner.Bytes(), &message) != nil {
+			continue
+		}
+		if message.RequestID != 0 {
+			s.mu.Lock()
+			ch := s.pending[message.RequestID]
+			s.mu.Unlock()
+			if ch != nil {
+				var err error
+				if message.Error != "success" {
+					err = fmt.Errorf("mpv：%s", message.Error)
+				}
+				select {
+				case ch <- err:
+				default:
+				}
+			}
+			continue
+		}
+		if message.Event != "property-change" {
 			continue
 		}
 		s.mu.Lock()
@@ -353,6 +431,25 @@ func (s *nativePlayback) monitor(parent context.Context) {
 			json.Unmarshal(message.Data, &s.view.Muted)
 		case "ontop":
 			json.Unmarshal(message.Data, &s.view.OnTop)
+		case "volume":
+			json.Unmarshal(message.Data, &s.view.Volume)
+		case "fullscreen":
+			json.Unmarshal(message.Data, &s.fullscreen)
+		case "window-maximized":
+			json.Unmarshal(message.Data, &s.maximized)
+		case "osd-dimensions":
+			var d struct{ W, H int }
+			if json.Unmarshal(message.Data, &d) == nil && d.W > 0 && d.H > 0 {
+				changed := s.view.Width > 0 && (s.view.Width != d.W || s.view.Height != d.H)
+				s.view.Width, s.view.Height = d.W, d.H
+				if changed && !s.fullscreen && !s.maximized && time.Now().After(s.memorySuppressedUntil) {
+					s.windowDirty = true
+					if s.memoryTimer != nil {
+						s.memoryTimer.Stop()
+					}
+					s.memoryTimer = time.AfterFunc(700*time.Millisecond, func() { manager.rememberWindow(s) })
+				}
+			}
 		}
 		s.mu.Unlock()
 	}
@@ -361,6 +458,7 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action, ID, Path, Version, Program, WindowSize string
 		Value                                          float64
+		Enabled                                        bool
 	}
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
@@ -376,9 +474,13 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 		err = m.configure(req.Program)
 	case "window-size":
 		err = m.setWindowSize(req.WindowSize)
+	case "remember-windows":
+		err = m.setRememberWindows(req.Enabled)
+	case "tile", "cascade", "pause-all", "mute-all":
+		err = m.controlWindows(req.Action)
 	case "open":
 		kind := browserKind(req.Path)
-		if !filepath.IsAbs(req.Path) || strings.ContainsFunc(req.Path, unicode.IsControl) || (kind != "video" && kind != "image") {
+		if !filepath.IsAbs(req.Path) || strings.ContainsFunc(req.Path, unicode.IsControl) || (kind != "video" && kind != "image" && !browserAmbiguousSource(req.Path)) {
 			err = errors.New("请选择资源管理器中的本机图片或视频")
 			break
 		}
@@ -403,11 +505,17 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 			err = errors.New("只支持普通图片或视频文件")
 			break
 		}
+		kind = browserFileKind(f, st)
+		if kind != "video" && kind != "image" {
+			f.Close()
+			err = errors.New("请选择资源管理器中的本机图片或视频")
+			break
+		}
 		if err = ref.Ref.Check(f.Name()); err == nil {
-			err = m.open(f.Name())
+			err = m.open(f.Name(), kind)
 		}
 		f.Close()
-	case "pause", "resume", "mute", "unmute", "pin", "unpin", "seek", "close":
+	case "pause", "resume", "mute", "unmute", "pin", "unpin", "seek", "volume", "zoom-in", "zoom-out", "zoom-reset", "close":
 		m.mu.Lock()
 		session := m.sessions[req.ID]
 		m.mu.Unlock()
@@ -417,6 +525,33 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		var command []any
 		switch req.Action {
+		case "zoom-in", "zoom-out", "zoom-reset":
+			session.mu.Lock()
+			image := session.view.Kind == "image"
+			session.mu.Unlock()
+			if !image {
+				err = errors.New("此操作仅用于图片")
+				break
+			}
+			if req.Action == "zoom-reset" {
+				for _, property := range []string{"video-zoom", "video-pan-x", "video-pan-y"} {
+					if err = session.send([]any{"set_property", property, 0}); err != nil {
+						break
+					}
+				}
+			} else {
+				step := 0.15
+				if req.Action == "zoom-out" {
+					step = -step
+				}
+				command = []any{"add", "video-zoom", step}
+			}
+		case "volume":
+			if math.IsNaN(req.Value) || math.IsInf(req.Value, 0) || req.Value < 0 || req.Value > 100 {
+				err = errors.New("音量应在 0～100 之间")
+			} else {
+				command = []any{"set_property", "volume", req.Value}
+			}
 		case "pause":
 			command = []any{"set_property", "pause", true}
 		case "resume":
@@ -444,7 +579,7 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 		case "close":
 			command = []any{"quit"}
 		}
-		if err == nil {
+		if err == nil && command != nil {
 			err = session.send(command)
 			if err != nil && req.Action == "close" {
 				err = session.cmd.Process.Kill()

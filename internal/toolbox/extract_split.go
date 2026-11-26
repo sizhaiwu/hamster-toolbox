@@ -52,6 +52,9 @@ func extractTypeOptions(source string) ([]string, error) {
 		return []string{"-t" + format}, nil
 	}
 	if !unnamedExtractSplit(source) {
+		if has(source, ".zip") {
+			return prefixedZIPTypeOptions(source)
+		}
 		return nil, nil
 	}
 	format, err := extractSplitType(source)

@@ -184,7 +184,7 @@ func (b *fileBrowser) mediaInfo(w http.ResponseWriter, r *http.Request, local bo
 	}
 	defer f.Close()
 	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() || browserKind(st.Name()) != "video" {
+	if err != nil || !st.Mode().IsRegular() || browserFileKind(f, st) != "video" {
 		fail(w, errors.New("请选择视频文件"))
 		return
 	}
@@ -241,7 +241,7 @@ func (b *fileBrowser) playBrowserMedia(w http.ResponseWriter, r *http.Request, f
 			return
 		}
 	}
-	if browserKind(st.Name()) != "video" {
+	if browserFileKind(f, st) != "video" {
 		fail(w, errors.New("请选择视频文件"))
 		return
 	}
@@ -277,7 +277,7 @@ func (b *fileBrowser) playBrowserMedia(w http.ResponseWriter, r *http.Request, f
 }
 
 func (b *fileBrowser) previewBrowserImage(w http.ResponseWriter, r *http.Request, f *os.File, st os.FileInfo, local bool) {
-	if browserKind(st.Name()) != "image" || st.Size() > 128<<20 {
+	if browserFileKind(f, st) != "image" || st.Size() > 128<<20 {
 		fail(w, errors.New("图片过大或格式不支持，请下载原图查看"))
 		return
 	}

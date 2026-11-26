@@ -20,7 +20,9 @@ const fs=require('node:fs'),path=require('node:path'),esbuild=require('esbuild')
   sections.push('\n'+'='.repeat(72)+'\n'+name+' '+info.version+'\n'+info.license+'\n'+'='.repeat(72)+'\n'+fs.readFileSync(path.join(directory,license),'utf8'));
  }
  const notice=path.join(repo,'release','THIRD-PARTY.txt');
- const existing=fs.readFileSync(notice,'utf8').split(marker)[0].trimEnd();
- fs.writeFileSync(notice,(existing+'\n\n'+sections.join('\n')).trimEnd()+'\n','utf8');
+ const original=fs.readFileSync(notice,'utf8'),codeMarker='Bundled file code editor (local browser runtime)';
+ const codeSection=original.includes(codeMarker)?original.slice(original.indexOf(codeMarker)):'';
+ const existing=original.split(marker)[0].split(codeMarker)[0].trimEnd();
+ fs.writeFileSync(notice,(existing+'\n\n'+sections.join('\n')).trimEnd()+'\n'+(codeSection?'\n'+codeSection:''),'utf8');
  console.log('Bundled private notes editor; included '+packages.size+' dependency licenses.');
 })().catch(e=>{console.error(e);process.exitCode=1});

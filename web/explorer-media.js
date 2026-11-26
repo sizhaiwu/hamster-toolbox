@@ -1,6 +1,57 @@
 'use strict';
 
 let imageViewer=null;
+// Encoded bytes only, scoped to this page/session. Never persist private media.
+const viewerImageCache=new Map(),viewerImagePending=new Map();
+let viewerImageCacheBytes=0,viewerImageSourceCleanup=null,viewerImagePrefetch=null;
+const viewerImageCacheLimit=24*1024*1024,viewerImageItemLimit=8*1024*1024;
+function viewerImageKey(item,itemRoot){return JSON.stringify([itemRoot,item.Path,item.Version,item.Size,item.Modified])}
+function stopViewerImagePrefetch(except=''){if(viewerImagePrefetch&&viewerImagePrefetch.key!==except){clearTimeout(viewerImagePrefetch.timer);viewerImagePrefetch.controller.abort();viewerImagePrefetch=null}}
+function clearViewerImageCache(){stopViewerImagePrefetch();viewerImageSourceCleanup?.();for(const entry of viewerImagePending.values())entry.controller.abort();viewerImagePending.clear();viewerImageCache.clear();viewerImageCacheBytes=0}
+async function cachedViewerImage(item,itemRoot,signal,priority='high'){
+  if(!(item.Size>0&&item.Size<=viewerImageItemLimit)||signal.aborted)return null;
+  const key=viewerImageKey(item,itemRoot),cached=viewerImageCache.get(key);
+  if(cached&&cached.expires>Date.now()){viewerImageCache.delete(key);viewerImageCache.set(key,cached);return cached.blob}
+  if(cached){viewerImageCache.delete(key);viewerImageCacheBytes-=cached.blob.size}
+  let entry=viewerImagePending.get(key);
+  if(!entry||entry.controller.signal.aborted){
+    entry={controller:new AbortController()};const request=entry,timeout=setTimeout(()=>request.controller.abort(),15000);
+    entry.promise=(async()=>{
+      const response=await fetch(endpoint('raw',{path:item.Path},itemRoot),{credentials:'same-origin',signal:request.controller.signal,priority});
+      if(!response.ok||!response.body?.getReader){request.controller.abort();return null}
+      if(Number(response.headers.get('Content-Length'))>viewerImageItemLimit){await response.body.cancel();return null}
+      const type=response.headers.get('Content-Type')||'';if(!type.startsWith('image/')){await response.body.cancel();return null}
+      const reader=response.body.getReader(),parts=[];let size=0;
+      try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>viewerImageItemLimit){await reader.cancel();return null}parts.push(part.value)}}finally{reader.releaseLock()}
+      if(request.controller.signal.aborted||!size)return null;
+      const blob=new Blob(parts,{type});
+      while(viewerImageCache.size>=6||viewerImageCacheBytes+size>viewerImageCacheLimit){const oldest=viewerImageCache.keys().next().value;viewerImageCacheBytes-=viewerImageCache.get(oldest).blob.size;viewerImageCache.delete(oldest)}
+      viewerImageCache.set(key,{blob,expires:Date.now()+120000});viewerImageCacheBytes+=size;return blob;
+    })().finally(()=>{clearTimeout(timeout);if(viewerImagePending.get(key)===request)viewerImagePending.delete(key)});
+    viewerImagePending.set(key,entry);
+  }
+  const abort=()=>entry.controller.abort();signal.addEventListener('abort',abort,{once:true});
+  try{return await entry.promise}finally{signal.removeEventListener('abort',abort)}
+}
+function installViewerImageSource(img,item,itemRoot,isCurrent){
+  viewerImageSourceCleanup?.();
+  const controller=new AbortController(),key=viewerImageKey(item,itemRoot);let objectURL=null,alive=true;
+  stopViewerImagePrefetch(key);
+  const active=()=>alive&&!controller.signal.aborted&&isCurrent()&&!img.dataset.compatible;
+  const direct=()=>{if(active())img.src=endpoint('raw',{path:item.Path},itemRoot)};
+  if(item.Size>0&&item.Size<=viewerImageItemLimit){cachedViewerImage(item,itemRoot,controller.signal).then(blob=>{if(!active())return;if(blob){objectURL=URL.createObjectURL(blob);img.src=objectURL}else direct()}).catch(()=>direct())}else direct();
+  const prefetch=()=>{
+    if(!active()||document.hidden||navigator.connection?.saveData||/^(slow-)?2g$/.test(navigator.connection?.effectiveType||''))return;
+    stopViewerImagePrefetch();const next=previewNeighbor(1),neighbor=rows[next];
+    if(!neighbor||neighbor.Kind!=='image'||!(neighbor.Size>0&&neighbor.Size<=(canUseNativePrograms()?4:2)*1024*1024))return;
+    const pending={key:viewerImageKey(neighbor,itemRoot),controller:new AbortController()};viewerImagePrefetch=pending;
+    pending.timer=setTimeout(()=>{if(!active()||document.hidden)return;cachedViewerImage(neighbor,itemRoot,pending.controller.signal,'low').catch(()=>{}).finally(()=>{if(viewerImagePrefetch===pending)viewerImagePrefetch=null})},250);
+  };
+  // Start speculative IO only after the current image has loaded.
+  img.addEventListener('load',prefetch);
+  viewerImageSourceCleanup=()=>{alive=false;controller.abort();img.removeEventListener('load',prefetch);if(objectURL)URL.revokeObjectURL(objectURL);viewerImageSourceCleanup=null};
+}
+let viewerImageHelpInstalled=false;
 let filmstripRows=null,filmstripKind='',filmstripRoot='',filmstripCollapsed=false,filmstripItems=[];
 let videoPlayback=null;
 let videoHover=null,hoverLifecycleInstalled=false,hoverPreviewEnabled=true,lastHoverTouch=0;
@@ -205,15 +256,16 @@ function updateViewerFilmstrip(){
   for(const thumb of $('viewerThumbnails').children){const current=Number(thumb.dataset.index)===previewIndex;thumb.setAttribute('aria-current',String(current));thumb.tabIndex=current?0:-1}
   requestAnimationFrame(centerViewerThumbnail);
 }
-function disposeImageViewer(){imageViewer?.dispose();imageViewer=null}
+function disposeImageViewer(){viewerImageSourceCleanup?.();imageViewer?.dispose();imageViewer=null}
 function installImageViewer(img){
   disposeImageViewer();
-  const stage=document.createElement('div');stage.className='image-stage';stage.setAttribute('aria-label','图片缩放与拖动区域');stage.tabIndex=0;stage.append(img);$('viewerBody').append(stage);
-  const pointers=new Map();let scale=1,fit=1,x=0,y=0,disposed=false,gesture=null,lastTap=0,lastTouch=0;
-  const dimensions=()=>({w:stage.clientWidth||640,h:stage.clientHeight||480,nw:img.naturalWidth||640,nh:img.naturalHeight||480});
-  function apply(){if(disposed)return;const {w,h,nw,nh}=dimensions();const mx=Math.max(0,(nw*scale-w)/2),my=Math.max(0,(nh*scale-h)/2);x=Math.max(-mx,Math.min(mx,x));y=Math.max(-my,Math.min(my,y));img.style.width=nw+'px';img.style.height=nh+'px';img.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale})`;$('zoomValue').textContent=Math.round(scale*100)+'%';stage.classList.toggle('zoomed',scale>fit*1.01);$('zoomOut').disabled=scale<=Math.min(fit,0.1);$('zoomIn').disabled=scale>=8;}
-  function reset(){if(disposed)return;const {w,h,nw,nh}=dimensions();fit=Math.min(1,w/nw,h/nh);scale=fit;x=y=0;apply()}
-  function zoom(value,cx,cy){const box=stage.getBoundingClientRect();const ax=(cx??box.left+box.width/2)-box.left-box.width/2,ay=(cy??box.top+box.height/2)-box.top-box.height/2;const next=Math.max(Math.min(fit,0.1),Math.min(8,value));x=ax-(ax-x)*next/scale;y=ay-(ay-y)*next/scale;scale=next;apply()}
+  const stage=document.createElement('div');stage.className='image-stage';stage.setAttribute('aria-label','图片缩放与拖动区域');stage.tabIndex=0;img.style.visibility='hidden';stage.append(img);$('viewerBody').append(stage);
+  const pointers=new Map();let scale=1,fit=1,x=0,y=0,disposed=false,decoded=false,initialized=false,loadRevision=0,gesture=null,lastTap=0,lastTouch=0;
+  const dimensions=()=>{const w=stage.clientWidth,h=stage.clientHeight,nw=img.naturalWidth,nh=img.naturalHeight;return decoded&&w>0&&h>0&&nw>0&&nh>0?{w,h,nw,nh}:null};
+  function loading(){loadRevision++;decoded=initialized=false;img.style.visibility='hidden';stage.setAttribute('aria-busy','true');$('zoomValue').textContent='…';for(const id of ['zoomIn','zoomOut','zoomFit','zoomActual'])$(id).disabled=true;}
+  function apply(){if(disposed)return;const size=dimensions();if(!size)return;const {w,h,nw,nh}=size;const mx=Math.max(0,(nw*scale-w)/2),my=Math.max(0,(nh*scale-h)/2);x=Math.max(-mx,Math.min(mx,x));y=Math.max(-my,Math.min(my,y));img.style.width=nw+'px';img.style.height=nh+'px';img.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale})`;$('zoomValue').textContent=Math.round(scale*100)+'%';stage.classList.toggle('zoomed',scale>fit*1.01);$('zoomOut').disabled=scale<=Math.min(fit,0.1);$('zoomIn').disabled=scale>=8;$('zoomFit').disabled=$('zoomActual').disabled=false;initialized=true;stage.setAttribute('aria-busy','false');img.style.visibility='visible';}
+  function reset(){if(disposed)return;const size=dimensions();if(!size)return;const {w,h,nw,nh}=size;fit=Math.min(1,w/nw,h/nh);scale=fit;x=y=0;apply()}
+  function zoom(value,cx,cy){if(!initialized||disposed)return;const box=stage.getBoundingClientRect();const ax=(cx??box.left+box.width/2)-box.left-box.width/2,ay=(cy??box.top+box.height/2)-box.top-box.height/2;const next=Math.max(Math.min(fit,0.1),Math.min(8,value));x=ax-(ax-x)*next/scale;y=ay-(ay-y)*next/scale;scale=next;apply()}
   function toggle(cx,cy){if(scale>fit*1.01)reset();else zoom(Math.max(1,fit*2),cx,cy)}
   stage.addEventListener('wheel',e=>{e.preventDefault();zoom(scale*Math.exp(-Math.max(-150,Math.min(150,e.deltaY))*0.005),e.clientX,e.clientY)},{passive:false});
   stage.ondblclick=e=>{if(Date.now()-lastTouch<500)return;e.preventDefault();toggle(e.clientX,e.clientY)};
@@ -221,21 +273,33 @@ function installImageViewer(img){
   stage.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const [a,b]=[...pointers.values()];if(gesture.distance>0)zoom(gesture.scale*Math.hypot(a.x-b.x,a.y-b.y)/gesture.distance,(a.x+b.x)/2,(a.y+b.y)/2);return}if(gesture.pinch)return;const dx=e.clientX-gesture.startX,dy=e.clientY-gesture.startY;if(Math.hypot(dx,dy)>8)gesture.moved=true;if(scale>fit*1.01){x=gesture.x+dx;y=gesture.y+dy;apply()}});
   stage.addEventListener('pointerup',e=>{if(!pointers.has(e.pointerId))return;const g=gesture;pointers.delete(e.pointerId);if(!pointers.size&&g&&!g.pinch){const dx=e.clientX-g.startX,dy=e.clientY-g.startY;if(scale<=fit*1.01&&Math.abs(dx)>60&&Math.abs(dy)<80)advance(dx<0?1:-1);else if(e.pointerType==='touch'&&!g.moved){lastTouch=Date.now();if(lastTouch-lastTap<330){toggle(e.clientX,e.clientY);lastTap=0}else lastTap=lastTouch}}if(!pointers.size)gesture=null});
   stage.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);if(!pointers.size)gesture=null});
-  img.onload=()=>{if(!disposed){reset();if(img.dataset.compatible)$('viewerHint').textContent='兼容预览 · 下载可取得原图；支持缩放和拖动'}};
+  img.onload=()=>{const revision=++loadRevision;const reveal=()=>{if(disposed||revision!==loadRevision)return;decoded=true;reset();if(img.dataset.compatible)$('viewerHint').textContent='兼容预览 · 下载可取得原图；支持缩放和拖动'};if(typeof img.decode==='function')img.decode().then(reveal,reveal);else reveal()};
   $('zoomIn').onclick=()=>zoom(scale*1.25);$('zoomOut').onclick=()=>zoom(scale/1.25);$('zoomFit').onclick=reset;$('zoomActual').onclick=()=>zoom(1);
-  const resize=()=>{if(scale<=fit*1.01)reset();else apply();centerViewerThumbnail()};let observer;if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(resize);observer.observe(stage)}else addEventListener('resize',resize);
-  imageViewer={dispose(){disposed=true;observer?.disconnect();removeEventListener('resize',resize)},key(e){if(['+','='].includes(e.key)){zoom(scale*1.25);return true}if(e.key==='-'){zoom(scale/1.25);return true}if(e.key==='0'){reset();return true}if(scale>fit*1.01&&e.key.startsWith('Arrow')){if(e.key==='ArrowLeft')x+=60;if(e.key==='ArrowRight')x-=60;if(e.key==='ArrowUp')y+=60;if(e.key==='ArrowDown')y-=60;apply();return true}return false}};
-  reset();
+  const resize=()=>{if(!initialized||scale<=fit*1.01)reset();else apply();centerViewerThumbnail()};let observer;if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(resize);observer.observe(stage)}else addEventListener('resize',resize);
+  imageViewer={loading,dispose(){disposed=true;loadRevision++;observer?.disconnect();removeEventListener('resize',resize);img.onload=img.onerror=null;img.removeAttribute('src')},key(e){if(!initialized)return false;if(['+','='].includes(e.key)){zoom(scale*1.25);return true}if(e.key==='-'){zoom(scale/1.25);return true}if(e.key==='0'){reset();return true}if(scale>fit*1.01&&e.key.startsWith('Arrow')){if(e.key==='ArrowLeft')x+=60;if(e.key==='ArrowRight')x-=60;if(e.key==='ArrowUp')y+=60;if(e.key==='ArrowDown')y-=60;apply();return true}return false}};
+  loading();if(img.complete&&img.naturalWidth>0)img.onload();
 }
 function handleImageKey(e){if(imageViewer?.key(e)){e.preventDefault();return true}return false}
+
+function configureImagePreview(item){
+  const image=item?.Kind==='image',dock=$('viewerImageActions'),footer=$('viewer').querySelector('.viewer-footer'),tools=$('viewerTools'),hint=$('viewerHint');
+  $('viewerImageHelp').open=false;
+  if(image){dock.prepend(tools);$('viewerImageHint').append(hint)}
+  else{footer.prepend(hint);footer.append(tools)}
+  dock.hidden=!image;footer.hidden=image;
+}
 
 function sameBrowserPath(a,b){const normalize=p=>p.replace(/[\\/]+$/,'')||'/';return separator()==='\\'?normalize(a).toLowerCase()===normalize(b).toLowerCase():normalize(a)===normalize(b)}
 function initializeMediaTools(){
   initializeNativePlayer();
   updateHoverPreviewControl();$('hoverPreview').onclick=async()=>{stopVideoHover();const previous=hoverPreviewEnabled;hoverPreviewEnabled=!previous;updateHoverPreviewControl();cacheExplorerView();const saved=await savePreferences({hoverPreview:hoverPreviewEnabled});if(!saved){hoverPreviewEnabled=previous;updateHoverPreviewControl();cacheExplorerView()}};
-  if(!hoverLifecycleInstalled){hoverLifecycleInstalled=true;window.addEventListener('scroll',stopVideoHover,{passive:true,capture:true});window.addEventListener('blur',stopVideoHover);window.addEventListener('pagehide',stopVideoHover);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopVideoHover()});document.addEventListener('pointerdown',event=>{if(event.pointerType==='touch')lastHoverTouch=Date.now();stopVideoHover()},{capture:true});document.addEventListener('touchstart',()=>{lastHoverTouch=Date.now();stopVideoHover()},{passive:true,capture:true})}
+  if(!hoverLifecycleInstalled){hoverLifecycleInstalled=true;window.addEventListener('scroll',stopVideoHover,{passive:true,capture:true});window.addEventListener('blur',stopVideoHover);window.addEventListener('pagehide',()=>{stopVideoHover();clearViewerImageCache()});document.addEventListener('visibilitychange',()=>{if(document.hidden){stopVideoHover();stopViewerImagePrefetch()}});document.addEventListener('pointerdown',event=>{if(event.pointerType==='touch')lastHoverTouch=Date.now();stopVideoHover()},{capture:true});document.addEventListener('touchstart',()=>{lastHoverTouch=Date.now();stopVideoHover()},{passive:true,capture:true})}
   $('viewerQueueToggle').onclick=()=>{viewerQueueOpen=!viewerQueueOpen;updateViewerQueue()};$('viewerQueueClose').onclick=()=>{viewerQueueOpen=false;updateViewerQueue();$('viewerQueueToggle').focus()};
   $('toggleFilmstrip').onclick=()=>{filmstripCollapsed=!filmstripCollapsed;updateViewerFilmstrip()};
+  if(!viewerImageHelpInstalled){viewerImageHelpInstalled=true;const imageHelp=$('viewerImageHelp');
+    document.addEventListener('pointerdown',event=>{if(imageHelp.open&&!imageHelp.contains(event.target))imageHelp.open=false});
+    imageHelp.addEventListener('keydown',event=>{if(event.key==='Escape'&&imageHelp.open){event.preventDefault();event.stopPropagation();imageHelp.open=false;imageHelp.querySelector('summary').focus()}});
+  }
   $('viewerThumbnails').onwheel=event=>{const rail=$('viewerThumbnails');if(event.ctrlKey||event.metaKey||Math.abs(event.deltaX)>=Math.abs(event.deltaY))return;const factor=event.deltaMode===1?32:event.deltaMode===2?rail.clientWidth:1;const next=Math.max(0,Math.min(rail.scrollWidth-rail.clientWidth,rail.scrollLeft+event.deltaY*factor));if(next!==rail.scrollLeft){event.preventDefault();rail.scrollLeft=next}};
   $('mediaFullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if($('viewerSurface').requestFullscreen)await $('viewerSurface').requestFullscreen();else{const video=$('viewerBody').querySelector('video');if(video?.webkitEnterFullscreen)video.webkitEnterFullscreen();else $('viewerHint').textContent='当前浏览器不支持全屏，可横屏查看'}}catch{$('viewerHint').textContent='当前设备未允许全屏'}};
 
