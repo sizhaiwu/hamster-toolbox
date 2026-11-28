@@ -2,7 +2,7 @@
 
 [文档目录](../README.md) · [仓库首页](../../README.md)
 
-截图覆盖主要界面，工作台和附件独立看图对应 v0.2.6，远程与手机场景对应 v0.2.4；旧截图只用于说明未改变的操作，具体按钮以当前程序为准。截图使用临时笔记库、虚构标题及仓库 `samples` 合成素材，不使用私人资源、真实账号密码、动态码、会话链接或个人数据目录。图片只截取页面内容，不保留浏览器地址栏。
+以下为使用演示素材的界面示例。
 
 | 场景 | 截图 |
 | --- | --- |
@@ -17,10 +17,11 @@
 | 刷新恢复、空闲锁定与备份入口 | [安全与备份](private-notes-settings.png) |
 | 笔记库锁定后的入口 | [解锁页](private-notes-lock.png) |
 | 笔记保护范围与限制 | [安全说明](private-notes-security.png) |
-| 文件浏览与视频时长 | [资源管理器](explorer.jpg) · [手机浏览](explorer-mobile.jpg) |
-| 手机自适应多列网格 | [三列图标视图](explorer-mobile-grid.jpg) |
+| 当前只读共享浏览 | [资源管理器](explorer-current.jpg) · [手机网格](explorer-mobile-grid.jpg) |
+| 当前计划任务与远程管理员入口 | [计划任务列表](schedules-current.jpg) |
+| 当前手机单行标题栏与更多操作 | [图片预览](image-preview-mobile-current.jpg) · [更多面板](image-preview-mobile-more-current.jpg) |
+| mpv 控件与 AB 区间 | [AB 重复播放](mpv-ab-repeat-current.png) |
+| 手机自适应多列网格 | [自适应图标视图](explorer-mobile-grid.jpg) |
 | 完整远程工作台 | [手机工作台](remote-workspace-mobile.jpg) · [管理员登录页](remote-admin-login.jpg) |
 | 其他设备访问 | [共享口令页](sharing-login.jpg) · [访客目录](sharing-files.jpg) |
 | 媒体和归档操作 | [视频压缩](video-compression.jpg) · [缩略图拼图](video-preview.jpg) · [7-Zip 打包](archive.jpg) |
-
-更新截图时应覆盖对应场景并同步文档链接；不要用打码不完整的私人页面代替合成示例。截图中出现的保存时间仅用于演示功能，不代表发布或测试日期。

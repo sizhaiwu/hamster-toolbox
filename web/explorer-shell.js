@@ -1,7 +1,7 @@
 'use strict';
 
 // Navigation controls and menus share the same actions and permission checks as the toolbar.
-let contextReturnFocus=null,shellInitialized=false;
+let contextReturnFocus=null,contextSubmenu=null,shellInitialized=false;
 let openWithItem=null,nativeFileOpening=false;
 let shortcutRevision=0,shortcutAbort=null;
 let propertyRevision=0,propertyAbort=null,propertySizeAbort=null;
@@ -141,6 +141,37 @@ function contextMenuIcon(label){
   if(label.includes('预览'))return 'image';return 'application';
 }
 function contextMenuButton(label,run,enabled=true,kind=contextMenuIcon(label)){const b=button(label,run);b.prepend(controlIcon(kind));b.classList.add('menu-icon-button');b.setAttribute('role','menuitem');b.disabled=!enabled;return b}
+function closeContextSubmenu(restoreFocus=false){
+  if(!contextSubmenu)return;contextSubmenu.panel.hidden=true;contextSubmenu.trigger.setAttribute('aria-expanded','false');
+  if(restoreFocus&&contextSubmenu.trigger.isConnected)contextSubmenu.trigger.focus();
+}
+function openContextSubmenu(focus=false){
+  if(!contextSubmenu||contextSubmenu.trigger.disabled||$('contextMenu').hidden)return;
+  const {panel,trigger}=contextSubmenu;panel.hidden=false;trigger.setAttribute('aria-expanded','true');
+  const anchor=trigger.getBoundingClientRect(),parent=$('contextMenu').getBoundingClientRect(),box=panel.getBoundingClientRect();
+  const beside=innerWidth>760&&innerWidth>=parent.width+box.width+24;
+  const x=beside?(parent.right+box.width+8<=innerWidth?parent.right-1:parent.left-box.width+1):parent.left;
+  panel.style.left=Math.max(8,Math.min(x,innerWidth-box.width-8))+'px';panel.style.top=Math.max(8,Math.min(anchor.top,innerHeight-box.height-8))+'px';
+  if(focus)panel.querySelector('button:not(:disabled):not([hidden])')?.focus();
+}
+function addContextSubmenu(label,items,enabled=true){
+  const trigger=contextMenuButton(label,()=>{if(contextSubmenu?.panel.hidden)openContextSubmenu(true);else closeContextSubmenu(true)},enabled,'external');
+  trigger.classList.add('context-submenu-trigger');trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls','contextSubmenu');trigger.setAttribute('aria-label',label+'，展开子菜单');
+  const arrow=controlIcon('forward');arrow.classList.add('context-submenu-arrow');trigger.append(arrow);
+  const panel=document.createElement('div');panel.id='contextSubmenu';panel.className='context-menu context-submenu';panel.hidden=true;panel.setAttribute('role','menu');panel.setAttribute('aria-label',label);
+  const back=contextMenuButton('返回',()=>closeContextSubmenu(true),true,'back');back.hidden=innerWidth>760;panel.append(back);
+  for(const [text,run,active=true,kind=contextMenuIcon(text)]of items)panel.append(contextMenuButton(text,()=>{closeContextMenu();run()},active,kind));
+  panel.addEventListener('keydown',event=>contextMenuKeydown(event,panel));trigger.addEventListener('pointerenter',event=>{if(event.pointerType==='mouse')openContextSubmenu()});
+  contextSubmenu={trigger,panel};$('contextMenu').append(trigger);document.body.append(panel);
+}
+function contextMenuKeydown(event,menu){
+  const nested=menu===contextSubmenu?.panel;
+  if(event.key==='ArrowRight'&&!nested&&document.activeElement===contextSubmenu?.trigger){event.preventDefault();event.stopPropagation();openContextSubmenu(true);return}
+  if(nested&&(event.key==='ArrowLeft'||event.key==='Escape')||event.key==='Escape'&&contextSubmenu&&!contextSubmenu.panel.hidden){event.preventDefault();event.stopPropagation();closeContextSubmenu(true);return}
+  const buttons=[...menu.querySelectorAll('button:not(:disabled):not([hidden])')],index=buttons.indexOf(document.activeElement);let next;
+  if(event.key==='ArrowDown')next=buttons[(index+1)%buttons.length];if(event.key==='ArrowUp')next=buttons[(index+buttons.length-1)%buttons.length];if(event.key==='Home')next=buttons[0];if(event.key==='End')next=buttons.at(-1);
+  if(next){event.preventDefault();next.focus()}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeContextMenu(true)}if(event.key==='Tab')closeContextMenu();
+}
 function initializeExplorerIcons(){
   for(const [id,kind] of [['back','back'],['forward','forward'],['up','up'],['refresh','refresh'],['newTab','plus'],['sidebarToggle','sidebar'],['toggleNav','menu']])$(id).replaceChildren(controlIcon(kind));
   for(const [id,kind] of [['openSelected','folderOpen'],['openLocal','external'],['newFolder','folder'],['upload','upload'],['paste','paste'],['copy','copy'],['cut','cut'],['uploadFolder','upload'],['copyTo','copy'],['move','move'],['rename','edit'],['remove','trash'],['download','download'],['openFolderTab','plus'],['selectAll','select'],['clearSelection','close'],['browserHelp','info']]){const element=$(id),text=element.textContent.replace(/^[＋↑]\s*/,'');element.replaceChildren(controlIcon(kind),document.createTextNode(text));element.classList.add('icon-label-button')}
@@ -158,6 +189,7 @@ function applySidebar(){
   $('sidebarToggle').title=label;$('sidebarToggle').setAttribute('aria-label',label);$('sidebarToggle').setAttribute('aria-expanded',String(expanded));
 }
 function closeContextMenu(restoreFocus=false){
+  if(contextSubmenu){contextSubmenu.panel.remove();contextSubmenu=null}
   const menu=$('contextMenu');if(!menu||menu.hidden)return;
   menu.hidden=true;menu.replaceChildren();
   if(restoreFocus&&contextReturnFocus?.isConnected)contextReturnFocus.focus();contextReturnFocus=null;
@@ -247,17 +279,27 @@ function showContextMenu(event,item=null){
   };
   if(item){
     const items=selected(),one=items.length<=1;
-    add(item.Dir?'打开目录':item.Kind==='shortcut'?'打开目标文件夹':'预览文件',()=>activateResource(item),one,explorerIconKind(item));
+    const mediaItem=!item.Dir&&['image','video'].includes(item.Kind);
+    add(item.Dir?'打开目录':item.Kind==='shortcut'?'打开目标文件夹':mediaItem?'按默认方式打开':'预览文件',()=>activateResource(item),one,explorerIconKind(item));
+    if(mediaItem){
+      const ways=[['在当前页预览',()=>preview(rows.indexOf(item),{direct:true}),one,explorerIconKind(item)]];
+      if(window.toolboxDesktopMedia&&canUseNativePrograms())ways.push(['仓鼠预览窗口打开',()=>window.toolboxDesktopMedia.openWindow(item),one,'floating']);
+      ways.push([item.Kind==='image'?'悬浮查看':local?'浏览器悬浮播放':'悬浮播放',()=>openFloatingMedia(item,root),one,'floating']);
+      if(canUseNativePrograms()){
+        ways.push(['使用 mpv 原生播放器打开',()=>openNativeMedia(item),one&&Boolean(item.Version),item.Kind]);
+        ways.push(['其他播放器／程序…',()=>chooseFileApplication(item),one&&!nativeFileOpening&&Boolean(item.Version),'application']);
+      }
+      if(local)ways.push(['设置默认预览方式…',()=>{$('openGeneralSettings').click();$('generalTabPlayback').click();if(innerWidth>760)$(item.Kind==='image'?'ImagePreviewMode':'VideoPreviewMode')?.focus()},true,'info']);
+      addContextSubmenu('打开方式',ways,one);
+    }
     if(!item.Dir&&writable()&&!['image','video','audio','pdf','archive','shortcut','drive'].includes(item.Kind))add('编辑文件',()=>openTextEditor(item),one&&!mutating,'text');
     if(local&&!item.Dir&&item.Kind==='archive'&&typeof openArchiveExtraction==='function')add('解压资源…',()=>openArchiveExtraction(item),one&&Boolean(item.Version));
     if(local&&item.Dir&&typeof showToolboxLauncher==='function')add('使用工具箱处理…',()=>showToolboxLauncher(item.Path),one);
     if(writable()&&item.Kind!=='drive'&&typeof copySelectedResources==='function'){add('复制',()=>copySelectedResources('copy'));add('剪切',()=>copySelectedResources('move'));add('复制到…',()=>openTransferPicker('copy'));}
     if(local&&item.Dir)add(inQuickAccess(item.Path)?'已在快速访问中':'添加到快速访问',()=>setQuickAccess(item.Path),one&&!quickAccessSaving&&!inQuickAccess(item.Path));
     if(item.Kind==='shortcut')add('在新标签页打开目标文件夹',()=>openDirectoryShortcut(item,true),one&&Boolean(item.Version));
-    if(!item.Dir&&['image','video'].includes(item.Kind)&&canUseNativePrograms())add(item.Kind==='image'?'原生悬浮查看（mpv）':'原生悬浮播放（mpv）',()=>openNativeMedia(item),one&&Boolean(item.Version));
-    if(!item.Dir&&['image','video'].includes(item.Kind))add(item.Kind==='image'?'悬浮查看':local?'浏览器悬浮播放':'悬浮播放',()=>openFloatingMedia(item,root),one);
     if(item.Dir){add('在新标签页打开',()=>openFileTab({root,path:item.Path}),one);if(canUseNativePrograms())add('在本地文件管理器打开',async()=>{try{await api('open-local',{Path:item.Path});say('已在本机文件管理器打开')}catch(e){say(e.message,true)}},one)}
-    else {if(canUseNativePrograms())add('打开方式…',()=>chooseFileApplication(item),one&&!nativeFileOpening&&Boolean(item.Version));add('下载原文件',()=>download(item),one)}
+    else {if(canUseNativePrograms()&&!mediaItem)add('打开方式…',()=>chooseFileApplication(item),one&&!nativeFileOpening&&Boolean(item.Version));add('下载原文件',()=>download(item),one)}
     if(item.Dir&&writable())add('粘贴到此目录',()=>pasteSelectedResources(item.Path),one&&canPasteResources(item.Path));
     if(item.Kind!=='drive'&&writable())for(const [id,label]of [['rename','重命名'],['move','移动到…'],['remove','删除…']])add(label,()=>$(id).click(),!$(id).disabled);
     add(local?'复制完整路径':'复制共享内路径',()=>copyResourcePath(item.Path),one);
@@ -321,12 +363,11 @@ function initializeExplorerShell(){
   $('viewOptions').addEventListener('keydown',event=>{if(event.key==='Escape'){$('viewOptions').open=false;$('viewOptions').querySelector('summary').focus();event.stopPropagation()}});
   $('backTop').onclick=()=>window.scrollTo({top:0,behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
   $('entries').addEventListener('contextmenu',event=>{if(!event.target.closest('.entry'))showContextMenu(event)});
-  document.addEventListener('pointerdown',event=>{if(!$('contextMenu').contains(event.target))closeContextMenu()});
-  $('contextMenu').addEventListener('keydown',event=>{
-    const buttons=[...$('contextMenu').querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);let next;
-    if(event.key==='ArrowDown')next=buttons[(index+1)%buttons.length];if(event.key==='ArrowUp')next=buttons[(index+buttons.length-1)%buttons.length];if(event.key==='Home')next=buttons[0];if(event.key==='End')next=buttons.at(-1);
-    if(next){event.preventDefault();next.focus()}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeContextMenu(true)}if(event.key==='Tab')closeContextMenu();
-  });
+  document.addEventListener('pointerdown',event=>{if(!$('contextMenu').contains(event.target)&&!contextSubmenu?.panel.contains(event.target))closeContextMenu()});
+  $('contextMenu').addEventListener('keydown',event=>contextMenuKeydown(event,$('contextMenu')));
+  $('contextMenu').addEventListener('pointerover',event=>{if(contextSubmenu&&!contextSubmenu.trigger.contains(event.target)&&event.target.closest('button'))closeContextSubmenu()});
+  $('contextMenu').addEventListener('focusin',event=>{if(contextSubmenu&&!contextSubmenu.trigger.contains(event.target))closeContextSubmenu()});
+  $('contextMenu').addEventListener('scroll',()=>closeContextSubmenu(),{passive:true});
   addEventListener('scroll',()=>{$('backTop').hidden=window.scrollY<400;closeContextMenu()},{passive:true});
   addEventListener('resize',()=>{closeContextMenu();applySidebar()});
   const tips={back:'返回上一个已浏览目录',forward:'前进到下一个已浏览目录',up:'打开当前目录的上一级',refresh:'重新读取当前目录（F5）',go:'打开地址栏中的目录',favorite:'将当前目录添加到快速访问，重启后保留',newFolder:'在当前目录新建文件夹',upload:'上传文件到当前目录，同名文件不会覆盖',rename:'修改所选文件或文件夹的名称（F2）',move:'把所选项目移动到其他目录；同名时选择处理方式',remove:'删除所选项目，默认移入回收站，操作前需要确认（Delete）',download:'下载所选文件的原文件',openFolderTab:'在工具箱新标签页打开所选目录',selectAll:'选择当前页全部项目',clearSelection:'取消当前所有选择',view:'切换图标与列表视图',previous:'显示上一页项目',next:'显示下一页项目',sort:'选择名称、修改时间或文件大小排序',order:'选择正序或倒序，文件夹始终排在文件前面',pageSize:'选择每页显示条数；自动记忆，大图标较多时可选较小数量',backToolbox:'返回仓鼠工具箱的批处理工具',openGeneralSettings:'通用设置：播放、界面、任务提醒、共享与远程访问及启动'};

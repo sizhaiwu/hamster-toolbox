@@ -30,11 +30,17 @@ type nativePlayerConfig struct {
 	Windows             map[string]nativeWindowMemory
 }
 type nativePlaybackView struct {
-	ID, Name, Kind, Decoder, Codec, Path string
-	Connected, Paused, Muted, OnTop      bool
-	Time, Duration                       float64
-	Volume                               float64
-	Width, Height                        int
+	ID, Name, Kind, Decoder, Codec, Path   string
+	Connected, Paused, Muted, OnTop        bool
+	Time, Duration                         float64
+	Volume                                 float64
+	Width, Height                          int
+	Speed                                  float64
+	DroppedFrames, VideoWidth, VideoHeight int
+	RenderDroppedFrames, Rotation          int
+	DropMetricsKnown, RenderMetricsKnown   bool
+	Focused                                bool
+	Tracks                                 []nativeMediaTrack
 }
 type nativePlayback struct {
 	mu                    sync.Mutex
@@ -50,6 +56,9 @@ type nativePlayback struct {
 	memoryEpoch           uint64
 	windowDirty           bool
 	memorySuppressedUntil time.Time
+	focusMuted            bool
+	controlsOptions       string
+	controlsWrite         sync.Mutex
 }
 type nativePlayerManager struct {
 	mu                                      sync.Mutex
@@ -59,6 +68,8 @@ type nativePlayerManager struct {
 	rememberWindows                         bool
 	windowMemory                            map[string]nativeWindowMemory
 	memoryEpoch                             uint64
+	mediaPreferences                        nativeMediaPreferences
+	mediaFocus                              sync.Mutex
 }
 
 func (b *fileBrowser) nativePlayer() *nativePlayerManager {
@@ -66,6 +77,7 @@ func (b *fileBrowser) nativePlayer() *nativePlayerManager {
 	defer b.mu.Unlock()
 	if b.native == nil {
 		b.native = &nativePlayerManager{dataDir: b.dataDir, windowSize: "compact", rememberWindows: true, windowMemory: map[string]nativeWindowMemory{}, sessions: map[string]*nativePlayback{}}
+		b.native.loadMediaPreferences()
 		data, err := os.ReadFile(filepath.Join(b.dataDir, "native-player.json"))
 		if err == nil {
 			var c nativePlayerConfig
@@ -134,7 +146,10 @@ func (m *nativePlayerManager) status() map[string]any {
 		return views[i].Name < views[j].Name
 	})
 	resolved := resolveNativePlayer(program)
-	return map[string]any{"Available": resolved != "", "Program": resolved, "WindowSize": windowSize, "RememberWindows": remember, "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
+	m.mu.Lock()
+	mediaPreferences := m.mediaPreferences
+	m.mu.Unlock()
+	return map[string]any{"Available": resolved != "", "Program": resolved, "WindowSize": windowSize, "RememberWindows": remember, "RememberMedia": mediaPreferences.Remember, "FocusAudio": mediaPreferences.FocusAudio, "ControlsMode": nativeControlsMode(mediaPreferences.Controls), "EndAction": nativeEndAction(mediaPreferences.EndAction), "Error": lastError, "Sessions": views, "DownloadURL": "https://mpv.io/installation/"}
 }
 func (m *nativePlayerManager) configure(program string) error {
 	m.configuration.Lock()
@@ -250,7 +265,7 @@ func nativePlayerArgs(file, endpoint string, index int, size string) []string {
 	} else if size == "large" {
 		fit = "75%x80%"
 	}
-	args := []string{"--no-config", "--load-scripts=no", "--ytdl=no", "--input-terminal=no", "--terminal=no", "--hwdec=auto", "--vo=gpu-next", "--ontop=yes", "--border=no", "--keep-open=yes", "--keepaspect-window=no", "--auto-window-resize=no", "--autofit=" + fit, "--autofit-larger=90%x90%", "--window-dragging=yes", "--osc=yes", "--osd-font-size=28", "--osd-scale-by-window=no", "--script-opts=osc-windowcontrols=yes,osc-visibility=auto,osc-scalewindowed=1.4,osc-scalefullscreen=1.25,osc-vidscale=no,osc-deadzonesize=0", "--mute=no", "--input-media-keys=no", "--sub-auto=no", "--audio-file-auto=no", "--title=仓鼠播放器 · ${filename}", "--input-ipc-server=" + endpoint}
+	args := []string{"--no-config", "--load-scripts=no", "--ytdl=no", "--input-terminal=no", "--terminal=no", "--hwdec=auto", "--vo=gpu-next", "--ontop=yes", "--border=no", "--keep-open=yes", "--keepaspect-window=no", "--auto-window-resize=no", "--autofit=" + fit, "--autofit-larger=90%x90%", "--window-dragging=yes", "--osc=no", "--osd-font-size=28", "--osd-scale-by-window=no", "--script-opts=hamster-mode=full", "--mute=no", "--input-media-keys=no", "--sub-auto=no", "--audio-file-auto=no", "--title=仓鼠播放器 · ${filename}", "--input-ipc-server=" + endpoint}
 	if browserKind(file) == "image" {
 		args = append(args, "--image-display-duration=inf")
 	}
@@ -275,7 +290,14 @@ func (m *nativePlayerManager) open(file, kind string) error {
 	if err != nil {
 		return err
 	}
+	controller, controllerDir, err := prepareNativeController(dir)
+	if err != nil {
+		return fmt.Errorf("无法准备原生播放控件：%w", err)
+	}
+	dir = controllerDir
 	args := nativePlayerArgs(file, endpoint, index, windowSize)
+	args = append(args[:len(args)-2], "--script="+controller, "--", file)
+	args = m.mediaPlaybackArgs(args, kind)
 	if remember && validNativeWindowMemory(memory) {
 		args = replaceNativeFit(args, memory)
 	}
@@ -284,10 +306,11 @@ func (m *nativePlayerManager) open(file, kind string) error {
 	diagnostics := &nativePlayerBuffer{}
 	cmd.Stderr = diagnostics
 	cmd.Stdout = io.Discard
-	s := &nativePlayback{view: nativePlaybackView{ID: id, Name: filepath.Base(file), Path: file, Kind: kind, Muted: false, OnTop: true, Volume: 100}, cmd: cmd, endpoint: endpoint, tempDir: dir, memoryEpoch: epoch}
+	s := &nativePlayback{view: nativePlaybackView{ID: id, Name: filepath.Base(file), Path: file, Kind: kind, Muted: false, OnTop: true, Volume: 100, Speed: 1}, cmd: cmd, endpoint: endpoint, tempDir: dir, memoryEpoch: epoch}
 	if err = cmd.Start(); err != nil {
 		if dir != "" {
-			os.Remove(dir)
+			os.Remove(endpoint)
+			removeNativeController(dir)
 		}
 		return fmt.Errorf("无法启动 mpv：%w", err)
 	}
@@ -309,7 +332,7 @@ func (m *nativePlayerManager) open(file, kind string) error {
 		}
 		if s.tempDir != "" {
 			os.Remove(s.endpoint)
-			os.Remove(s.tempDir)
+			removeNativeController(s.tempDir)
 		}
 		m.mu.Lock()
 		delete(m.sessions, id)
@@ -374,13 +397,17 @@ func (s *nativePlayback) monitor(parent context.Context, manager *nativePlayerMa
 		}
 		s.mu.Unlock()
 	}()
-	for index, name := range []string{"hwdec-current", "video-codec", "time-pos", "duration", "pause", "mute", "ontop", "volume", "fullscreen", "window-maximized", "osd-dimensions"} {
+	for index, name := range []string{"hwdec-current", "video-codec", "time-pos", "duration", "pause", "mute", "ontop", "volume", "fullscreen", "window-maximized", "osd-dimensions", "speed", "track-list", "decoder-frame-drop-count", "frame-drop-count", "video-params/w", "video-params/h", "focused", "video-rotate"} {
 		if s.send([]any{"observe_property", index + 1, name}) != nil {
 			return
 		}
 	}
 	if s.view.Kind == "image" {
-		for _, binding := range [][2]string{{"WHEEL_UP", "add video-zoom 0.15"}, {"WHEEL_DOWN", "add video-zoom -0.15"}, {"0", "set video-zoom 0; set video-pan-x 0; set video-pan-y 0"}} {
+		for _, binding := range [][2]string{{"WHEEL_UP", "add video-zoom 0.15"}, {"WHEEL_DOWN", "add video-zoom -0.15"}, {"0", "set video-zoom 0; set video-pan-x 0; set video-pan-y 0"}, {"r", "cycle-values video-rotate 0 90 180 270"}, {"R", "cycle-values video-rotate 0 270 180 90"}} {
+			_ = s.send([]any{"keybind", binding[0], binding[1]})
+		}
+	} else {
+		for _, binding := range [][2]string{{"UP", "add volume 5"}, {"DOWN", "add volume -5"}} {
 			_ = s.send([]any{"keybind", binding[0], binding[1]})
 		}
 	}
@@ -416,6 +443,7 @@ func (s *nativePlayback) monitor(parent context.Context, manager *nativePlayerMa
 			continue
 		}
 		s.mu.Lock()
+		focused := s.updateMediaProperty(message.Name, message.Data)
 		switch message.Name {
 		case "hwdec-current":
 			json.Unmarshal(message.Data, &s.view.Decoder)
@@ -452,11 +480,17 @@ func (s *nativePlayback) monitor(parent context.Context, manager *nativePlayerMa
 			}
 		}
 		s.mu.Unlock()
+		if focused {
+			go manager.focusMedia(s.view.ID)
+		}
 	}
 }
 func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action, ID, Path, Version, Program, WindowSize string
+		ControlsMode                                   string
+		EndAction                                      string
+		Track                                          int
 		Value                                          float64
 		Enabled                                        bool
 	}
@@ -469,6 +503,12 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 	m := b.nativePlayer()
 	var err error
 	switch req.Action {
+	case "end-action":
+		err = m.setEndAction(req.EndAction)
+	case "controls-mode":
+		err = m.setControlsMode(req.ControlsMode)
+	case "speed", "audio-track", "subtitle-track", "rotate-left", "rotate-right", "resume-all", "focus-audio", "solo-audio", "remember-media", "clear-history":
+		err = m.mediaAction(req.Action, req.ID, req.Value, req.Track, req.Enabled)
 	case "status":
 	case "configure":
 		err = m.configure(req.Program)
@@ -563,8 +603,14 @@ func (b *fileBrowser) nativePlayerAPI(w http.ResponseWriter, r *http.Request) {
 			}
 			command = []any{"set_property", "pause", false}
 		case "mute":
+			session.mu.Lock()
+			session.focusMuted = false
+			session.mu.Unlock()
 			command = []any{"set_property", "mute", true}
 		case "unmute":
+			session.mu.Lock()
+			session.focusMuted = false
+			session.mu.Unlock()
 			command = []any{"set_property", "mute", false}
 		case "pin":
 			command = []any{"set_property", "ontop", true}

@@ -18,7 +18,7 @@ function restoreDirectorySelection(location){
 }
 
 
-function tabStorage(){return local&&window.toolboxSettings?.RestoreTabs?localStorage:sessionStorage}
+function tabStorage(){return local&&window.toolboxSettings?.RestoreTabs&&!window.toolboxDesktopMedia?.standalone?localStorage:sessionStorage}
 function activeTab(){return fileTabs.find(tab=>tab.id===activeFileTab)}
 function workspaceKey(){return 'hamster.files.tabs.v1.'+(local?'local':'guest')}
 function forgetTabs(){try{tabStorage().removeItem(workspaceKey())}catch{}fileTabs=[];activeFileTab=''}
@@ -49,12 +49,13 @@ function rememberTab(){
 let serverWorkspaceTimer;
 function persistTabs(flush=false){
   if(!activeFileTab)return;
+  if(window.hamsterDesktop)window.dispatchEvent(new Event('hamster-desktop-workspace'));
   try{
     const saved=fileTabs.map(({id,root,path,back,forward,search,sort,order,view,offset,scroll})=>({id,root,path,back,forward,search,sort,order,view,offset,scroll}));
     let value=JSON.stringify({version:1,active:activeFileTab,tabs:saved});
     if(value.length>1024*1024)value=JSON.stringify({version:1,active:activeFileTab,tabs:saved.map(tab=>({...tab,back:[],forward:[]}))});
     tabStorage().setItem(workspaceKey(),value);workspaceStorageOK=true;
-    if(local&&window.toolboxSettings?.RestoreTabs){
+    if(local&&window.toolboxSettings?.RestoreTabs&&!window.toolboxDesktopMedia?.standalone){
       const workspace={version:1,active:activeFileTab,tabs:saved.map(({id,root,path,search,sort,order,view,offset,scroll})=>({id,root,path,search,sort,order,view,offset,scroll}))};clearTimeout(serverWorkspaceTimer);
       if(flush){fetch(endpoint('api/preferences'),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Hamster-Browser':'1'},body:JSON.stringify({workspace}),keepalive:true}).catch(()=>{})}
       else serverWorkspaceTimer=setTimeout(()=>savePreferences({workspace}),300);
@@ -65,7 +66,7 @@ function persistTabs(flush=false){
 function restoreTabs(){
   fileTabs=[];activeFileTab='';
   try{
-    const text=tabStorage().getItem(workspaceKey())||(local&&window.toolboxSettings?.RestoreTabs&&boot.Preferences?.workspace?JSON.stringify(boot.Preferences.workspace):null);
+    const text=tabStorage().getItem(workspaceKey())||(local&&window.toolboxSettings?.RestoreTabs&&!window.toolboxDesktopMedia?.standalone&&boot.Preferences?.workspace?JSON.stringify(boot.Preferences.workspace):null);
     if(text&&text.length<=1024*1024){
       const saved=JSON.parse(text);
       if(saved.version===1&&Array.isArray(saved.tabs)){

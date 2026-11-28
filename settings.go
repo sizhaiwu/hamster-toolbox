@@ -10,12 +10,15 @@ import (
 )
 
 type preferences struct {
-	CloseDialogOnBackdrop *bool `json:",omitempty"`
-	BrowserAutoPlay       *bool `json:",omitempty"`
-	BrowserMuted          *bool `json:",omitempty"`
-	RememberPlayback      *bool `json:",omitempty"`
-	RestoreTabs           *bool `json:",omitempty"`
+	DesktopLaunch         string `json:",omitempty"`
+	CloseDialogOnBackdrop *bool  `json:",omitempty"`
+	BrowserAutoPlay       *bool  `json:",omitempty"`
+	BrowserMuted          *bool  `json:",omitempty"`
+	RememberPlayback      *bool  `json:",omitempty"`
+	RestoreTabs           *bool  `json:",omitempty"`
 	DefaultPlayer         string
+	ImagePreviewMode      string `json:",omitempty"`
+	VideoPreviewMode      string `json:",omitempty"`
 	FontScale             int
 	ThumbnailCacheMB      *int `json:",omitempty"`
 	Version               int
@@ -25,6 +28,14 @@ type preferences struct {
 	ArchiveAdvancedOpen   bool
 	TaskPopup             *bool `json:",omitempty"`
 	TaskSound             *bool `json:",omitempty"`
+}
+
+func validMediaPreviewMode(mode string) bool {
+	switch mode {
+	case "current", "floating", "desktop", "mpv":
+		return true
+	}
+	return false
 }
 
 func (s *server) loadPreferences() (preferences, error) {
@@ -41,6 +52,13 @@ func (s *server) loadPreferences() (preferences, error) {
 	}
 	if p.Workspaces == nil {
 		p.Workspaces = map[string]toolbox.Config{}
+	}
+	for _, mode := range []*string{&p.ImagePreviewMode, &p.VideoPreviewMode} {
+		if !validMediaPreviewMode(*mode) {
+			// An unset/removed automatic mode uses the client's fixed default:
+			// an independent desktop window, or the current browser page.
+			*mode = ""
+		}
 	}
 	if !toolbox.ToolExists(p.LastTool) {
 		p.LastTool = "format"

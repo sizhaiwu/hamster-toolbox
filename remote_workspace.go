@@ -77,7 +77,8 @@ func (a *remoteWorkspace) session(r *http.Request, tag string) *workspaceSession
 	}
 	// A background task-status poll must not keep an abandoned admin page
 	// authenticated indefinitely.
-	if r.URL.Path != "/api/state" && r.URL.Path != "/admin/status" && r.URL.Path != "/api/version-update" {
+	passiveSchedule := r.URL.Path == "/api/schedules" && r.Header.Get("X-Hamster-Poll") == "1"
+	if r.URL.Path != "/api/state" && r.URL.Path != "/admin/status" && r.URL.Path != "/api/version-update" && !passiveSchedule {
 		s.last = now
 		if s.timer != nil {
 			s.timer.Reset(min(30*time.Minute, time.Until(s.expires)))
@@ -90,8 +91,17 @@ func workspaceSameOrigin(r *http.Request) bool {
 	return (origin == "" || origin == browserRequestOrigin(r)) && (site == "" || site == "same-origin" || site == "none")
 }
 func (b *fileBrowser) remoteWorkspace(w http.ResponseWriter, r *http.Request, cfg sharingConfig) bool {
+	if strings.HasPrefix(r.URL.Path, "/api/desktop-client") {
+		http.Error(w, "桌面客户端仅限服务端电脑本机管理", 403)
+		return true
+	}
+	scheduleRoute := r.URL.Path == "/api/schedules" || strings.HasPrefix(r.URL.Path, "/schedules.") || strings.HasPrefix(r.URL.Path, "/schedule-")
 	isAdminPath := strings.HasPrefix(r.URL.Path, "/admin/")
 	if !cfg.WorkspaceEnabled || b.workspace == nil {
+		if scheduleRoute {
+			http.Error(w, "请先开启完整工具箱远程访问并使用管理员口令登录", http.StatusForbidden)
+			return true
+		}
 		if isAdminPath {
 			http.NotFound(w, r)
 			return true
@@ -100,7 +110,7 @@ func (b *fileBrowser) remoteWorkspace(w http.ResponseWriter, r *http.Request, cf
 	}
 	a := b.workspace
 	if !cfg.WorkspaceHTTP && !browserRequestSecure(r) {
-		if isAdminPath {
+		if isAdminPath || scheduleRoute {
 			http.Error(w, "完整工具箱需要 HTTPS。若已使用可信内网或加密组网，请在本机设置中明确允许 HTTP。", http.StatusForbidden)
 			return true
 		}
@@ -131,10 +141,10 @@ func (b *fileBrowser) remoteWorkspace(w http.ResponseWriter, r *http.Request, cf
 		s = nil
 	}
 	if s == nil {
-		adminRequest := isAdminPath || r.URL.Path == "/files" || strings.HasPrefix(r.URL.Path, "/files/") || strings.HasPrefix(r.URL.Path, "/notes/") || r.Header.Get("X-Toolbox-Token") != "" || (r.URL.Query().Get("session") != "" && (r.URL.Path == "/" || r.URL.Path == "/index.html"))
+		adminRequest := isAdminPath || scheduleRoute || r.URL.Path == "/files" || strings.HasPrefix(r.URL.Path, "/files/") || strings.HasPrefix(r.URL.Path, "/notes/") || r.Header.Get("X-Toolbox-Token") != "" || (r.URL.Query().Get("session") != "" && (r.URL.Path == "/" || r.URL.Path == "/index.html"))
 		if adminRequest {
 			w.Header().Set("X-Hamster-Session", "expired-admin")
-			if r.Method == "GET" && (r.URL.Path == "/" || r.URL.Path == "/files" || r.URL.Path == "/files/" || r.URL.Path == "/notes/" || r.URL.Path == "/notes/notes.html" || r.URL.Path == "/index.html") {
+			if r.Method == "GET" && (r.URL.Path == "/" || r.URL.Path == "/files" || r.URL.Path == "/files/" || r.URL.Path == "/notes/" || r.URL.Path == "/notes/notes.html" || r.URL.Path == "/index.html" || r.URL.Path == "/schedules.html") {
 				http.Redirect(w, r, "/admin/?reason=expired", http.StatusSeeOther)
 				return true
 			}
@@ -201,7 +211,7 @@ func (b *fileBrowser) remoteWorkspace(w http.ResponseWriter, r *http.Request, cf
 		return true
 	}
 	// Expose only the remote CSRF capability in navigation URLs, never the local token.
-	page := r.URL.Path == "/" || r.URL.Path == "/index.html" || r.URL.Path == "/files/" || r.URL.Path == "/notes/" || r.URL.Path == "/notes/notes.html"
+	page := r.URL.Path == "/" || r.URL.Path == "/index.html" || r.URL.Path == "/files/" || r.URL.Path == "/notes/" || r.URL.Path == "/notes/notes.html" || r.URL.Path == "/schedules.html"
 	if page && r.Method == "GET" && r.URL.Query().Get("session") != s.csrf {
 		u := *r.URL
 		q := u.Query()

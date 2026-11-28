@@ -2,6 +2,8 @@
 /tools/
 /dist/
 /work/
+/desktop-runtime/
+/desktop-runtime-before-*/
 /data/
 *.exe
 *.exe~

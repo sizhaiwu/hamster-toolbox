@@ -1,6 +1,6 @@
 # 开发与贡献
 
-[文档目录](README.md) · [测试与验收](testing.md) · [平台支持](platforms.md)
+[文档目录](README.md) · [开发测试](testing.md) · [平台支持](platforms.md)
 
 ## 环境
 
@@ -37,6 +37,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare-tools.ps1
 | `internal/toolbox` | 扫描、执行、媒体处理、路径防护、依赖与便携自测 |
 | `file_browser*.go`、`file_sharing*.go` | 浏览、文件操作、媒体缓存、共享与来源权限 |
 | `native_player*.go`、平台辅助文件 | mpv 启动与受限 IPC、系统应用和文件操作 |
+| `schedules*.go`、`web/schedule*` | 计划任务调度、执行、日志、脚本库、导入导出与界面 |
+| `desktop-client`、`desktop_client.go` | 内置桌面运行时、受限桥接、生命周期与独立预览 |
+| `native_controls.lua` | 随程序嵌入的 mpv 控件、AB 快捷键和标记 |
 | `web` | 工具箱、资源管理器、播放器与共享设置界面 |
 | `tests` | DOM/模拟接口交互回归，`npm run test:ui` 为完整入口 |
 | `samples`、`try-samples.cmd` | 合成素材、场景配置和体验副本 |
@@ -47,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\prepare-tools.ps1
 
 共用视觉变量位于 `web/theme.css`；工具箱布局在 `web/toolbox-layout.css`，资源管理器布局在 `web/explorer-layout.css`，悬浮窗口样式与逻辑单独维护。修改后检查桌面、手机、弹窗、悬停和键盘焦点。
 
-[测试指南](testing.md)集中列出基础、专项、真实媒体、硬件与便携验收命令。CI 配置在 `.github/workflows/ci.yml`，在 Windows/Linux/macOS 运行 Go、静态检查和 UI 测试，不自动发布。某次远程运行是否成功应查看实际 Actions 结果。
+提交前运行[测试指南](testing.md)中的检查。CI 配置在 `.github/workflows/ci.yml`，在 Windows、Linux 和 macOS 自动运行 Go 测试、静态检查和 UI 测试。
 
 ## 贡献和文档
 

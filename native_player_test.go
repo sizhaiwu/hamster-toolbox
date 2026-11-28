@@ -168,7 +168,7 @@ func TestNativePlayerIPCWhitelistAndArgumentIsolation(t *testing.T) {
 	if !strings.Contains(joined, "--hwdec=auto") || !strings.Contains(joined, "--input-ipc-server=private-pipe") || !strings.Contains(joined, "--no-config") {
 		t.Fatal("safe native defaults absent")
 	}
-	if !strings.Contains(joined, "osc-vidscale=no") || !strings.Contains(joined, "osc-scalewindowed=1.4") || !strings.Contains(joined, "--osd-scale-by-window=no") {
+	if !strings.Contains(joined, "--osc=no") || !strings.Contains(joined, "hamster-mode=full") || !strings.Contains(joined, "--osd-scale-by-window=no") {
 		t.Fatal("readable native controls absent")
 	}
 	if !strings.Contains(joined, "--mute=no") || strings.Contains(joined, "--mute=yes") || !strings.Contains(joined, "--autofit=800x600") {

@@ -131,6 +131,7 @@ async function previewBeyondPage(step){
 }
 function playbackBookmarkKey(item,itemRoot){return 'hamster.playback.'+JSON.stringify([local?'local':itemRoot,item.Path,item.Size,item.Modified||''])}
 function installPlaybackBookmark(media,playback,item,itemRoot,id){
+  if(window.toolboxDesktopMedia?.installBookmark(media,playback,item,itemRoot,id))return;
  if(!window.toolboxSettings?.RememberPlayback)return;
  const key=playbackBookmarkKey(item,itemRoot);let at=0,lastWrite=0;
  try{at=Math.max(0,Number(localStorage.getItem(key))||0)}catch{}

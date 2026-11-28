@@ -2,6 +2,9 @@ Hamster Toolbox - bundled components
 
 Hamster Toolbox source code is licensed under MIT; see LICENSE.
 The third-party components below retain their separate upstream licenses.
+The integrated desktop interface uses Electron: https://www.electronjs.org/
+Its runtime version and official archive SHA256 are pinned in desktop-client/runtime.json.
+Electron LICENSE and LICENSES.chromium.html remain in the bundled desktop-runtime directory.
 Go runtime, golang.org/x/sys and Microsoft go-winio notices are reproduced
 in GO-DEPENDENCIES.txt, included in both the full bundle and program update.
 

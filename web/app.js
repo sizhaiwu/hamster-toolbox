@@ -48,6 +48,7 @@ const boolKeys = ['FormatCleanOther','ExtractDeleteSource','ArchiveMarker','Recu
 const imageFormatExtensions = '.jpg .jpeg .jpe .jfif .png .webp'.split(' ');
 const jpegFormats = ['.jpg', '.jpeg', '.jpe', '.jfif'];
 const token = new URLSearchParams(location.search).get('session');
+$('openSchedules').href='/schedules.html?session='+encodeURIComponent(token||'');
 $('openNotes').href='/notes/?session='+encodeURIComponent(token||'');
 $('openFiles').href='/files/?session='+encodeURIComponent(token||'');
 const statuses = { idle: '等待开始', scanning: '正在扫描', ready: '预览就绪', running: '正在执行', finished: '处理完成', cancelled: '已取消', error: '任务失败' };
@@ -579,7 +580,7 @@ for(const group of toolGroups){
  function persistGroup(){navGroupsState[group.id]=section.open;try{localStorage.setItem('hamster.nav.groups.v1',JSON.stringify(navGroupsState))}catch{}}
  summary.addEventListener('click',event=>{event.preventDefault();section.open=!section.open;persistGroup()});section.addEventListener('toggle',persistGroup);$('nav').append(section);
 }
-toolGroups[0].body.append($('openFiles'),$('openNotes'));
+toolGroups[0].body.append($('openFiles'),$('openNotes'),$('openSchedules'));
 for (const t of tools) {
   const b = document.createElement('button'); b.type = 'button'; b.dataset.tool = t[0];
   const icon = document.createElement('span');icon.className='tool-nav-icon';icon.append(toolNavIcon(t[0]));icon.setAttribute('aria-hidden','true');b.title=t[2];const name=document.createElement('span');name.className='tool-nav-label';name.textContent=t[1];const status=document.createElement('span');status.className='tool-task-badge';status.hidden=true;status.setAttribute('aria-live','off');b.append(icon,name,status); b.onclick = () => selectTool(t[0]); toolGroups.find(g=>g.tools.includes(t[0])).body.append(b);
@@ -945,6 +946,8 @@ function renderExtractProgress(state,sameTool){
   $('extractProgressDetail').textContent=details.join(' · ');
 }
 async function poll() {
+  if(window.toolboxDesktopBackgroundSaving&&Date.now()-(poll.desktopChecked||0)<10000)return;
+  poll.desktopChecked=Date.now();
   if (pollPending) return; pollPending = true;
   const requestedTool=tool;
   try {
@@ -1132,3 +1135,5 @@ taskHistory=window.setupTaskHistory?.({api,$,toolName:id=>tools.find(t=>t[0]===i
 $('clearExtractSource').onclick=()=>{if(busy||switching||submitting)return;putValue('ExtractSource','');changed();};
 
 $('openNotes').firstElementChild.replaceChildren(toolNavIcon('notes'));
+
+if(window.hamsterDesktop){window.addEventListener('hamster-desktop-path',event=>showMessage(event.detail));window.addEventListener('hamster-desktop-foreground',()=>poll())}

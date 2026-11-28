@@ -21,6 +21,7 @@ function Resolve-InnoCompiler([string]$Compiler = '', [string]$Repository = '') 
 }
 
 function Build-HamsterInstaller([string]$Repository,[string]$Payload,[string]$Version,[string]$OutputDirectory,[string]$OutputName,[string]$Compiler) {
+    . (Join-Path $Repository 'release\desktop-bundle-support.ps1')
     $compilerPath=Resolve-InnoCompiler $Compiler
     if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.-]+)?$') { throw 'Invalid installer version.' }
     $numericVersion=$Matches[1]+'.'+$Matches[2]+'.'+$Matches[3]+'.0'
@@ -38,6 +39,8 @@ function Build-HamsterInstaller([string]$Repository,[string]$Payload,[string]$Ve
     if (Test-Path -LiteralPath $artifact) { throw 'Installer already exists; choose a new output name.' }
     New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
     $arguments=@('/Qp',('/DPayload='+$payloadPath),('/DAppVersion='+$Version),('/DNumericVersion='+$numericVersion),('/DOutputDir='+$outputPath),('/DOutputName='+$OutputName),('/DBrandIcon='+(Join-Path $Repository 'web\favicon.ico')),(Join-Path $Repository 'release\hamster-toolbox.iss'))
+    $desktop=Get-Content -LiteralPath (Join-Path $payloadPath 'desktop-client-info.json') -Raw|ConvertFrom-Json
+    Test-HamsterDesktopRuntime (Join-Path $payloadPath 'desktop-runtime') $Version $desktop.SHA256
     # Compiler progress belongs to the host, not the function's return value.
     # Returning progress/blank lines alongside the path breaks callers that
     # hash or publish the installer artifact.

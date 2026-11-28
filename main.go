@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,31 +42,37 @@ type state struct {
 	Operation             *toolbox.OperationProgress `json:",omitempty"`
 }
 type server struct {
-	taskOwner      *server
-	tasksMu        sync.Mutex
-	taskDispatchMu sync.Mutex
-	tasks          map[string]*server
-	completedTasks []toolTaskSummary
-	taskExecutor   taskExecutor
-	reserved       *toolbox.Config
-	browser        *fileBrowser
-	mu             sync.Mutex
-	state          state
-	plan           *toolbox.Plan
-	cancel         context.CancelFunc
-	token          string
-	dataDir        string
-	settingsMu     sync.Mutex
-	passwordsMu    sync.Mutex
-	historyMu      sync.Mutex
-	desktopClosing bool
-	taskWait       sync.WaitGroup
-	autostartMu    sync.Mutex
-	autostart      *autostartManager
-	updates        *releaseChecker
-	notesInitMu    sync.Mutex
-	notes          *notesMemory
-	notesDraftName string
+	scheduler *scheduleManager
+
+	taskOwner       *server
+	tasksMu         sync.Mutex
+	taskDispatchMu  sync.Mutex
+	tasks           map[string]*server
+	completedTasks  []toolTaskSummary
+	taskExecutor    taskExecutor
+	reserved        *toolbox.Config
+	browser         *fileBrowser
+	mu              sync.Mutex
+	state           state
+	plan            *toolbox.Plan
+	cancel          context.CancelFunc
+	token           string
+	dataDir         string
+	settingsMu      sync.Mutex
+	passwordsMu     sync.Mutex
+	historyMu       sync.Mutex
+	desktopClosing  bool
+	desktopTray     bool
+	desktopShutdown func()
+	desktopClientMu sync.Mutex
+	desktopClient   *desktopClientManager
+	taskWait        sync.WaitGroup
+	autostartMu     sync.Mutex
+	autostart       *autostartManager
+	updates         *releaseChecker
+	notesInitMu     sync.Mutex
+	notes           *notesMemory
+	notesDraftName  string
 }
 
 func (s *server) line(m string) {
@@ -126,11 +133,17 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", 405)
 		return
 	}
+	if r.URL.Path == "/api/schedules" {
+		s.scheduleAPI(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/notes/") {
 		s.notesAPI(w, r)
 		return
 	}
 	switch r.URL.Path {
+	case "/api/desktop-client":
+		s.desktopClientAPI(w, r)
 	case "/api/autostart":
 		s.autostartAPI(w, r)
 	case "/api/task-history", "/api/task-history-detail", "/api/task-history-clear":
@@ -225,6 +238,8 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			RememberPlayback      *bool
 			RestoreTabs           *bool
 			DefaultPlayer         *string
+			ImagePreviewMode      *string
+			VideoPreviewMode      *string
 			FontScale             *int
 			ThumbnailCacheMB      *int
 			SidebarCollapsed      *bool
@@ -242,6 +257,12 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		if change.DefaultPlayer != nil && *change.DefaultPlayer != "browser" && *change.DefaultPlayer != "mpv" {
 			fail(w, fmt.Errorf("默认播放器无效"))
 			return
+		}
+		for _, mode := range []*string{change.ImagePreviewMode, change.VideoPreviewMode} {
+			if mode != nil && !validMediaPreviewMode(*mode) {
+				fail(w, fmt.Errorf("默认预览方式无效"))
+				return
+			}
 		}
 		if change.FontScale != nil && *change.FontScale != 100 && *change.FontScale != 110 && *change.FontScale != 125 {
 			fail(w, fmt.Errorf("字号无效"))
@@ -283,6 +304,12 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			}
 			if change.DefaultPlayer != nil {
 				p.DefaultPlayer = *change.DefaultPlayer
+			}
+			if change.ImagePreviewMode != nil {
+				p.ImagePreviewMode = *change.ImagePreviewMode
+			}
+			if change.VideoPreviewMode != nil {
+				p.VideoPreviewMode = *change.VideoPreviewMode
 			}
 			if change.FontScale != nil {
 				p.FontScale = *change.FontScale
@@ -544,6 +571,7 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 func main() {
+
 	if len(os.Args) > 1 && os.Args[1] == "cli" {
 		release, _, err := prepareDesktop("", false, true)
 		if err != nil {
@@ -626,7 +654,7 @@ func main() {
 	color, restoreConsole := enableConsoleColor()
 	defer restoreConsole()
 	console := startupConsole{out: os.Stdout, color: color}
-	s := &server{token: randomID(), dataDir: *dataDir, state: state{Status: "idle", Logs: []string{}, Items: []toolbox.Item{}}}
+	s := &server{token: randomID(), dataDir: *dataDir, desktopTray: *tray, state: state{Status: "idle", Logs: []string{}, Items: []toolbox.Item{}}}
 	browser, e := newFileBrowser(*dataDir, s.token)
 	s.browser = browser
 	sharingErr := e
@@ -645,19 +673,18 @@ func main() {
 		failure.listenFailure(*port, e)
 		os.Exit(1)
 	}
+	s.scheduler = newScheduleManager(s.dataDir)
+	s.scheduler.start()
+	defer s.scheduler.stop()
 	url := "http://" + listener.Addr().String() + "/?session=" + s.token
 	browserMessage := "已跳过自动打开 · 请使用下方链接"
 	var browserErr error
 	if !*noOpen {
-		cmd := openBrowserCommand(url)
-		browserErr = cmd.Start()
-		if browserErr == nil {
-			browserMessage = "已请求打开默认浏览器 · 未弹出时可使用下方链接"
-			go cmd.Wait()
-		}
+		browserMessage, browserErr = s.openInterface(url)
 	}
 	console.ready(url, s.dataDir, browserMessage, browserErr, sharingErr, browser)
 	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	s.desktopShutdown = func() { httpServer.Close(); listener.Close() }
 	if *tray {
 		if e := runDesktopTray(url, s, httpServer, listener); e != nil {
 			desktopError(e.Error())
@@ -671,11 +698,15 @@ func main() {
 		}
 		// Let completed-task journaling and cancelled file transfers finish
 		// their cleanup before a normal tray exit terminates the process.
+		s.scheduler.stop()
 		s.taskWait.Wait()
 		browser.operations.Lock()
 		browser.operations.Unlock()
 		return
 	}
+	interrupt, stopInterrupt := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopInterrupt()
+	go func() { <-interrupt.Done(); s.scheduler.stop(); httpServer.Close() }()
 	if e := httpServer.Serve(listener); e != nil && e != http.ErrServerClosed {
 		console.status("31", "服务停止", e.Error())
 		os.Exit(1)

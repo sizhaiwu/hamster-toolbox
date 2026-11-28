@@ -53,9 +53,20 @@ func TestResumableUploadGuestPermissionsAndEmptyDirectories(t *testing.T) {
 	}
 }
 
+func TestRemovedAutomaticPreviewSettings(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"Version":1,"ImagePreviewMode":"auto","VideoPreviewMode":"auto","TaskSound":false}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := (&server{dataDir: dir}).loadPreferences()
+	if err != nil || p.ImagePreviewMode != "" || p.VideoPreviewMode != "" || p.TaskSound == nil || *p.TaskSound {
+		t.Fatal("removed mode must use the client default and preserve other settings", p, err)
+	}
+}
+
 func TestGeneralSettingsPartialUpdateAndValidation(t *testing.T) {
 	s := &server{dataDir: t.TempDir(), token: "test-session"}
-	w := requestAPI(t, s, "/api/ui-settings", map[string]any{"BrowserAutoPlay": false, "BrowserMuted": true, "RememberPlayback": true, "RestoreTabs": true, "FontScale": 110, "ThumbnailCacheMB": 0, "DefaultPlayer": "mpv"})
+	w := requestAPI(t, s, "/api/ui-settings", map[string]any{"BrowserAutoPlay": false, "BrowserMuted": true, "RememberPlayback": true, "RestoreTabs": true, "FontScale": 110, "ThumbnailCacheMB": 0, "DefaultPlayer": "mpv", "ImagePreviewMode": "current", "VideoPreviewMode": "floating"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -64,14 +75,19 @@ func TestGeneralSettingsPartialUpdateAndValidation(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 	p, err := (&server{dataDir: s.dataDir}).loadPreferences()
-	if err != nil || p.BrowserAutoPlay == nil || *p.BrowserAutoPlay || !(*p.BrowserMuted) || !(*p.RememberPlayback) || !(*p.RestoreTabs) || p.FontScale != 110 || p.ThumbnailCacheMB == nil || *p.ThumbnailCacheMB != 0 || p.DefaultPlayer != "mpv" {
+	if err != nil || p.BrowserAutoPlay == nil || *p.BrowserAutoPlay || !(*p.BrowserMuted) || !(*p.RememberPlayback) || !(*p.RestoreTabs) || p.FontScale != 110 || p.ThumbnailCacheMB == nil || *p.ThumbnailCacheMB != 0 || p.DefaultPlayer != "mpv" || p.ImagePreviewMode != "current" || p.VideoPreviewMode != "floating" {
 		t.Fatal(p, err)
 	}
-	for _, bad := range []map[string]any{{"FontScale": 300}, {"ThumbnailCacheMB": -1}, {"DefaultPlayer": "unknown"}} {
+	for _, bad := range []map[string]any{{"FontScale": 300}, {"ThumbnailCacheMB": -1}, {"DefaultPlayer": "unknown"}, {"ImagePreviewMode": "bad"}, {"ImagePreviewMode": "auto"}, {"VideoPreviewMode": "auto"}, {"ImagePreviewMode": "mpv", "VideoPreviewMode": "bad"}} {
 		if w = requestAPI(t, s, "/api/ui-settings", bad); w.Code == 200 {
 			t.Fatal("invalid setting accepted", bad)
 		}
 	}
+	p, err = s.loadPreferences()
+	if err != nil || p.ImagePreviewMode != "current" || p.VideoPreviewMode != "floating" {
+		t.Fatal("invalid mode changed saved defaults", p, err)
+	}
+
 }
 
 func TestSavedExplorerWorkspaceAcrossServerRestart(t *testing.T) {

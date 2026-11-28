@@ -259,32 +259,32 @@ button.danger:hover:not(:disabled),button.danger:focus-visible{background:#91352
 
 .login-card .login-back-link{justify-content:center;gap:8px;background:#fff}.login-card .login-back-link:hover{background:#f0f7f3}
 /* File editor stays inside the visible viewport, including mobile keyboards. */
-.viewer[data-kind=image] .viewer-header{position:relative;min-height:58px;padding:8px 16px;gap:8px}
+.viewer:is([data-kind=image],[data-kind=video]) .viewer-header{position:relative;min-height:58px;padding:8px 16px;gap:8px}
 .image-preview-actions{display:flex;align-items:center;flex:0 0 auto;gap:6px;min-width:0}
-.viewer[data-kind=image] .viewer-header .viewer-tools{display:flex;align-items:center;flex:0 0 auto;flex-wrap:nowrap;margin:0;padding:0;border:0;gap:6px}
-.viewer[data-kind=image] .viewer-header #imageTools{display:flex;align-items:center;flex-wrap:nowrap;gap:3px}
-.viewer[data-kind=image] .viewer-header .viewer-tools button{min-height:32px;padding:5px 7px;font-size:calc(12px * var(--user-font-scale,1));white-space:nowrap}
-.viewer[data-kind=image] .viewer-header .viewer-tools output{min-width:34px;font-size:12px;text-align:center;white-space:nowrap}
+.viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-tools{display:flex;align-items:center;flex:0 0 auto;flex-wrap:nowrap;margin:0;padding:0;border:0;gap:6px}
+.viewer:is([data-kind=image],[data-kind=video]) .viewer-header #imageTools{display:flex;align-items:center;flex-wrap:nowrap;gap:3px}
+.viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-tools button{min-height:32px;padding:5px 7px;font-size:calc(12px * var(--user-font-scale,1));white-space:nowrap}
+.viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-tools output{min-width:34px;font-size:12px;text-align:center;white-space:nowrap}
 .viewer-image-help{position:relative;flex-shrink:0}.viewer-image-help>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:30px;min-height:32px;border:1px solid #ffffff10;border-radius:7px;color:#a4b7c4;cursor:pointer}.viewer-image-help>summary::-webkit-details-marker{display:none}.viewer-image-help>summary:hover{background:#ffffff16;color:white}.viewer-image-help>summary:focus-visible{outline:2px solid #84c4ac;outline-offset:2px}
 .viewer-image-hint{position:absolute;right:0;top:calc(100% + 8px);z-index:20;width:min(320px,calc(100vw - 24px));padding:12px 14px;border:1px solid #34434e;border-radius:9px;background:#19232d;box-shadow:0 10px 30px #0005;color:#b7c8d3;font-size:12px;line-height:1.7;white-space:normal}
 @media(min-width:761px) and (max-width:900px){
- .viewer[data-kind=image] .viewer-header{flex-wrap:wrap}
- .viewer[data-kind=image] .viewer-header .viewer-heading{order:0;flex:1 0 calc(100% - 100px)}
- .viewer[data-kind=image] .viewer-header .viewer-counter{order:1}
- .viewer[data-kind=image] .viewer-header #viewerClose{order:2;margin-left:auto}
- .viewer[data-kind=image] .viewer-header :is(#viewerQueueToggle,#viewerDownload,.image-preview-actions){order:3}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header{flex-wrap:wrap}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-heading{order:0;flex:1 0 calc(100% - 100px)}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-counter{order:1}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header #viewerClose{order:2;margin-left:auto}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header :is(#viewerQueueToggle,#viewerDownload,#viewerVideoOptions,.image-preview-actions){order:3}
 }
 @media(max-width:760px){
- .viewer[data-kind=image] .viewer-header{flex-wrap:wrap;min-height:0;padding:6px 10px;gap:5px 6px}
- .viewer[data-kind=image] .viewer-header .viewer-heading{order:0;flex:1 0 calc(100% - 100px)}
- .viewer[data-kind=image] .viewer-header .viewer-counter{order:1;flex-shrink:0}
- .viewer[data-kind=image] .viewer-header #viewerClose{order:2;flex-shrink:0;margin-left:auto}
- .viewer[data-kind=image] :is(.image-preview-actions,.viewer-tools,#imageTools):not([hidden]){display:contents}
- .viewer[data-kind=image] .viewer-header :is(#viewerQueueToggle,#viewerDownload,#zoomOut,#zoomValue,#zoomIn,#zoomFit,#zoomActual,#toggleFilmstrip,#mediaFullscreen,.viewer-image-help){order:3;flex-shrink:0;margin:0;max-width:none}
- .viewer[data-kind=image] .viewer-header .viewer-tools button,.viewer[data-kind=image] .viewer-header :is(#viewerQueueToggle,#viewerDownload){min-height:30px;padding:4px 6px;font-size:calc(11px * var(--user-font-scale,1));white-space:nowrap}
- .viewer[data-kind=image] .viewer-header .viewer-tools output{min-width:32px;font-size:11px}
- .viewer[data-kind=image] .viewer-image-help{position:static}.viewer[data-kind=image] .viewer-image-help>summary{width:28px;min-height:30px}
- .viewer[data-kind=image] .viewer-image-hint{right:10px;top:calc(100% + 4px)}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header{flex-wrap:wrap;min-height:0;padding:6px 10px;gap:5px 6px}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-heading{order:0;flex:1 0 calc(100% - 100px)}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-counter{order:1;flex-shrink:0}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header #viewerClose{order:2;flex-shrink:0;margin-left:auto}
+ .viewer:is([data-kind=image],[data-kind=video]) :is(.image-preview-actions,.viewer-tools,#imageTools):not([hidden]){display:contents}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header :is(#viewerQueueToggle,#viewerDownload,#viewerVideoOptions,#videoTools,#zoomOut,#zoomValue,#zoomIn,#zoomFit,#zoomActual,#toggleFilmstrip,#mediaFullscreen,.viewer-image-help){order:3;flex-shrink:0;margin:0;max-width:none}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-tools button,.viewer:is([data-kind=image],[data-kind=video]) .viewer-header :is(#viewerQueueToggle,#viewerDownload){min-height:30px;padding:4px 6px;font-size:calc(11px * var(--user-font-scale,1));white-space:nowrap}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-tools output{min-width:32px;font-size:11px}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-image-help{position:static}.viewer:is([data-kind=image],[data-kind=video]) .viewer-image-help>summary{width:28px;min-height:30px}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-image-hint{right:10px;top:calc(100% + 4px)}
 }
 .file-editor{width:min(1100px,96vw);height:min(800px,calc(var(--editor-vh,100dvh) - 32px));max-width:96vw;max-height:calc(var(--editor-vh,100dvh) - 20px);padding:16px;overflow:hidden}
 .file-editor[open]{display:flex;flex-direction:column;gap:10px;position:fixed;top:var(--editor-top,8px);left:0;right:0;bottom:auto;margin:0 auto}
@@ -410,3 +410,93 @@ body.sidebar-collapsed .file-editor-dock{left:16px}
 .quick-extract-dialog{width:min(680px,94vw);max-height:90dvh;overflow:auto}.quick-extract-name{font-weight:650;overflow-wrap:anywhere}.quick-extract-dialog label{display:grid;gap:6px;margin:10px 0;font-size:14px}.quick-extract-dialog input,.quick-extract-dialog select{min-width:0;width:100%;box-sizing:border-box}.quick-extract-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}.quick-extract-password{display:flex;gap:8px}.quick-extract-password input{flex:1}.quick-extract-password button{flex:none}.quick-extract-password input[data-secret-hidden=true]{-webkit-text-security:disc}.quick-extract-terminal{background:#101923;color:#d5e3eb;border-radius:8px;padding:12px;max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 Consolas,monospace}.quick-extract-dialog progress{width:100%}.quick-extract-actions{flex-wrap:wrap}.quick-extract-actions button{font-size:13px;min-height:36px}.quick-extract-dialog details>summary{cursor:pointer}.quick-extract-dialog .hint{font-size:12px}@media(max-width:540px){.quick-extract-options{grid-template-columns:1fr;gap:0}.quick-extract-dialog input,.quick-extract-dialog select{font-size:16px}}
 
 .quick-extract-dialog .quick-extract-remember{display:flex;align-items:center;font-size:12px}.quick-extract-dialog .quick-extract-remember input{width:16px;height:16px;flex:none}.quick-extract-actions{position:sticky;bottom:0;background:var(--surface,#fff);padding-top:10px}
+/* Adjacent images share the current picture's height and meet at their edges. */
+.viewer.continuous-preview .viewer-main .viewer-body{padding-left:0;padding-right:0}.image-stage.continuous-images>img{z-index:1}.image-stage.continuous-images>.continuous-neighbor{z-index:0;cursor:default}.continuous-neighbor:focus-visible{outline:2px solid #84c4ac;outline-offset:-3px}#imagePreviewMode{min-height:32px;padding:4px 7px;font-size:12px;background:#18232e;color:#d2dce3;border-color:#ffffff18;border-radius:6px;max-width:120px}@media(max-width:760px){#imagePreviewMode{font-size:16px;max-width:118px}.viewer.continuous-preview .viewer-step{background:#0a0e1466}}
+.viewer .continuous-count{display:inline-flex;flex-direction:row;align-items:center;gap:4px;white-space:nowrap;color:#aebeca;font-size:12px;margin:0}.viewer #continuousImageCount{display:inline-block;width:48px;min-width:0;min-height:32px;height:32px;margin:0;padding:4px 3px 4px 7px;background:#18232e;color:#d2dce3;border:1px solid #ffffff18;border-radius:6px;font:inherit;user-select:text}@media(max-width:760px){.viewer #continuousImageCount{font-size:16px;width:50px}.viewer .continuous-count{font-size:12px}}
+.viewer .image-rotate{display:inline-flex;align-items:center;justify-content:center;min-width:32px;padding:6px}.image-rotate svg{display:block;pointer-events:none}
+/* Transform-only animation keeps adjoining edges aligned; direct gestures stay immediate. */
+.image-stage.smooth-zoom>img{transition:transform 160ms cubic-bezier(.2,.65,.3,1)}@media(prefers-reduced-motion:reduce){.image-stage.smooth-zoom>img{transition:none}}
+/* Desktop image rail overlays the picture; the invisible hot zone reveals it. */
+@media(min-width:761px) and (hover:hover) and (pointer:fine){
+ .viewer[data-kind=image] .viewer-main>#viewerFilmstrip{position:absolute;left:0;right:0;bottom:0;z-index:3;min-height:92px;padding:20px 18px 10px;border:0;background:linear-gradient(transparent,#090e17b8 35%,#090e17eb);opacity:0;transform:translateY(6px);transition:opacity 160ms ease,transform 160ms ease;pointer-events:auto}
+ .viewer[data-kind=image] .viewer-main>#viewerFilmstrip>*{pointer-events:none}
+ .viewer[data-kind=image] .viewer-main>#viewerFilmstrip:hover,.viewer[data-kind=image] .viewer-main>#viewerFilmstrip:has(:focus-visible){opacity:1;transform:translateY(0)}
+ .viewer[data-kind=image] .viewer-main>#viewerFilmstrip:hover>*,.viewer[data-kind=image] .viewer-main>#viewerFilmstrip:has(:focus-visible)>*{pointer-events:auto}
+ .viewer[data-kind=image] .viewer-main>#viewerFilmstrip .filmstrip-position{color:#a3b7c6;text-shadow:0 1px 4px #000}
+}
+@media(prefers-reduced-motion:reduce){.viewer[data-kind=image] .viewer-main>#viewerFilmstrip{transition:none}}
+/* The optional file list floats over media instead of changing the viewport width. */
+.viewer-content>.viewer-queue{position:absolute;top:10px;right:10px;bottom:10px;z-index:5;width:280px;max-width:calc(100% - 20px);border:1px solid #ffffff16;border-radius:10px;background:#121923f2;box-shadow:0 8px 32px #0006;overflow:hidden}.viewer-content>.viewer-queue .queue-heading{background:#ffffff04}@media(max-width:760px){.viewer-content>.viewer-queue{top:6px;right:6px;bottom:6px;width:min(82vw,290px);max-width:calc(100% - 12px);border-radius:8px}}
+/* Video uses the full media area; compatibility controls are an anchored popover. */
+.viewer[data-kind=video] .viewer-body{padding:0}.viewer[data-kind=video] .viewer-body>.media-wrap{display:flex;position:relative;gap:0;padding:0;width:100%;height:100%;min-height:0}.viewer[data-kind=video] .media-wrap>video{width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}#videoTools{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;margin:0}#videoTools select{min-height:30px;padding:3px 6px;font-size:13px;background:#18232e;color:#d2dce3;border-color:#ffffff18}#viewerVideoOptions.is-compatible{color:#b0e8ca;border-color:#4c866d;background:#234838}#viewerVideoOptions.has-warning{color:#f0d291;border-color:#967443}
+.video-preview-options{position:absolute;top:12px;right:12px;z-index:4;width:390px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);overflow:auto;padding:12px;background:#18232df5;border:1px solid #445765;border-radius:10px;box-shadow:0 8px 28px #0007;color:#c8d6df}.video-options-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-size:13px}.video-options-heading button{padding:3px 7px;min-height:28px}.video-preview-options .compat-actions{justify-content:flex-start;gap:7px}.video-preview-options .compat-actions button{font-size:12px;min-height:32px;padding:5px 8px}.video-preview-options .compat-seek{margin:0 0 10px;padding:8px;font-size:11px;gap:5px;background:#17392f}.video-preview-options .compat-seek input{width:0;min-width:40px;flex:1}.video-preview-options .compat-seek output{min-width:90px;font-size:11px}.video-preview-options>p{font-size:12px;line-height:1.7;color:#a8bdca;margin:10px 0 0}
+/* Video thumbnails occupy a separate bottom row and never cover the picture. */
+.viewer[data-kind=video] .viewer-main>#viewerFilmstrip{position:static;flex-shrink:0;opacity:1;transform:none}
+@media(max-width:760px){.viewer[data-kind=video] .viewer-header #videoTools,.viewer[data-kind=video] .viewer-header #viewerVideoOptions{order:3;flex-shrink:0;margin:0}.viewer[data-kind=video] .viewer-header #videoTools select{font-size:16px}.video-preview-options{top:8px;right:8px;max-width:calc(100% - 16px);width:390px;padding:10px}.video-preview-options .compat-actions button,.video-options-heading button{min-height:38px}}
+
+.context-menu .context-submenu-arrow{margin-left:auto;width:13px!important;height:13px!important}
+.context-submenu{z-index:51;min-width:230px}
+.context-submenu[hidden]{display:none}
+
+.context-menu button[hidden]{display:none!important}
+
+/* Hover-capable viewers keep the top bar over the media, like the image rail.
+   Touch devices retain the always-visible header in the normal document flow. */
+@media(hover:hover) and (pointer:fine){
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-surface{position:relative}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header{position:absolute;top:0;left:0;right:0;z-index:10;border-bottom:0;background:linear-gradient(#101720f2,#101720c9);opacity:0;transition:opacity 160ms ease;pointer-events:auto}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-heading{overflow:hidden}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header .viewer-heading :is(b,small){display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header>*{pointer-events:none}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header:is(:hover,:has(:focus-visible),:has(details[open])),.viewer[data-kind=video]:has(.video-preview-options:not([hidden])) .viewer-header{opacity:1}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header:is(:hover,:has(:focus-visible),:has(details[open]))>*,.viewer[data-kind=video]:has(.video-preview-options:not([hidden])) .viewer-header>*{pointer-events:auto}
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-content>.viewer-queue{top:calc(var(--viewer-header-height,64px) + 8px)}
+ .viewer[data-kind=video] .video-preview-options{top:calc(var(--viewer-header-height,64px) + 8px);max-height:calc(100% - var(--viewer-header-height,64px) - 20px)}
+}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:reduce){
+ .viewer:is([data-kind=image],[data-kind=video]) .viewer-header{transition:none}
+}
+/* Keep the phone header to one row; secondary actions overlay the media. */
+.viewer-more{display:none}
+#viewer.ios-chrome-browser{--viewer-safe-top:0px}
+@media(max-width:760px),(max-height:500px) and (pointer:coarse){
+ #viewer .viewer-header{position:relative;z-index:10;display:flex;flex-wrap:nowrap;align-items:center;min-height:48px;padding:calc(4px + var(--viewer-safe-top,env(safe-area-inset-top,0px))) max(8px,env(safe-area-inset-right)) 4px max(10px,env(safe-area-inset-left));gap:6px}
+ #viewer .viewer-header .viewer-heading{order:0;flex:1 1 0;min-width:0;overflow:hidden}
+ #viewer .viewer-heading #viewerTitle{display:block;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;line-height:1.4}
+ #viewer .viewer-header .viewer-counter{display:block;order:1;flex:0 0 auto;padding:0 2px;max-width:72px;font-size:11px;white-space:nowrap}
+ #viewer .viewer-header #viewerClose{order:3;flex:0 0 40px;width:40px;min-height:40px;height:40px;margin:0;padding:0;font-size:21px;line-height:1}
+ #viewer .viewer-more{display:block;position:static;order:2;flex:0 0 40px}
+ #viewer .viewer-more>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:40px;height:40px;border:1px solid #ffffff18;border-radius:7px;color:#d1dfe8;cursor:pointer}
+ #viewer .viewer-more>summary::-webkit-details-marker{display:none}
+ #viewer .viewer-more>summary:focus-visible{outline:2px solid #84c4ac;outline-offset:2px}
+ #viewer .viewer-more[open]>summary{background:#ffffff12}
+ #viewer .viewer-more:not([open])>.viewer-more-panel{display:none}
+ #viewer .viewer-more-panel{position:absolute;top:calc(100% + 4px);right:max(8px,env(safe-area-inset-right));z-index:30;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:6px;width:min(340px,calc(100vw - 24px));max-height:min(65dvh,440px);overflow:auto;overscroll-behavior:contain;padding:10px;border:1px solid #3b4b58;border-radius:10px;background:#18232df7;box-shadow:0 10px 35px #0008}
+ #viewer .viewer-more-panel .viewer-more-name{grid-column:1/-1;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+ #viewer .viewer-more-panel #viewerInfo{display:block;grid-column:1/-1;margin:0 0 2px;font-size:11px;line-height:1.4;white-space:normal}
+ #viewer #viewerMorePanel>*,#viewer #viewerMorePanel .viewer-tools>*,#viewer #viewerMorePanel #imageTools>*{order:0}
+ #viewer .viewer-more-files{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(76px,1fr));gap:6px}
+ #viewer .viewer-more-files:has(#viewerNative:not([hidden])):has(#viewerVideoOptions:not([hidden])){grid-template-columns:repeat(2,minmax(0,1fr))}
+ #viewer .viewer-more-panel .image-preview-actions:not([hidden]){display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-column:1/-1;width:100%;align-items:center;gap:6px;padding-top:8px;margin-top:2px;border-top:1px solid #ffffff12}
+ #viewer .viewer-more-panel :is(.viewer-tools,#imageTools):not([hidden]){display:contents}
+ #viewer .viewer-more-panel :is(button,select){width:100%;min-width:0;height:40px;min-height:40px;max-width:none;padding:6px;font-size:12px;line-height:1.3;white-space:nowrap}
+ #viewer .viewer-more-panel :is(#viewerQueueToggle,#viewerNative,#viewerDownload,#viewerVideoOptions){max-width:none}
+ #viewer .viewer-more-panel #imagePreviewMode{grid-column:1/-1;max-width:none}
+ #viewer .viewer-more-panel #imageTools:has(#continuousCountControl:not([hidden])) #imagePreviewMode{grid-column:span 2}
+ #viewer .viewer-more-panel #continuousCountControl{grid-column:span 2;justify-content:center;gap:3px;font-size:11px}
+ #viewer .viewer-more-panel #continuousImageCount{width:42px;min-height:40px;height:40px;padding:4px}
+ #viewer .viewer-more-panel #zoomValue{display:grid;place-items:center;min-width:0;min-height:40px;font-size:12px}
+ #viewer .viewer-more-panel #zoomFit{white-space:normal;font-size:11px}
+ #viewer .viewer-more-panel :is(#zoomActual,#toggleFilmstrip){grid-column:span 2}
+ #viewer .viewer-more-panel .image-rotate{justify-content:center}
+ #viewer .viewer-more-panel #videoTools{grid-column:span 2;display:flex;align-items:center;gap:4px;min-width:0;font-size:11px}
+ #viewer .viewer-more-panel #videoTools select{flex:1;width:0}
+ #viewer[data-kind=video] .viewer-more-panel #toggleFilmstrip{grid-column:auto;white-space:normal;font-size:11px}
+ #viewer .viewer-more-panel .viewer-image-help{position:static;order:0;min-width:0}
+ #viewer .viewer-more-panel .viewer-image-help[open]{grid-column:1/-1}
+ #viewer .viewer-more-panel .viewer-image-help>summary{min-height:40px;width:100%}
+ #viewer .viewer-more-panel .viewer-image-hint{position:static;width:100%;margin-top:8px;box-shadow:none}
+ #viewer .viewer-more-panel .text-preview-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}
+ #viewer .viewer-more-panel .text-preview-actions #textEncoding{grid-column:1/-1;width:100%;max-width:none}
+ #viewer .viewer-more-panel .text-preview-actions .viewer-step{width:100%}
+}

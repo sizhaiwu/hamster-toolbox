@@ -17,6 +17,7 @@ func prepareDesktop(data string, tray, noOpen bool) (func(), bool, error) {
 	return func() {}, false, nil
 }
 func desktopError(text string) { fmt.Fprintln(os.Stderr, text) }
+func detachDesktopConsole()    {}
 func runDesktopTray(url string, s *server, service *http.Server, listener net.Listener) error {
 	return errors.New("此平台暂不支持系统托盘")
 }

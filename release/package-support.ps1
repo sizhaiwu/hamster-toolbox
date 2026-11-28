@@ -1,4 +1,21 @@
 # Packaging helpers are also exercised with disposable fixtures by tests/package-check.ps1.
+function New-HamsterPortableArchive([string]$Payload,[string]$Archive,[string]$SevenZip,[switch]$Zip) {
+    $source=[IO.Path]::GetFullPath($Payload).TrimEnd('\','/')
+    $output=[IO.Path]::GetFullPath($Archive)
+    if(Test-Path -LiteralPath $output){throw 'Archive already exists; choose a new output path.'}
+    if(-not(Test-Path -LiteralPath $SevenZip -PathType Leaf)){throw 'The verified 7-Zip runtime is required for portable packaging.'}
+    $archiveArguments=@('a','-t7z','-mx=9','-m0=LZMA2','-md=128m','-mfb=128','-ms=on','-mmt=2','-bsp0',$output,(Split-Path -Leaf $source))
+    if($Zip){$archiveArguments=@('a','-tzip','-mx=9','-mm=Deflate','-mmt=2','-bsp0',$output,(Split-Path -Leaf $source))}
+    Push-Location -LiteralPath (Split-Path -Parent $source)
+    try {
+        & $SevenZip @archiveArguments | ForEach-Object {Write-Host $_}
+        if($LASTEXITCODE -ne 0){throw 'Portable archive creation failed.'}
+        & $SevenZip t '-bsp0' $output | ForEach-Object {Write-Host $_}
+        if($LASTEXITCODE -ne 0){throw 'Portable archive verification failed.'}
+    } finally {Pop-Location}
+    return $output
+}
+
 function Assert-ReleaseUIPrerequisites([string]$Repository) {
     if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command npm -ErrorAction SilentlyContinue)) {
         throw 'Packaging requires Node.js 20.19+ and npm for UI checks. Recipients do not need Node.js.'

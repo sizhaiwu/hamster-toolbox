@@ -16,6 +16,16 @@ var errNotSmaller = errors.New("压缩结果未变小")
 var errImageSkipped = errors.New("图片已跳过")
 
 func Execute(ctx context.Context, p *Plan, log func(string), progress func(int, int)) Result {
+	if checkPlanSafety(p) == nil && len(p.Items) > 0 {
+		token := ""
+		release, e := acquireResourceClaim(context.WithValue(ctx, resourceTokenKey{}, &token), claimForConfig(p.Config), log)
+		if e != nil {
+			log(e.Error())
+			return Result{Failed: max(1, len(p.Items))}
+		}
+		defer release()
+		ctx = context.WithValue(ctx, resourceParentKey{}, token)
+	}
 	return executeFiles(ctx, p, log, progress, true, nil)
 }
 func executeFiles(ctx context.Context, p *Plan, log func(string), progress func(int, int), allowParallel bool, video *videoSession) Result {

@@ -24,7 +24,8 @@
     const stored = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
     if (Array.isArray(stored)) records = stored.filter(r => typeof r?.id === 'string').slice(-512);
   } catch {}
-  const prefs = {CloseDialogOnBackdrop:false,TaskPopup:true, TaskSound:true,BrowserAutoPlay:true,BrowserMuted:false,RememberPlayback:false,RestoreTabs:false,DefaultPlayer:"browser",FontScale:100,ThumbnailCacheMB:256};
+  const defaultMediaPreview=window.hamsterDesktop?.mediaSettings?"desktop":"current";
+  const prefs = {CloseDialogOnBackdrop:false,TaskPopup:true, TaskSound:true,BrowserAutoPlay:true,BrowserMuted:false,RememberPlayback:false,RestoreTabs:false,ImagePreviewMode:defaultMediaPreview,VideoPreviewMode:defaultMediaPreview,FontScale:100,ThumbnailCacheMB:256};
   window.toolboxSettings=prefs;
   let generalAPI,refreshGeneralSettings;
   window.addEventListener('storage',event=>{if(event.key==='hamster.toolbox.general.refresh')refreshGeneralSettings?.().catch(()=>{})});
@@ -119,7 +120,7 @@
     const id = state.PlanID;const entry = record(id);
     if (entry.acknowledged || currentID === id || pending.has(id)) return;
     const notice = {state, soundBlocked:false};
-    if (prefs.TaskSound && !entry.sounded) {
+    if (prefs.TaskSound && !entry.sounded && !(window.hamsterDesktop&&document.hidden)) {
       entry.sounded = true;
       notice.soundBlocked = !context || context.state !== 'running';
       chime();
@@ -170,17 +171,26 @@
     catch(error){startupBusy=false;if(revision===startupRevision&&el('generalSettingsDialog').open){el('AutoStartEnabled').checked=startupEnabled;el('AutoStartEnabled').disabled=false;el('autostartStatus').textContent='保存失败：'+error.message}}
     finally{startupBusy=false;if(revision!==startupRevision&&el('generalSettingsDialog').open&&el('generalTabStartup').getAttribute('aria-selected')==='true')refreshStartup()}
   };
+  let desktopRevision=0,desktopRequestBusy=false,desktopState={};
+  el('generalStartup').append(el('desktopClientSettings'));
+  function showDesktop(state){desktopState=state;el('desktopClientSettings').hidden=!state.Supported;el('DesktopLaunchMode').value=state.Mode||'desktop';el('DesktopLaunchMode').disabled=desktopRequestBusy||!state.Supported;el('DesktopLaunchMode').querySelector('[value=desktop]').disabled=!state.Installed;el('desktopClientOpen').disabled=desktopRequestBusy||!state.Installed;el('desktopClientBrowser').disabled=desktopRequestBusy;el('desktopClientInfo').textContent='内置桌面界面 · 版本 '+(state.Version||'');el('desktopClientStatus').textContent=state.Message||'';}
+  async function refreshDesktop(){const revision=++desktopRevision;try{const state=await generalAPI('desktop-client',{Action:'status'});if(revision===desktopRevision)showDesktop(state)}catch(error){if(revision===desktopRevision){el('desktopClientSettings').hidden=true;el('desktopClientStatus').textContent=error.message}}}
+  async function desktopAction(action,extra={}){if(desktopRequestBusy)return;desktopRequestBusy=true;showDesktop(desktopState);const revision=++desktopRevision;try{const state=await generalAPI('desktop-client',{Action:action,...extra});if(revision===desktopRevision){desktopRequestBusy=false;showDesktop(state)}}catch(error){if(revision===desktopRevision){desktopRequestBusy=false;showDesktop(desktopState);el('desktopClientStatus').textContent=error.message}}finally{desktopRequestBusy=false;if(revision!==desktopRevision&&el('generalSettingsDialog').open&&el('generalTabStartup').getAttribute('aria-selected')==='true')refreshDesktop()}}
+  el('desktopClientOpen').onclick=()=>desktopAction('open');el('desktopClientBrowser').onclick=()=>desktopAction('browser');el('DesktopLaunchMode').onchange=()=>desktopAction('mode',{Mode:el('DesktopLaunchMode').value});
   const generalTabs=[['generalTabPlayback','generalPlayback'],['generalTabAppearance','generalAppearance'],['generalTabTask','generalTask'],['generalTabNetwork','generalNetwork'],['generalTabStartup','generalStartup']];
-  const selectGeneralTab=index=>{generalTabs.forEach(([button,panel],i)=>{el(button).setAttribute('aria-selected',String(index===i));el(button).tabIndex=index===i?0:-1;el(panel).hidden=index!==i});if(generalTabs[index][1]==='generalStartup')refreshStartup()};
+  const selectGeneralTab=index=>{generalTabs.forEach(([button,panel],i)=>{el(button).setAttribute('aria-selected',String(index===i));el(button).tabIndex=index===i?0:-1;el(panel).hidden=index!==i});if(generalTabs[index][1]==='generalStartup'){refreshStartup();refreshDesktop()}};
+  function openLinkedSettings(){if(!initialized||location.hash!=='#settings')return;const u=new URL(location.href);u.hash='';history.replaceState(history.state,'',u.href);el('openGeneralSettings').click();selectGeneralTab(0)}
+  window.addEventListener('hashchange',openLinkedSettings);
   el('openNetworkSettings').onclick=async()=>{try{await window.toolboxNetworkSettings.open()}catch(error){el('generalSettingsStatus').textContent='打开共享设置失败：'+error.message}};
   generalTabs.forEach(([button],index)=>{el(button).onclick=()=>selectGeneralTab(index);el(button).onkeydown=event=>{let next;if(event.key==='ArrowRight')next=(index+1)%generalTabs.length;if(event.key==='ArrowLeft')next=(index+generalTabs.length-1)%generalTabs.length;if(event.key==='Home')next=0;if(event.key==='End')next=generalTabs.length-1;if(next!==undefined){event.preventDefault();selectGeneralTab(next);el(generalTabs[next][0]).focus()}}});
   el('openGeneralSettings').onclick = () => {
     el('generalSettingsStatus').textContent = '';
     el('generalSettingsDialog').showModal();
-    if(el('generalTabStartup').getAttribute('aria-selected')==='true')refreshStartup();
+    if(el('generalTabStartup').getAttribute('aria-selected')==='true'){refreshStartup();refreshDesktop()}
   };
   el('closeGeneralSettings').onclick = () => el('generalSettingsDialog').close();
-  el('generalSettingsDialog').addEventListener('close', () => {startupRevision++;el('openGeneralSettings').focus()});
+  el('generalSettingsDialog').addEventListener('close', () => {startupRevision++;desktopRevision++;el('openGeneralSettings').focus()});
+  for(const key of ['ImagePreviewMode','VideoPreviewMode'])el(key).querySelector('[value=desktop]').disabled=!window.hamsterDesktop?.mediaSettings;
   for (const key of Object.keys(prefs)) el(key).onchange = () => {
     const value = el(key).type==='checkbox'?el(key).checked:el(key).type==='number'||key==='FontScale'?Number(el(key).value):el(key).value;
     el('generalSettingsStatus').textContent = '正在保存…';
@@ -206,17 +216,18 @@
   window.toolboxFeedback = {
     init(settings, persistSettings, toolLabel,requestAPI) {
       if(requestAPI){generalAPI=requestAPI;refreshGeneralSettings=async()=>window.toolboxFeedback.init(await requestAPI('settings'),persistSettings,toolLabel,requestAPI);window.toolboxNetworkSettings?.configure({read:()=>requestAPI('sharing-status'),save:body=>requestAPI('sharing-save',body),list:body=>requestAPI('sharing-folders',body)});}
-      for(const key of Object.keys(prefs)){if(settings[key]!=null && settings[key]!=='' && settings[key]!==0 || settings[key]===false || key==='ThumbnailCacheMB'&&settings[key]===0)prefs[key]=settings[key];if(el(key).type==='checkbox')el(key).checked=prefs[key];else el(key).value=prefs[key];}applyGeneralStyle();
+      for(const key of Object.keys(prefs)){if(key==='ImagePreviewMode'||key==='VideoPreviewMode')prefs[key]=['current','floating','desktop','mpv'].includes(settings[key])?settings[key]:defaultMediaPreview;else if(settings[key]!=null && settings[key]!=='' && settings[key]!==0 || settings[key]===false || key==='ThumbnailCacheMB'&&settings[key]===0)prefs[key]=settings[key];if(el(key).type==='checkbox')el(key).checked=prefs[key];else el(key).value=prefs[key];}applyGeneralStyle();
       save = persistSettings; label = toolLabel; initialized = true;
+      openLinkedSettings();
     },
-    async connect(toolboxURL){
+    async connect(toolboxURL,{observeTasks=true}={}){
       const session=new URL(toolboxURL,location.href).searchParams.get('session');
       const request=async(path,data={})=>{const response=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Toolbox-Token':session},body:JSON.stringify(data)});if(!response.ok)throw Error((await response.text()).trim());return response.json()};
       generalAPI=async route=>{const response=await fetch('/files/api/'+route,{method:'POST',headers:{'Content-Type':'application/json','X-Hamster-Browser':'1'},body:'{}'});if(!response.ok)throw Error((await response.text()).trim());return response.json()};
       const settings=await request('settings');window.toolboxFeedback.init(settings,change=>request('ui-settings',change),id=>({format:'目录统计命名',rename:'批量重命名',number:'目录批量编号',describe:'媒体信息命名',exif:'清理元数据',pdf:'PDF 图册索引',image:'压缩图片',video:'压缩视频',thumbnail:'视频缩略图',archive:'打包资源',extract:'解压资源'})[id]||'工具箱任务',request);
       generalAPI=request;el('openGeneralSettings').hidden=false;
       if(window.toolboxVersion)request('info').then(info=>window.toolboxVersion.init(info,request)).catch(()=>{});
-      const poll=async()=>{try{observe(await request('state',{Summary:true}));}catch{}};await poll();setInterval(poll,1500);
+      if(observeTasks){const poll=async()=>{if(window.toolboxDesktopBackgroundSaving&&Date.now()-(poll.checked||0)<10000)return;poll.checked=Date.now();try{observe(await request('state',{Summary:true}));}catch{}};await poll();setInterval(poll,1500)}
     },
     observe,isTaskRead,markTaskRead
   };

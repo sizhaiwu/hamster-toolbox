@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$ISCC='')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -43,8 +43,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $qa 'qa.iss'),$template,[Text.UTF8Encoding]::new($true))
     Copy-Item -LiteralPath (Join-Path $repository 'release\installer') -Destination (Join-Path $qa 'installer') -Recurse
     $payload=Join-Path $qa 'payload'
-    New-Item -ItemType Directory -Path (Join-Path $payload 'tools') | Out-Null
-    foreach($name in @('hamster-toolbox.exe','hamster-toolbox-desktop.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt','GO-DEPENDENCIES.txt','tools\synthetic.txt')){[IO.File]::WriteAllText((Join-Path $payload $name),'synthetic fixture, not an executable')}
+    New-Item -ItemType Directory -Path (Join-Path $payload 'tools'),(Join-Path $payload 'desktop-runtime') | Out-Null
+    foreach($name in @('hamster-toolbox.exe','hamster-toolbox-desktop.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt','GO-DEPENDENCIES.txt','tools\synthetic.txt','desktop-client-info.json','desktop-runtime\synthetic.txt')){[IO.File]::WriteAllText((Join-Path $payload $name),'synthetic fixture, not an executable')}
     & $compiler '/Q' ('/DPayload='+$payload) '/DAppVersion=0.2.2-dev' '/DNumericVersion=0.2.2.0' ('/DBrandIcon='+(Join-Path $repository 'web\favicon.ico')) ('/DOutputDir='+$qa) '/DOutputName=setup' (Join-Path $qa 'qa.iss')
     if($LASTEXITCODE -ne 0){throw 'QA template compile failed'}
     Run-Installer

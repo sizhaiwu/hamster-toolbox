@@ -3,6 +3,7 @@ param(
     [string]$Version = '',
     [switch]$UpdateOnly,
     [switch]$Installer,
+    [switch]$PortableZip,
     [string]$ISCC = ''
 )
 
@@ -11,6 +12,7 @@ Set-StrictMode -Version Latest
 $repo = $PSScriptRoot
 . (Join-Path $repo 'release\package-support.ps1')
 . (Join-Path $repo 'release\installer-support.ps1')
+. (Join-Path $repo 'release\desktop-bundle-support.ps1')
 if ($Installer) { $ISCC = Resolve-InnoCompiler $ISCC $repo }
 if (-not $Version) { $Version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim() }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$') { throw 'Version must look like 0.1.0 or 0.1.0-beta.1' }
@@ -50,8 +52,12 @@ try {
     $manifestHash = (Get-FileHash -LiteralPath (Join-Path $repo 'tools-manifest.json') -Algorithm SHA256).Hash
 
     Write-Host '[3/6] Building release binary...'
+    Write-Host 'Preparing the integrated desktop runtime...'
+    $desktopComponent=Build-HamsterDesktopClient $repo $Version $payload
     $exe = Join-Path $payload 'hamster-toolbox.exe'
     $flags = '-s -w -X main.appVersion=' + $Version + ' -X main.buildTime=' + $buildTime + ' -X main.toolsManifestSHA256=' + $manifestHash
+    $flags += ' -X main.desktopBundleSHA256='+$desktopComponent.SHA256
+    @{Version=$Version;SHA256=$desktopComponent.SHA256;Bytes=$desktopComponent.Bytes;Runtime=$desktopComponent.Runtime}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $payload 'desktop-client-info.json') -Encoding UTF8
     & go build -buildvcs=false -trimpath -ldflags $flags -o $exe .
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
     $desktopExe=Join-Path $payload 'hamster-toolbox-desktop.exe'
@@ -100,26 +106,30 @@ try {
         ToolsManifestSHA256=$manifestHash
         ExecutableSHA256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
         DesktopExecutableSHA256=(Get-FileHash -LiteralPath $desktopExe -Algorithm SHA256).Hash
+        DesktopClient=@{Bundled=$true;SHA256=$desktopComponent.SHA256;Bytes=$desktopComponent.Bytes;Runtime=$desktopComponent.Runtime;RemovedBytes=$desktopComponent.RemovedBytes}
         Dependencies=@($check.Dependencies | ForEach-Object { @{Key=$_.Key;Version=$_.Message} })
     }
     $releaseInfo | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $payload 'release-info.json') -Encoding UTF8
 
-    Write-Host '[5/6] Creating shareable ZIP files...'
+    Test-HamsterDesktopRuntime $desktopComponent.Root $Version $desktopComponent.SHA256
+    Write-Host '[5/6] Creating verified portable archives...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $dist = Join-Path $repo 'dist'
     New-Item -ItemType Directory -Path $dist -Force | Out-Null
     if (-not $UpdateOnly) {
-        $zip = Join-Path $stage ($packageName+'.zip')
-        [IO.Compression.ZipFile]::CreateFromDirectory($payload,$zip,[IO.Compression.CompressionLevel]::Optimal,$true)
+        $portable=New-HamsterPortableArchive $payload (Join-Path $stage ($packageName+'.7z')) (Join-Path $payload 'tools\sevenzip\7z.exe')
+        if($PortableZip){$zip=New-HamsterPortableArchive $payload (Join-Path $stage ($packageName+'.zip')) (Join-Path $payload 'tools\sevenzip\7z.exe') -Zip}
     }
     $update = Join-Path $stage 'update'
     New-Item -ItemType Directory -Path $update | Out-Null
     foreach ($name in @('hamster-toolbox.exe','hamster-toolbox-desktop.exe','start-toolbox.cmd','tools-manifest.json','VERSION.txt','release-info.json','LICENSE','QUICKSTART.txt','THIRD-PARTY.txt','GO-DEPENDENCIES.txt')) { Copy-Item -LiteralPath (Join-Path $payload $name) -Destination $update }
     Copy-Item -LiteralPath (Join-Path $repo 'release\UPDATE.txt') -Destination $update
+    Copy-Item -LiteralPath (Join-Path $payload 'desktop-client-info.json') -Destination $update
+    Copy-Item -LiteralPath $desktopComponent.Root -Destination (Join-Path $update 'desktop-runtime') -Recurse
     $updateZip = Join-Path $stage ($packageName+'-update.zip')
     [IO.Compression.ZipFile]::CreateFromDirectory($update,$updateZip,[IO.Compression.CompressionLevel]::Optimal,$false)
     $artifacts = @($updateZip)
-    if (-not $UpdateOnly) { $artifacts = @($zip)+$artifacts }
+    if (-not $UpdateOnly) { $artifacts = @($portable)+$artifacts;if($PortableZip){$artifacts=@($zip)+$artifacts} }
     if ($Installer) {
         Write-Host 'Building the optional Windows installer...'
         $installerArtifact=Build-HamsterInstaller $repo $payload $Version $stage ($packageName+'-setup') $ISCC
@@ -146,7 +156,7 @@ try {
     Copy-Item -LiteralPath $desktopExe -Destination $localDesktop
     Write-Host ''
     foreach ($file in $published) { Write-Host ('READY: '+$file) }
-    Write-Host 'Full ZIP: new users. Update ZIP: replace program files in an existing full folder.'
+    Write-Host 'Full 7z/setup: complete offline distribution. Optional ZIP: -PortableZip. Update ZIP includes the desktop runtime but excludes media tools.'
 } finally {
     foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name,$savedEnv[$name],'Process') }
     Set-Location -LiteralPath $savedLocation

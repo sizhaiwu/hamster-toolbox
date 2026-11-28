@@ -25,11 +25,11 @@ func (s *server) httpHandler() *http.ServeMux {
 			p = "/index.html"
 		}
 		brandType := brandContentType(strings.TrimPrefix(p, "/"))
-		if p != "/index.html" && p != "/app.js" && p != "/version-info.js" && p != "/task-feedback.js" && p != "/task-history.js" && p != "/network-settings.js" && p != "/network-settings.css" && p != "/general-settings.css" && p != "/style.css" && p != "/theme.css" && p != "/toolbox-layout.css" && brandType == "" {
+		if p != "/desktop-media.js" && p != "/desktop-media.css" && p != "/desktop-experience.js" && p != "/desktop-experience.css" && p != "/schedule-controls.js" && p != "/schedule-library.js" && p != "/schedule-status.js" && p != "/schedule-status.css" && p != "/schedules.html" && p != "/schedules.js" && p != "/schedules.css" && p != "/index.html" && p != "/app.js" && p != "/version-info.js" && p != "/task-feedback.js" && p != "/task-history.js" && p != "/network-settings.js" && p != "/network-settings.css" && p != "/general-settings.css" && p != "/style.css" && p != "/theme.css" && p != "/toolbox-layout.css" && brandType == "" {
 			http.NotFound(w, r)
 			return
 		}
-		if p == "/index.html" && r.URL.Query().Get("session") != s.token {
+		if (p == "/index.html" || p == "/schedules.html") && r.URL.Query().Get("session") != s.token {
 			http.Error(w, "无效会话", 403)
 			return
 		}
@@ -38,7 +38,9 @@ func (s *server) httpHandler() *http.ServeMux {
 			http.NotFound(w, r)
 			return
 		}
-		if p == "/index.html" {
+		if p == "/schedules.html" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		} else if p == "/index.html" {
 			b = sharedSettingsHTML(b)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		} else if strings.HasSuffix(p, ".js") {

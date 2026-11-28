@@ -37,7 +37,7 @@ func securityBrowserHeaders(w http.ResponseWriter) {
 // This includes only embedded UI assets, never configuration or file APIs.
 func browserStaticAsset(path string) bool {
 	switch path {
-	case "", "explorer.html", "file-code-editor.js", "explorer-editor-window.js", "version-info.js", "network-settings.js", "network-settings.css", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
+	case "desktop-media.js", "desktop-media.css", "desktop-experience.js", "desktop-experience.css", "", "explorer.html", "file-code-editor.js", "explorer-editor-window.js", "version-info.js", "network-settings.js", "network-settings.css", "general-settings.css", "task-feedback.js", "explorer-upgrades.js", "explorer.css", "theme.css", "explorer-layout.css", "explorer.js", "explorer-tabs.js", "explorer-media.js", "explorer-shell.js", "explorer-native.js", "explorer-floating.js", "explorer-floating.css":
 		return true
 	}
 	return brandContentType(path) != ""

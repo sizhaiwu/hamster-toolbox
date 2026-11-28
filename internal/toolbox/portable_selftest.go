@@ -20,6 +20,7 @@ func SelfTestPortable(ctx context.Context, log func(string)) error {
 		return e
 	}
 	defer os.RemoveAll(root)
+	ctx = context.WithValue(ctx, resourceCacheKey{}, root)
 	c := DefaultConfig()
 	base := executableDirectory()
 	c.FFmpeg, c.FFprobe, c.Magick = bundledDependency(base, "FFmpeg"), bundledDependency(base, "FFprobe"), bundledDependency(base, "Magick")

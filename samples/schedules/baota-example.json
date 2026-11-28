@@ -1,0 +1,36 @@
+[
+  {
+    "name": "宝塔示例 - 打印时间",
+    "sType": "toShell",
+    "type": "day",
+    "where1": "",
+    "where_hour": "9",
+    "where_minute": "0",
+    "sBody": "date\nprintf \"%s\\n\" \"hello from scheduler\"",
+    "urladdress": "",
+    "status": 0
+  },
+  {
+    "name": "宝塔示例 - GET 请求",
+    "sType": "toUrl",
+    "type": "hour",
+    "where1": "",
+    "where_hour": "0",
+    "where_minute": "15",
+    "sBody": "",
+    "urladdress": "https://example.invalid/health",
+    "status": 0
+  },
+  {
+    "name": "宝塔示例 - POST JSON",
+    "sType": "to_post",
+    "type": "minute-n",
+    "where1": "30",
+    "where_hour": "0",
+    "where_minute": "0",
+    "sBody": "",
+    "urladdress": "https://example.invalid/api",
+    "post_param": "[{\"paramName\": \"source\", \"paramValue\": \"hamster-toolbox\"}]",
+    "status": 0
+  }
+]

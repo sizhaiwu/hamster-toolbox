@@ -1,8 +1,8 @@
 const assert=require('node:assert/strict');
-const {setup,wait,activateEntry}=require('./explorer-check.cjs');
+const {setup,wait,activateEntry,contextActions}=require('./explorer-check.cjs');
 const clips=[{Name:'clip-one.mp4',Path:'E:\\demo\\clip-one.mp4',Kind:'video',Size:200},{Name:'clip-two.ts',Path:'E:\\demo\\clip-two.ts',Kind:'video',Size:300}];
 async function ready(t){await wait(()=>t.$('entries').children.length,'initial listing');if(!t.$('go').hidden){t.$('location').value='E:\\demo';t.$('go').click();await wait(()=>!t.$('newFolder').disabled,'directory ready')}}
-function open(t,index,label){t.$('entries').children[index].querySelector('.entry-more').click();const entry=[...t.$('contextMenu').querySelectorAll('button')].find(b=>b.textContent===label||label==='悬浮播放'&&b.textContent==='浏览器悬浮播放');assert(entry&&!entry.disabled,'floating menu entry');entry.click();return [...t.d.querySelectorAll('.floating-window')].at(-1)}
+function open(t,index,label){t.$('entries').children[index].querySelector('.entry-more').click();const entry=contextActions(t).find(b=>b.textContent===label||label==='悬浮播放'&&b.textContent==='浏览器悬浮播放');assert(entry&&!entry.disabled,'floating menu entry');entry.click();return [...t.d.querySelectorAll('.floating-window')].at(-1)}
 function clickText(node,text){const b=[...node.querySelectorAll('button')].find(b=>b.textContent===text);assert(b,'missing button '+text);const menu=b.closest('details');if(menu&&!menu.open)menu.querySelector('summary').click();b.click();return b}
 function pointer(t,node,type,x,y){const e=new t.w.Event(type);for(const [key,value]of Object.entries({pointerId:1,button:0,clientX:x,clientY:y}))Object.defineProperty(e,key,{value});node.dispatchEvent(e)}
 (async()=>{

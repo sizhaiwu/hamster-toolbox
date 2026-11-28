@@ -41,6 +41,7 @@ func desktopMessage(owner uintptr, text string, flags uintptr) uintptr {
 	return desktopCall("MessageBoxW", owner, uintptr(unsafe.Pointer(desktopUTF16(text))), uintptr(unsafe.Pointer(desktopUTF16("仓鼠工具箱"))), flags)
 }
 func desktopError(text string) { desktopMessage(0, text, 0x10) }
+func detachDesktopConsole()    { desktopKernel.NewProc("FreeConsole").Call() }
 
 func prepareDesktop(data string, tray, noOpen bool) (func(), bool, error) {
 	// The installer checks this mutex and asks the user to exit normally;
@@ -135,11 +136,21 @@ func runDesktopTray(url string, s *server, service *http.Server, listener net.Li
 		return r != 0
 	}
 	open := func(address string) {
-		cmd := openBrowserCommand(address)
-		if err := cmd.Start(); err != nil {
-			desktopMessage(hwnd, "无法打开浏览器，请检查默认浏览器设置。", 0x10)
-		} else {
-			go cmd.Wait()
+		if _, err := s.openInterface(address); err != nil {
+			desktopMessage(hwnd, "无法打开工具箱界面："+err.Error(), 0x10)
+		}
+	}
+	openAction := func(id int) {
+		address, browser, err := desktopTrayDestination(url, id)
+		if err == nil {
+			if browser {
+				err = openDesktopBrowser(address)
+			} else {
+				_, err = s.openInterface(address)
+			}
+		}
+		if err != nil {
+			desktopMessage(hwnd, "无法打开所选入口："+err.Error(), 0x10)
 		}
 	}
 	requestExit := func() {
@@ -183,11 +194,15 @@ func runDesktopTray(url string, s *server, service *http.Server, listener net.Li
 				appendItem := func(id uintptr, text string, flags uintptr) {
 					desktopCall("AppendMenuW", menu, flags, id, uintptr(unsafe.Pointer(desktopUTF16(text))))
 				}
-				appendItem(1, "打开工具箱", 0)
-				appendItem(2, "打开资源管理器", 0)
+				for _, action := range desktopTrayActions {
+					if action.ID == 3 {
+						appendItem(0, "", 0x800)
+					}
+					appendItem(uintptr(action.ID), action.Label, 0)
+				}
 				appendItem(0, "", 0x800)
 				if s.desktopCanExit() {
-					appendItem(3, "退出工具箱", 0)
+					appendItem(100, "退出工具箱", 0)
 				} else {
 					appendItem(0, "任务执行中，请完成或取消后退出", 1)
 				}
@@ -197,11 +212,9 @@ func runDesktopTray(url string, s *server, service *http.Server, listener net.Li
 				choice := desktopCall("TrackPopupMenu", menu, 0x100|0x2, uintptr(point.X), uintptr(point.Y), 0, window, 0)
 				desktopCall("PostMessageW", window, 0, 0, 0)
 				switch choice {
-				case 1:
-					open(url)
-				case 2:
-					open(url[:len(url)-len("/?session="+s.token)] + "/files/?session=" + s.token)
-				case 3:
+				case 1, 2, 3, 4, 5, 6:
+					openAction(int(choice))
+				case 100:
 					requestExit()
 				}
 			}
