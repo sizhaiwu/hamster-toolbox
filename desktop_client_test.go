@@ -45,7 +45,11 @@ func TestDesktopCloseExitAPI(t *testing.T) {
 
 func fixtureClientManager(t *testing.T) *desktopClientManager {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "desktop-runtime")
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(base, "desktop-runtime")
 	files := []desktopBundleFile{}
 	for _, p := range []string{"hamster-desktop-client.exe", "icudtl.dat", "resources.pak", "resources/app/main.cjs", "resources/app/experience.cjs", "resources/app/preload.cjs", "resources/app/media.cjs", "resources/app/package.json"} {
 		path := filepath.Join(root, filepath.FromSlash(p))
